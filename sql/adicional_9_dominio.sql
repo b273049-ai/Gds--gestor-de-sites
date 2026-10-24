@@ -1,0 +1,1 @@
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS dominio_personalizado VARCHAR(255) UNIQUE;
