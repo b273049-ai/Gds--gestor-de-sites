@@ -3,6 +3,11 @@ require_once __DIR__ . '/includes/auth.php';
 
 $erro = '';
 
+// Já está logado? Vai direto pro painel
+if (!empty($_SESSION['usuario_id']) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ' . (($_SESSION['role'] ?? '') === 'admin' ? '/admin/index.php' : '/empresa/index.php')); exit;
+}
+
 $MAX_TENTATIVAS = 5;
 $BLOQUEIO_MINUTOS = 15;
 
@@ -22,8 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $minutosRestantes = (int)ceil((strtotime($tent['bloqueado_ate']) - time()) / 60);
             $erro = "Muitas tentativas erradas. Tente novamente em $minutosRestantes minuto(s), ou use \"Esqueci minha senha\".";
         } else {
-            $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE email = ? AND ativo = true LIMIT 1");
-            $stmt->execute([$email]);
+            $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE LOWER(email) = ? AND ativo = true LIMIT 1");
+            $stmt->execute([$idTentativa]);
             $usuario = $stmt->fetch();
 
             if ($usuario && password_verify($senha, $usuario['senha_hash'])) {
@@ -62,27 +67,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Login - GDS</title>
-<link rel="stylesheet" href="/assets/css/style.css">
+<?= painel_head('Login - GDS') ?>
 </head>
 <body class="login-page">
 <div class="login-box">
-    <h1>GDS <span>Gestor de Sites</span></h1>
-    <?php if ($erro): ?><div class="alert-erro"><?= e($erro) ?></div><?php endif; ?>
+    <h1><span class="brand-logo">G</span><div>GDS <span>Gestor de Sites</span></div></h1>
+    <?php if ($erro): ?><div class="alert alert-erro"><?= e($erro) ?></div><?php endif; ?>
     <?php if (isset($_GET['erro']) && $_GET['erro'] === 'acesso_negado'): ?>
-        <div class="alert-erro">Você não tem acesso a essa área.</div>
+        <div class="alert alert-erro">Você não tem acesso a essa área.</div>
     <?php endif; ?>
     <form method="post">
         <?= csrf_campo() ?>
         <label>E-mail</label>
-        <input type="email" name="email" required autofocus>
+        <input type="email" name="email" required autofocus autocomplete="username" value="<?= e($_POST['email'] ?? '') ?>">
         <label>Senha</label>
-        <input type="password" name="senha" required>
+        <input type="password" name="senha" required autocomplete="current-password">
         <button type="submit">Entrar</button>
     </form>
-    <p style="text-align:center;margin-top:14px;"><a href="/esqueci_senha.php" style="color:#4f7cff;font-size:13px;">Esqueci minha senha</a></p>
+    <p class="rodape-login"><a href="/esqueci_senha.php">Esqueci minha senha</a></p>
 </div>
 </body>
 </html>

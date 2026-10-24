@@ -2,69 +2,104 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-// Marcar como pago manualmente (enquanto o gateway de pagamento não está configurado)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['marcar_pago']) && !csrf_valido()) {
-    header('Location: financeiro.php'); exit;
-}
+// Cobranças vencidas viram "atrasado" automaticamente
+$pdo->exec("UPDATE pagamentos_assinaturas SET status='atrasado' WHERE status='pendente' AND vencimento < CURRENT_DATE");
+
+// Marcar como pago: ativa a empresa, empurra o vencimento e já cria a próxima cobrança
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['marcar_pago'])) {
-    $id = (int)$_POST['pagamento_id'];
-    $pdo->prepare("UPDATE pagamentos_assinaturas SET status='pago', pago_em=NOW() WHERE id=?")->execute([$id]);
+    $pg = $pdo->prepare("SELECT pa.*, p.ciclo, p.valor AS valor_plano, e.plano_id AS plano_atual FROM pagamentos_assinaturas pa
+        JOIN empresas e ON e.id = pa.empresa_id LEFT JOIN planos p ON p.id = e.plano_id WHERE pa.id=? AND pa.status <> 'pago'");
+    $pg->execute([(int)$_POST['pagamento_id']]);
+    if ($pg = $pg->fetch()) {
+        $intervalo = ($pg['ciclo'] ?? 'mensal') === 'anual' ? '1 year' : '1 month';
+        $pdo->beginTransaction();
+        $pdo->prepare("UPDATE pagamentos_assinaturas SET status='pago', pago_em=NOW(), metodo=COALESCE(metodo, ?) WHERE id=?")->execute([$_POST['metodo'] ?? 'manual', $pg['id']]);
+        $novoVenc = $pdo->prepare("SELECT (GREATEST(?::date, CURRENT_DATE) + INTERVAL '$intervalo')::date AS d");
+        $novoVenc->execute([$pg['vencimento']]); $novoVenc = $novoVenc->fetch()['d'];
+        $pdo->prepare("UPDATE empresas SET status='ativo', vencimento=? WHERE id=?")->execute([$novoVenc, $pg['empresa_id']]);
+        $pdo->prepare("UPDATE usuarios SET ativo=true WHERE empresa_id=?")->execute([$pg['empresa_id']]);
+        if (isset($_POST['gerar_proxima']) && $pg['plano_atual']) {
+            $pdo->prepare("INSERT INTO pagamentos_assinaturas (empresa_id, plano_id, valor, vencimento, status) VALUES (?,?,?,?,'pendente')")
+                ->execute([$pg['empresa_id'], $pg['plano_atual'], $pg['valor_plano'] ?? $pg['valor'], $novoVenc]);
+        }
+        $pdo->commit();
+        flash('sucesso', 'Pagamento registrado. Empresa ativa até ' . date('d/m/Y', strtotime($novoVenc)) . '.');
+    }
+    header('Location: financeiro.php'); exit;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancelar'])) {
+    $pdo->prepare("UPDATE pagamentos_assinaturas SET status='cancelado' WHERE id=? AND status <> 'pago'")->execute([(int)$_POST['pagamento_id']]);
+    flash('sucesso', 'Cobrança cancelada.');
     header('Location: financeiro.php'); exit;
 }
 
+$filtro = $_GET['status'] ?? 'abertos';
+$where = match ($filtro) {
+    'pago' => "pa.status='pago'",
+    'todos' => "TRUE",
+    default => "pa.status IN ('pendente','atrasado')",
+};
 $pagamentos = $pdo->query("
-    SELECT pa.*, e.nome as empresa_nome
-    FROM pagamentos_assinaturas pa
-    JOIN empresas e ON e.id = pa.empresa_id
-    ORDER BY pa.vencimento DESC
-")->fetchAll();
+    SELECT pa.*, e.nome AS empresa_nome, e.id AS empresa_id
+    FROM pagamentos_assinaturas pa JOIN empresas e ON e.id = pa.empresa_id
+    WHERE $where ORDER BY pa.vencimento DESC LIMIT 300")->fetchAll();
 
-$totalPago = $pdo->query("SELECT COALESCE(SUM(valor),0) v FROM pagamentos_assinaturas WHERE status='pago'")->fetch()['v'];
-$totalPendente = $pdo->query("SELECT COALESCE(SUM(valor),0) v FROM pagamentos_assinaturas WHERE status='pendente'")->fetch()['v'];
+$tot = $pdo->query("SELECT
+    COALESCE(SUM(valor) FILTER (WHERE status='pago'),0) pago,
+    COALESCE(SUM(valor) FILTER (WHERE status='pendente'),0) pendente,
+    COALESCE(SUM(valor) FILTER (WHERE status='atrasado'),0) atrasado,
+    COALESCE(SUM(valor) FILTER (WHERE status='pago' AND date_trunc('month', pago_em)=date_trunc('month', CURRENT_DATE)),0) mes
+    FROM pagamentos_assinaturas")->fetch();
+$temToken = trim(get_config('mercadopago_access_token', '')) !== '';
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Financeiro - GDS Admin</title>
-<link rel="stylesheet" href="/assets/css/style.css">
-</head>
+<head><?= painel_head('Financeiro - GDS Admin') ?></head>
 <body>
 <div class="layout">
 <?php include '_sidebar.php'; ?>
-<div class="content">
-    <h1>Financeiro</h1>
+<main class="content">
+    <div class="page-header"><div><h1>Financeiro</h1><p class="subtitulo">Assinaturas das empresas na plataforma.</p></div></div>
+    <?= flash_render() ?>
     <div class="cards">
-        <div class="card"><div class="label">Total Recebido</div><div class="value">R$ <?= number_format($totalPago,2,',','.') ?></div></div>
-        <div class="card"><div class="label">Total Pendente</div><div class="value">R$ <?= number_format($totalPendente,2,',','.') ?></div></div>
+        <div class="card"><div class="label">Recebido no mês</div><div class="value">R$ <?= number_format($tot['mes'], 2, ',', '.') ?></div></div>
+        <div class="card"><div class="label">Total recebido</div><div class="value">R$ <?= number_format($tot['pago'], 2, ',', '.') ?></div></div>
+        <div class="card"><div class="label">A vencer</div><div class="value">R$ <?= number_format($tot['pendente'], 2, ',', '.') ?></div></div>
+        <div class="card"><div class="label">Atrasado</div><div class="value" style="color:<?= $tot['atrasado'] > 0 ? 'var(--danger)' : 'inherit' ?>">R$ <?= number_format($tot['atrasado'], 2, ',', '.') ?></div></div>
     </div>
+    <?php if (!$temToken): ?><?= alerta('info', 'Configure o Access Token do Mercado Pago em Configurações para usar "Gerar PIX". Sem token, marque os pagamentos manualmente.') ?><?php endif; ?>
 
-    <p style="color:#9aa0c0;font-size:13px;margin-bottom:14px;">
-        Configure o Access Token do Mercado Pago em Configurações pra usar "Gerar PIX". Sem token, você pode marcar cobranças como pagas manualmente.
-    </p>
-
-    <table>
-        <tr><th>Empresa</th><th>Valor</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr>
+    <div class="toolbar">
+        <?php foreach (['abertos' => 'Em aberto', 'pago' => 'Pagos', 'todos' => 'Todos'] as $v => $l): ?>
+        <a class="btn btn-sm <?= $filtro === $v ? '' : 'btn-ghost' ?>" href="?status=<?= $v ?>"><?= $l ?></a>
+        <?php endforeach; ?>
+    </div>
+    <div class="tabela-wrap"><table>
+        <thead><tr><th>Empresa</th><th>Valor</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
+        <tbody>
         <?php foreach ($pagamentos as $p): ?>
         <tr>
-            <td><?= e($p['empresa_nome']) ?></td>
-            <td>R$ <?= number_format($p['valor'],2,',','.') ?></td>
+            <td><a class="link" href="empresa_editar.php?id=<?= $p['empresa_id'] ?>"><?= e($p['empresa_nome']) ?></a><?php if ($p['pago_em']): ?><span class="mini">pago em <?= date('d/m/Y', strtotime($p['pago_em'])) ?><?= $p['metodo'] ? ' · ' . e($p['metodo']) : '' ?></span><?php endif; ?></td>
+            <td>R$ <?= number_format($p['valor'], 2, ',', '.') ?></td>
             <td><?= date('d/m/Y', strtotime($p['vencimento'])) ?></td>
-            <td><span class="badge badge-<?= $p['status']=='pago'?'ativo':($p['status']=='atrasado'?'suspenso':'pendente') ?>"><?= e($p['status']) ?></span></td>
-            <td>
-                <?php if ($p['status'] !== 'pago'): ?>
-                <form method="post" style="display:inline;">
-                    <?= csrf_campo() ?>
-                    <input type="hidden" name="pagamento_id" value="<?= $p['id'] ?>">
-                    <button class="btn btn-sm" type="submit" name="marcar_pago">Marcar como pago</button>
+            <td><span class="badge badge-<?= e($p['status']) ?>"><?= e($p['status']) ?></span></td>
+            <td class="acoes">
+                <?php if (in_array($p['status'], ['pendente', 'atrasado'], true)): ?>
+                <form method="post" onsubmit="return confirm('Confirmar recebimento de R$ <?= number_format($p['valor'], 2, ',', '.') ?>?')">
+                    <?= csrf_campo() ?><input type="hidden" name="pagamento_id" value="<?= $p['id'] ?>"><input type="hidden" name="gerar_proxima" value="1">
+                    <button class="btn btn-sm" type="submit" name="marcar_pago" value="1">Marcar pago</button>
                 </form>
-                <a class="btn btn-sm" href="mp_gerar_cobranca.php?id=<?= $p['id'] ?>">Gerar PIX</a>
-                <?php else: ?>-<?php endif; ?>
+                <?php if ($temToken): ?><form method="post" action="mp_gerar_cobranca.php"><?= csrf_campo() ?><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-ghost btn-sm" type="submit">Gerar PIX</button></form><?php endif; ?>
+                <form method="post" onsubmit="return confirm('Cancelar esta cobrança?')"><?= csrf_campo() ?><input type="hidden" name="pagamento_id" value="<?= $p['id'] ?>"><button class="btn btn-perigo btn-sm" type="submit" name="cancelar" value="1">Cancelar</button></form>
+                <?php endif; ?>
             </td>
         </tr>
         <?php endforeach; ?>
-    </table>
-</div>
+        <?php if (!$pagamentos): ?><tr class="vazio"><td colspan="5">Nada por aqui.</td></tr><?php endif; ?>
+        </tbody>
+    </table></div>
+    <p class="dica">Ao marcar como pago, a empresa fica ativa, o vencimento avança um ciclo do plano e a próxima cobrança é criada automaticamente.</p>
+</main>
 </div>
 </body>
 </html>

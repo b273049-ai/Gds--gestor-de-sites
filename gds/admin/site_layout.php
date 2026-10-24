@@ -12,132 +12,105 @@ $secaoLabels = [
     'galeria' => 'Galeria', 'blocos' => 'Destaques (blocos)', 'cupons' => 'Cupons',
     'agendar' => 'Agendar', 'avaliacoes' => 'Avaliações', 'contato' => 'Contato',
 ];
-$ordemPadrao = ['sobre','servicos','equipe','galeria','blocos','cupons','agendar','avaliacoes','contato'];
+$ordemPadrao = array_keys($secaoLabels);
+$estilos = [
+    'classico'  => ['Clássico', 'Hero à esquerda, tom tech discreto. Seguro e versátil.'],
+    'bold'      => ['Bold', 'Centralizado, tipografia enorme, alto impacto visual.'],
+    'editorial' => ['Editorial', 'Tipografia serifada, estilo revista, mais sofisticado.'],
+    'grid'      => ['Grid Visual', 'Banner de foto em destaque, ótimo se você tem boas fotos.'],
+];
 
 $site = $pdo->prepare("SELECT * FROM sites WHERE empresa_id=?");
 $site->execute([$empresaId]); $site = $site->fetch();
+$ordemAtual = !empty($site['secoes']) ? array_values(array_intersect(explode(',', $site['secoes']), $ordemPadrao)) : $ordemPadrao;
+$salvarOrdem = function ($ordem) use ($pdo, $empresaId) {
+    $pdo->prepare("UPDATE sites SET secoes=? WHERE empresa_id=?")->execute([implode(',', $ordem), $empresaId]);
+    header("Location: site_layout.php?empresa_id=$empresaId"); exit;
+};
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_estilo'])) {
-    $pdo->prepare("UPDATE sites SET layout=?, banner_imagem=? WHERE empresa_id=?")
-        ->execute([$_POST['layout'], $_POST['banner_imagem'], $empresaId]);
-    header("Location: site_layout.php?empresa_id=$empresaId&ok=1"); exit;
+    $layout = isset($estilos[$_POST['layout'] ?? '']) ? $_POST['layout'] : 'classico';
+    $pdo->prepare("UPDATE sites SET layout=?, banner_imagem=?, cor_primaria=?, cor_secundaria=? WHERE empresa_id=?")
+        ->execute([$layout, url_valida_ou_vazia($_POST['banner_imagem'] ?? ''), cor_hex_valida($_POST['cor_primaria'] ?? '', '#4f7cff'), cor_hex_valida($_POST['cor_secundaria'] ?? '', '#16213e'), $empresaId]);
+    flash('sucesso', 'Estilo atualizado!');
+    header("Location: site_layout.php?empresa_id=$empresaId"); exit;
 }
-
 if (isset($_GET['subir']) || isset($_GET['descer'])) {
-    $ordemAtual = !empty($site['secoes']) ? explode(',', $site['secoes']) : $ordemPadrao;
     $chave = $_GET['subir'] ?? $_GET['descer'];
-    $i = array_search($chave, $ordemAtual);
+    $i = array_search($chave, $ordemAtual, true);
     if ($i !== false) {
         $j = isset($_GET['subir']) ? $i - 1 : $i + 1;
-        if ($j >= 0 && $j < count($ordemAtual)) {
-            [$ordemAtual[$i], $ordemAtual[$j]] = [$ordemAtual[$j], $ordemAtual[$i]];
-            $pdo->prepare("UPDATE sites SET secoes=? WHERE empresa_id=?")->execute([implode(',', $ordemAtual), $empresaId]);
-        }
+        if ($j >= 0 && $j < count($ordemAtual)) [$ordemAtual[$i], $ordemAtual[$j]] = [$ordemAtual[$j], $ordemAtual[$i]];
     }
-    header("Location: site_layout.php?empresa_id=$empresaId"); exit;
+    $salvarOrdem($ordemAtual);
 }
-
-if (isset($_GET['ocultar'])) {
-    $ordemAtual = !empty($site['secoes']) ? explode(',', $site['secoes']) : $ordemPadrao;
-    $ordemAtual = array_values(array_diff($ordemAtual, [$_GET['ocultar']]));
-    $pdo->prepare("UPDATE sites SET secoes=? WHERE empresa_id=?")->execute([implode(',', $ordemAtual), $empresaId]);
-    header("Location: site_layout.php?empresa_id=$empresaId"); exit;
+if (isset($_GET['ocultar']) && !in_array($_GET['ocultar'], ['agendar', 'contato'], true)) {
+    $salvarOrdem(array_values(array_diff($ordemAtual, [$_GET['ocultar']])));
 }
-if (isset($_GET['mostrar'])) {
-    $ordemAtual = !empty($site['secoes']) ? explode(',', $site['secoes']) : $ordemPadrao;
-    if (!in_array($_GET['mostrar'], $ordemAtual)) { $ordemAtual[] = $_GET['mostrar']; }
-    $pdo->prepare("UPDATE sites SET secoes=? WHERE empresa_id=?")->execute([implode(',', $ordemAtual), $empresaId]);
-    header("Location: site_layout.php?empresa_id=$empresaId"); exit;
+if (isset($_GET['mostrar']) && isset($secaoLabels[$_GET['mostrar']]) && !in_array($_GET['mostrar'], $ordemAtual, true)) {
+    $ordemAtual[] = $_GET['mostrar'];
+    $salvarOrdem($ordemAtual);
 }
-
-$site = $pdo->prepare("SELECT * FROM sites WHERE empresa_id=?");
-$site->execute([$empresaId]); $site = $site->fetch();
-$ordemAtual = !empty($site['secoes']) ? explode(',', $site['secoes']) : $ordemPadrao;
 $ocultas = array_diff($ordemPadrao, $ordemAtual);
-
-$estilos = [
-    'classico'  => ['nome' => 'Clássico', 'desc' => 'Hero à esquerda, tom tech discreto. Seguro e versátil.'],
-    'bold'      => ['nome' => 'Bold', 'desc' => 'Centralizado, tipografia enorme, alto impacto visual.'],
-    'editorial' => ['nome' => 'Editorial', 'desc' => 'Tipografia serifada, estilo revista, mais sofisticado.'],
-    'grid'      => ['nome' => 'Grid Visual', 'desc' => 'Banner de foto em destaque, ótimo se você tem boas fotos.'],
-];
+$q = '?empresa_id=' . $empresaId . csrf_qs();
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Layout do Site - GDS Admin</title>
-<link rel="stylesheet" href="/assets/css/style.css">
-<style>
-.duo { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
-.duo > .col-form { flex:1 1 380px; min-width:300px; }
-.duo > .col-preview { flex:1 1 380px; min-width:300px; position:sticky; top:20px; }
-.duo iframe { width:100%; height:520px; border:1px solid #2a2f5c; border-radius:12px; background:#fff; }
-</style>
-</head>
+<head><?= painel_head('Layout do Site - GDS Admin') ?></head>
 <body>
 <div class="layout">
 <?php include '_sidebar.php'; ?>
-<div class="content">
-    <h1>Layout do Site — <?= e($empresa['nome']) ?></h1>
-    <p style="margin-bottom:14px;"><a href="site_hub.php?empresa_id=<?= $empresaId ?>" style="color:#4f7cff;font-size:13px;">← voltar pro painel de site desta empresa</a></p>
-    <?php if (isset($_GET['ok'])): ?><div class="alert-erro" style="background:#1f4d2e;color:#5ee06c;">Estilo atualizado!</div><?php endif; ?>
+<main class="content">
+    <a href="site_hub.php?empresa_id=<?= $empresaId ?>" class="link-voltar">← Site de <?= e($empresa['nome']) ?></a>
+    <div class="page-header"><div><h1>Layout do template</h1><p class="subtitulo">Vale quando o site não está usando o design criado pela IA.</p></div></div>
+    <?= flash_render() ?>
+    <?php if (pg_bool($site['ia_modo_total'] ?? false)): ?><?= alerta('info', 'Agora o site usa o design da IA. Estas opções passam a valer se você voltar para o template (no Estúdio IA → Versões).') ?><?php endif; ?>
 
     <div class="duo">
     <div class="col-form">
-    <div class="form-box" style="margin-bottom:24px;">
+    <form method="post" class="form-box">
+        <?= csrf_campo() ?>
         <h3>Estilo visual</h3>
-        <form method="post">
-            <?php foreach ($estilos as $val => $info): ?>
-            <label style="display:flex;align-items:flex-start;gap:10px;font-weight:normal;color:#e8e8f0;margin-top:12px;">
-                <input type="radio" name="layout" value="<?= $val ?>" style="width:auto;margin-top:4px;" <?= ($site['layout'] ?: 'classico')==$val?'checked':'' ?>>
-                <span><strong><?= $info['nome'] ?></strong><br><span style="color:#9aa0c0;font-size:13px;"><?= $info['desc'] ?></span></span>
-            </label>
-            <?php endforeach; ?>
-
-            <label style="margin-top:18px;">Banner (imagem de destaque, usada no estilo "Grid Visual")</label>
-            <input type="text" name="banner_imagem" value="<?= e($site['banner_imagem']) ?>" placeholder="https://exemplo.com/banner.jpg">
-
-            <button type="submit" name="salvar_estilo" style="margin-top:16px;">Salvar Estilo</button>
-        </form>
-    </div>
+        <?php foreach ($estilos as $val => [$nome, $desc]): ?>
+        <label class="estilo-opcao"><input type="radio" name="layout" value="<?= $val ?>" <?= ($site['layout'] ?: 'classico') == $val ? 'checked' : '' ?>><span><strong><?= $nome ?></strong><small><?= $desc ?></small></span></label>
+        <?php endforeach; ?>
+        <div class="form-row">
+            <div><label>Cor primária</label><input type="color" name="cor_primaria" value="<?= e(cor_hex_valida($site['cor_primaria'] ?? '', '#4f7cff')) ?>"></div>
+            <div><label>Cor secundária</label><input type="color" name="cor_secundaria" value="<?= e(cor_hex_valida($site['cor_secundaria'] ?? '', '#16213e')) ?>"></div>
+        </div>
+        <label>Banner (imagem de destaque, usada no estilo "Grid Visual")</label>
+        <input type="url" name="banner_imagem" value="<?= e($site['banner_imagem']) ?>" placeholder="https://exemplo.com/banner.jpg">
+        <button type="submit" name="salvar_estilo" value="1">Salvar estilo</button>
+    </form>
 
     <div class="form-box">
         <h3>Ordem e visibilidade das seções</h3>
-        <p style="color:#9aa0c0;font-size:13px;margin-bottom:12px;">Seções sem conteúdo cadastrado não aparecem no site mesmo se estiverem ativas aqui.</p>
-        <table>
-            <tr><th>Seção</th><th>Ação</th></tr>
-            <?php foreach ($ordemAtual as $i => $chave): if (!isset($secaoLabels[$chave])) continue; ?>
+        <p class="dica" style="margin-bottom:12px">Seções sem conteúdo cadastrado não aparecem no site mesmo se estiverem ativas aqui.</p>
+        <div class="tabela-wrap"><table><tbody>
+            <?php foreach ($ordemAtual as $i => $chave): ?>
             <tr>
                 <td><?= e($secaoLabels[$chave]) ?></td>
-                <td>
-                    <?php if ($i > 0): ?><a class="btn btn-sm" href="?empresa_id=<?= $empresaId ?>&subir=<?= $chave ?>">↑</a><?php endif; ?>
-                    <?php if ($i < count($ordemAtual)-1): ?><a class="btn btn-sm" href="?empresa_id=<?= $empresaId ?>&descer=<?= $chave ?>">↓</a><?php endif; ?>
-                    <?php if (!in_array($chave, ['agendar','contato'])): ?>
-                    <a class="btn btn-sm" href="?empresa_id=<?= $empresaId ?>&ocultar=<?= $chave ?>">Ocultar</a>
-                    <?php endif; ?>
+                <td class="acoes">
+                    <?php if ($i > 0): ?><a class="btn btn-ghost btn-sm" href="<?= $q ?>&subir=<?= $chave ?>" aria-label="Subir">↑</a><?php endif; ?>
+                    <?php if ($i < count($ordemAtual) - 1): ?><a class="btn btn-ghost btn-sm" href="<?= $q ?>&descer=<?= $chave ?>" aria-label="Descer">↓</a><?php endif; ?>
+                    <?php if (!in_array($chave, ['agendar', 'contato'], true)): ?><a class="btn btn-ghost btn-sm" href="<?= $q ?>&ocultar=<?= $chave ?>">Ocultar</a><?php endif; ?>
                 </td>
             </tr>
             <?php endforeach; ?>
-            <?php foreach ($ocultas as $chave): if (!isset($secaoLabels[$chave])) continue; ?>
-            <tr style="opacity:0.5;">
-                <td><?= e($secaoLabels[$chave]) ?> (oculta)</td>
-                <td><a class="btn btn-sm" href="?empresa_id=<?= $empresaId ?>&mostrar=<?= $chave ?>">Mostrar</a></td>
-            </tr>
+            <?php foreach ($ocultas as $chave): ?>
+            <tr style="opacity:.55"><td><?= e($secaoLabels[$chave]) ?> (oculta)</td><td class="acoes"><a class="btn btn-ghost btn-sm" href="<?= $q ?>&mostrar=<?= $chave ?>">Mostrar</a></td></tr>
             <?php endforeach; ?>
-        </table>
+        </tbody></table></div>
     </div>
     </div>
 
     <div class="col-preview">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <strong style="font-size:14px;">Pré-visualização</strong>
-            <button type="button" class="btn btn-sm" onclick="document.getElementById('previewFrame').src='/site/preview.php?empresa_id=<?= $empresaId ?>&t='+Date.now()">🔄 Atualizar</button>
-        </div>
-        <iframe id="previewFrame" src="/site/preview.php?empresa_id=<?= $empresaId ?>"></iframe>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><strong>Pré-visualização</strong>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('previewFrame').src='/site/preview.php?empresa_id=<?= $empresaId ?>&t='+Date.now()"><?= icone('atualizar', 14) ?> Atualizar</button></div>
+        <iframe id="previewFrame" src="/site/preview.php?empresa_id=<?= $empresaId ?>" title="Pré-visualização"></iframe>
     </div>
     </div>
-</div>
+</main>
 </div>
 </body>
 </html>
