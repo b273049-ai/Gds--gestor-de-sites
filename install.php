@@ -13,8 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $senha = $_POST['senha'] ?? '';
 
-    if (strlen($senha) < 6) {
-        $mensagem = 'A senha precisa ter no mínimo 6 caracteres.';
+    if (strlen($senha) < 8) {
+        $mensagem = 'A senha precisa ter no mínimo 8 caracteres.';
     } else {
         $check = $pdo->prepare("SELECT id FROM usuarios WHERE role = 'admin' LIMIT 1");
         $check->execute();
@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $hash = password_hash($senha, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("INSERT INTO usuarios (empresa_id, nome, email, senha_hash, role) VALUES (NULL, ?, ?, ?, 'admin')");
-            $stmt->execute([$nome, $email, $hash]);
+            $stmt->execute([$nome, mb_strtolower($email), $hash]);
             $feito = true;
             $mensagem = 'Admin criado com sucesso! Agora APAGUE o arquivo install.php do servidor e faça login em /login.php';
         }
@@ -51,7 +51,7 @@ button{width:100%;padding:10px;background:#4f7cff;color:#fff;border:none;border-
 <form method="post">
 <input type="text" name="nome" placeholder="Seu nome" required>
 <input type="email" name="email" placeholder="Seu e-mail" required>
-<input type="password" name="senha" placeholder="Senha (mín. 6 caracteres)" required>
+<input type="password" name="senha" placeholder="Senha (mín. 8 caracteres)" required>
 <button type="submit">Criar Admin</button>
 </form>
 <?php endif; ?>

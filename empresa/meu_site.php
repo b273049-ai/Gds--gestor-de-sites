@@ -1,31 +1,29 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
+$empresaId = (int)empresa_id_atual();
+if (empresa_pode_usar_estudio($empresaId)) { header('Location: /empresa/ia_estudio.php'); exit; }
+$empresa = $pdo->prepare("SELECT slug FROM empresas WHERE id=?");
+$empresa->execute([$empresaId]); $empresa = $empresa->fetch();
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meu Negócio</title>
-<link rel="stylesheet" href="/assets/css/style.css">
-</head>
+<head><?= painel_head('Meu Site') ?></head>
 <body>
 <div class="layout">
 <?php include '_sidebar.php'; ?>
-<div class="content">
-    <h1>Essa função mudou de lugar</h1>
-    <div class="form-box" style="max-width:480px;">
-        <p style="color:#e8e8f0;line-height:1.6;">
-            A criação e edição do site agora é feita pelo administrador da plataforma — ele cuida do conteúdo,
-            do layout e até pode usar IA pra desenhar o site inteiro.
-        </p>
-        <p style="color:#9aa0c0;margin-top:12px;font-size:14px;">
-            Você ainda pode ajustar a <strong>cor do site</strong> em Configurações, e continua cuidando de
-            serviços, profissionais, agenda e clientes por aqui normalmente.
-        </p>
-        <a href="/empresa/configuracoes.php" class="btn" style="margin-top:16px;display:inline-block;">Ir para Configurações</a>
+<main class="content">
+    <div class="page-header"><div><h1>Meu site</h1><p class="subtitulo">Quem cria e edita o design do site é o administrador da plataforma.</p></div></div>
+    <div class="form-box">
+        <p>Você continua cuidando de <strong>serviços, profissionais, agenda, cupons e clientes</strong> — tudo isso aparece no site automaticamente.
+        A cor de destaque e os horários de atendimento ficam em Configurações.</p>
+        <p class="dica" style="margin-top:12px">Quer criar e ajustar o site sozinho conversando com a IA? Peça ao administrador para liberar o <strong>Estúdio IA</strong> no seu plano.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+            <a href="/<?= e($empresa['slug'] ?? '') ?>" target="_blank" class="btn"><?= icone('olho') ?> Ver meu site</a>
+            <a href="/empresa/configuracoes.php" class="btn btn-ghost"><?= icone('engrenagem') ?> Configurações</a>
+        </div>
     </div>
-</div>
+</main>
 </div>
 </body>
 </html>

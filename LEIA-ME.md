@@ -11,6 +11,11 @@
    - `sql/adicional_4_modularidade.sql`
    - `sql/adicional_5_seguranca.sql`
    - `sql/adicional_6_ia_total.sql`
+   - `sql/adicional_7_pagamento_cliente.sql`
+   - `sql/adicional_8_seguranca.sql`
+   - `sql/adicional_9_dominio.sql`
+   - `sql/adicional_10_estudio_ia.sql` ← **novo**: Estúdio IA (conversa + versões), avaliações pelo site, horário de atendimento e índices
+   - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
 
 ## 2. Configurar conexão
@@ -23,7 +28,10 @@ Abra `config/db.php` e troque:
 - `DB_PORT` → `6543` (transaction pooler) — deixe como está se não souber qual usar
 - `DB_USER` → formato `postgres.SEU_PROJECT_REF` (o Supabase mostra isso pronto na tela de conexão)
 - `DB_PASS` → a senha do banco que você definiu ao criar o projeto (se esqueceu, dá pra resetar em Database → Settings)
-- (opcional, depois) `IA_API_KEY`, `MERCADOPAGO_ACCESS_TOKEN`, `WHATSAPP_API_TOKEN`.
+- (opcional, depois) `IA_API_KEY`, `MERCADOPAGO_ACCESS_TOKEN`, `WHATSAPP_API_TOKEN` — o melhor é configurar tudo pela tela Admin → Configurações.
+
+Também dá pra configurar por variáveis de ambiente (`GDS_DB_HOST`, `GDS_DB_PORT`, `GDS_DB_NAME`, `GDS_DB_USER`,
+`GDS_DB_PASS`, `GDS_DB_SSLMODE`, `GDS_DEBUG=1` para ver erros na tela durante testes).
 
 ## 3. Subir os arquivos
 Envie TODO o conteúdo desta pasta (menos este LEIA-ME) para a raiz do seu domínio
@@ -47,20 +55,33 @@ defina o e-mail/senha de login dela. Essa empresa poderá logar no mesmo
 Dentro do Painel Empresa → "Meu Site", preencha título/sobre e marque "Publicar".
 O site fica disponível em: `https://seudominio.com/site/index.php?slug=nome-da-empresa`
 
-Se quiser URLs bonitas tipo `/barbearia-x` sem `index.php?slug=`, adicione
-um arquivo `.htaccess` na pasta `site/` com regra de rewrite (posso gerar se quiser).
+Com o `.htaccess` da raiz (já incluso) o endereço fica bonito: `https://seudominio.com/nome-da-empresa`.
+Domínio próprio do cliente: preencha em Admin → Empresas → Editar e aponte o DNS do domínio para o servidor.
+
+## Estúdio IA (criação de site no estilo Lovable)
+Admin → Empresas → **Estúdio** (ou a própria empresa, se o plano tiver "Permite IA" e você ligar
+"Estúdio IA para as empresas" em Configurações):
+- **Novo site**: descreva o negócio (o botão "Melhorar descrição com IA" ajuda), escolha um estilo visual
+  ou "Surpreenda-me" e gere. A IA usa os dados reais cadastrados — serviços e preços, equipe, fotos, endereço,
+  horário — e cria as páginas com agendamento, avaliações e contato funcionando de verdade.
+- **Conversa**: peça ajustes em português ("troque a cor para verde", "adicione uma seção de perguntas
+  frequentes") — cada pedido vira uma nova versão.
+- **Versões**: volte para qualquer versão anterior com um clique.
+- **Pré-visualização** em computador, tablet e celular; editor de código; botão Publicar.
+- Provedores: Google Gemini (tem plano gratuito) ou Anthropic Claude (modelo padrão `claude-opus-5-5`, configurável).
+  Botão "Testar conexão com a IA" em Configurações.
 
 ## O que já funciona 100%
 - Cadastro/login separado por papel (admin x empresa), com CSRF, recuperação de senha por e-mail e troca de senha.
 - Isolamento de dados: cada empresa só vê seus próprios clientes/agenda/serviços.
-- Verificação de conflito de horário (evita agendamento duplo do mesmo profissional).
+- Agenda inteligente: horário de atendimento por empresa, calendário do site que esconde horários ocupados e
+  checagem de conflito considerando a duração do serviço (não só a hora exata).
 - CRUD de empresas, clientes, serviços, profissionais, pedidos/orçamentos, cupons, agendamentos.
 - Site público com 4 estilos de template (clássico/bold/editorial/grid), banner, blocos de conteúdo livres,
   ordem de seções configurável, SEO, mapa, Analytics — **e pré-visualização ao vivo** em toda tela de edição.
-- **Criador de Site com IA (modo total)**: a empresa escreve um briefing livre sobre o negócio, a IA desenha o
-  HTML/CSS/JS inteiro do site (com animações, layout e cores 100% dela), e o sistema injeta por baixo dos panos
-  as partes que precisam ser reais (agendamento que grava no banco, lista de serviços, avaliações). Fica em
-  Empresa → 🚀 Criador de Site IA.
+- **Estúdio IA** (veja acima).
+- Avaliações deixadas pelos próprios clientes no site, com aprovação da empresa antes de aparecer.
+- Anti-spam nos formulários do site (campo invisível + limite de envios), sem captcha chato.
 - IA (Gemini grátis ou Anthropic paga) usando diferenciais reais do negócio, não texto genérico.
 - Financeiro com geração real de cobrança PIX via Mercado Pago (com token configurado).
 - Relatórios de receita e ranking de empresas por faturamento.
@@ -80,7 +101,12 @@ um arquivo `.htaccess` na pasta `site/` com regra de rewrite (posso gerar se qui
   (link direto), mas envio automático de mensagens requer token configurado.
 
 ## Segurança
-- Senhas são armazenadas com hash (`password_hash`), nunca em texto puro.
+- **Rode o `adicional_11_rls_seguranca.sql`.** Sem ele, qualquer pessoa com a "anon key" do Supabase
+  (que é pública) consegue ler as tabelas pela API REST do Supabase — inclusive chaves de API e hashes de senha.
+- Todo formulário e link de ação do painel tem proteção CSRF (verificada automaticamente em `exigir_login`).
+- Pastas `includes/`, `config/` e `sql/` bloqueadas para acesso pelo navegador (`.htaccess`).
+- Erros de banco não mostram mais host/usuário na tela (vão para o log do servidor).
+- Senhas são armazenadas com hash (`password_hash`), nunca em texto puro (mínimo de 8 caracteres).
 - Todas as queries usam prepared statements (proteção contra SQL Injection).
 - Saída de dados do usuário é escapada (`htmlspecialchars`) contra XSS.
 - **Apague `install.php` depois de usar.**
