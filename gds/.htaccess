@@ -1,0 +1,7 @@
+RewriteEngine On
+
+# URL bonita: sitegestor.com/barbearia-do-ze -> site/index.php?slug=barbearia-do-ze
+# Só entra aqui se NÃO for um arquivo/pasta real (admin, empresa, assets, login.php etc continuam normais)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([a-zA-Z0-9\-]+)/?$ site/index.php?slug=$1 [L,QSA]
