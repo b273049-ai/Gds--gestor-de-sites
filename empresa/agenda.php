@@ -133,8 +133,8 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
         <tr>
             <td><strong><?= date('d/m/Y', $ts) ?></strong> <?= date('H:i', $ts) ?><span class="mini"><?= $diasSemana[(int)date('w', $ts)] ?><?= $a['duracao_minutos'] ? ' · ' . (int)$a['duracao_minutos'] . ' min' : '' ?></span></td>
             <td><?= e($a['cliente_nome'] ?? '—') ?><?php if ($a['observacoes']): ?><span class="mini" title="<?= e($a['observacoes']) ?>">📝 <?= e(mb_strimwidth($a['observacoes'], 0, 40, '…')) ?></span><?php endif; ?></td>
-            <td><?= e($a['servico_nome'] ?? '—') ?></td>
-            <td><?= e($a['profissional_nome'] ?? '—') ?></td>
+            <td><?= e($a['servico_nome'] ?? '—') ?><?php if (isset($a['valor']) && $a['valor'] !== null && (float)$a['valor'] > 0): ?><span class="mini">R$ <?= number_format((float)$a['valor'], 2, ',', '.') ?><?= !empty($a['cupom_codigo']) ? ' · cupom ' . e($a['cupom_codigo']) : '' ?></span><?php endif; ?></td>
+            <td><?= e($a['profissional_nome'] ?? '—') ?><?php if (($a['origem'] ?? '') === 'site'): ?><span class="mini">🌐 pelo site</span><?php endif; ?></td>
             <td>
                 <form method="post">
                     <?= csrf_campo() ?><input type="hidden" name="agendamento_id" value="<?= $a['id'] ?>"><input type="hidden" name="atualizar_status" value="1">
@@ -142,6 +142,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
                         <?php foreach ($statusAg as $val => $label): ?><option value="<?= $val ?>" <?= $a['status'] == $val ? 'selected' : '' ?>><?= $label ?></option><?php endforeach; ?>
                     </select>
                 </form>
+                <?php if ($a['status'] === 'cancelado' && !empty($a['cancelado_motivo'])): ?><span class="mini" title="<?= e($a['cancelado_motivo']) ?>"><?= e(mb_strimwidth($a['cancelado_motivo'], 0, 40, '…')) ?></span><?php endif; ?>
             </td>
             <td class="acoes">
                 <?php if ($a['telefone'] && $ts > time() && $a['status'] !== 'cancelado'): ?>

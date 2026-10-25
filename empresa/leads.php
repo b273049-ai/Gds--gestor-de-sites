@@ -38,7 +38,7 @@ $leads->execute([$empresaId]); $leads = $leads->fetchAll();
         <?php foreach ($leads as $l): ?>
         <tr>
             <td><?= date('d/m/Y H:i', strtotime($l['criado_em'])) ?></td>
-            <td><strong><?= e($l['nome']) ?></strong></td>
+            <td><strong><?= e($l['nome']) ?></strong><?php if (!empty($l['assunto'])): ?><span class="mini"><?= e($l['assunto']) ?></span><?php endif; ?></td>
             <td><?php if ($l['email']): ?><a class="link" href="mailto:<?= e($l['email']) ?>"><?= e($l['email']) ?></a><?php endif; ?><?php if ($l['telefone']): ?><span class="mini"><a class="link" target="_blank" href="<?= e(link_whatsapp($l['telefone'], 'Olá, ' . $l['nome'] . '! Recebemos sua mensagem pelo site.')) ?>"><?= e($l['telefone']) ?></a></span><?php endif; ?></td>
             <td style="max-width:380px;white-space:pre-wrap"><?= e($l['mensagem']) ?></td>
             <td class="acoes">

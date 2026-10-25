@@ -1,0 +1,94 @@
+<?php
+// Página do cliente final: ver os detalhes do agendamento e cancelar, pelo link recebido na confirmação
+session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
+session_start();
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/site_render.php';
+if (!function_exists('e')) { function e($s) { return htmlspecialchars((string)($s ?? ''), ENT_QUOTES, 'UTF-8'); } }
+header('X-Robots-Tag: noindex');
+
+$token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['t'] ?? $_POST['t'] ?? ''));
+$ag = false;
+if (strlen($token) === 32) {
+    try {
+        $st = $pdo->prepare("SELECT a.*, c.nome AS cliente_nome, s.nome AS servico_nome, s.duracao_minutos, p.nome AS profissional_nome,
+                e.nome AS empresa_nome, e.slug, e.whatsapp, e.endereco, e.email AS empresa_email, e.notificar_email, si.cor_primaria, si.ia_tema, si.html_gerado, si.ia_modo_total
+            FROM agendamentos a JOIN empresas e ON e.id = a.empresa_id JOIN sites si ON si.empresa_id = e.id
+            LEFT JOIN clientes c ON c.id = a.cliente_id LEFT JOIN servicos s ON s.id = a.servico_id LEFT JOIN profissionais p ON p.id = a.profissional_id
+            WHERE a.token = ? LIMIT 1");
+        $st->execute([$token]);
+        $ag = $st->fetch();
+    } catch (PDOException $e) { $ag = false; }
+}
+
+$msg = '';
+if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['cancelar'])) {
+    if (!hash_equals($_SESSION['gds_cancel_csrf'] ?? '', (string)($_POST['k'] ?? ''))) {
+        $msg = 'Página expirada. Tente de novo.';
+    } elseif (in_array($ag['status'], ['cancelado', 'concluido'], true) || strtotime($ag['data_hora']) < time()) {
+        $msg = 'Este agendamento não pode mais ser cancelado.';
+    } else {
+        $motivo = mb_substr(trim(strip_tags((string)($_POST['motivo'] ?? ''))), 0, 255);
+        $pdo->prepare("UPDATE agendamentos SET status='cancelado', cancelado_motivo=? WHERE id=?")->execute([$motivo ?: 'Cancelado pelo cliente no site', $ag['id']]);
+        site_notificar_empresa(['nome' => $ag['empresa_nome'], 'email' => $ag['empresa_email'], 'notificar_email' => $ag['notificar_email']],
+            'Agendamento cancelado: ' . $ag['cliente_nome'] . ' — ' . date('d/m H:i', strtotime($ag['data_hora'])),
+            [$ag['cliente_nome'] . ' cancelou o agendamento de ' . date('d/m/Y \à\s H:i', strtotime($ag['data_hora'])) . ($ag['servico_nome'] ? ' (' . $ag['servico_nome'] . ')' : '') . '.', $motivo ? 'Motivo: ' . $motivo : '']);
+        $ag['status'] = 'cancelado';
+        $msg = 'ok';
+    }
+}
+$_SESSION['gds_cancel_csrf'] = bin2hex(random_bytes(16));
+
+$tema = $ag ? site_tema($ag) : ['accent' => '#2563eb'];
+$statusTxt = ['agendado' => 'Aguardando confirmação', 'confirmado' => 'Confirmado', 'concluido' => 'Concluído', 'cancelado' => 'Cancelado'];
+$ts = $ag ? strtotime($ag['data_hora']) : 0;
+$podeCancelar = $ag && !in_array($ag['status'], ['cancelado', 'concluido'], true) && $ts > time();
+?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title><?= $ag ? 'Seu agendamento — ' . e($ag['empresa_nome']) : 'Agendamento não encontrado' ?></title>
+<?= frag_css_apoio($tema) ?>
+<style>body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f4f5f8;color:#1c1f2b;display:flex;justify-content:center;padding:32px 16px}main{width:100%;max-width:520px}</style>
+</head>
+<body>
+<main class="gds-c">
+<?php if (!$ag): ?>
+    <div class="gds-card" style="background:#fff"><h3>Agendamento não encontrado</h3><p class="gds-mute" style="margin-top:8px">Confira se o link está completo.</p></div>
+<?php else: ?>
+    <div class="gds-card" style="background:#fff">
+        <p class="gds-mute" style="font-size:.85rem"><?= e($ag['empresa_nome']) ?></p>
+        <h3 style="font-size:1.4rem;margin:4px 0 14px">Seu agendamento</h3>
+        <?php if ($msg === 'ok'): ?><div class="gds-alerta gds-alerta-ok">Agendamento cancelado. Avisamos a empresa.</div>
+        <?php elseif ($msg): ?><div class="gds-alerta gds-alerta-erro"><?= e($msg) ?></div><?php endif; ?>
+        <div class="gds-resumo">
+            <div><span>Situação</span><span><?= e($statusTxt[$ag['status']] ?? $ag['status']) ?></span></div>
+            <?php if ($ag['servico_nome']): ?><div><span>Serviço</span><span><?= e($ag['servico_nome']) ?></span></div><?php endif; ?>
+            <?php if ($ag['profissional_nome']): ?><div><span>Profissional</span><span><?= e($ag['profissional_nome']) ?></span></div><?php endif; ?>
+            <div><span>Quando</span><span><?= date('d/m/Y \à\s H:i', $ts) ?></span></div>
+            <?php if ($ag['endereco']): ?><div><span>Onde</span><span><?= e($ag['endereco']) ?></span></div><?php endif; ?>
+            <?php if ($ag['valor'] !== null && (float)$ag['valor'] > 0): ?><div class="gds-total"><span>Valor</span><span>R$ <?= number_format((float)$ag['valor'], 2, ',', '.') ?></span></div><?php endif; ?>
+        </div>
+        <div class="gds-acoes">
+            <?php if ($ag['status'] !== 'cancelado' && $ts > time()): ?>
+            <a class="gds-btn-2" target="_blank" rel="noopener" href="<?= e(gerar_link_google_calendar(($ag['servico_nome'] ?: 'Agendamento') . ' - ' . $ag['empresa_nome'], $ag['data_hora'], $ag['duracao_minutos'] ?: 30, '', $ag['endereco'] ?? '')) ?>"><?= frag_icone('calend') ?> Google Agenda</a>
+            <?php endif; ?>
+            <?php if ($ag['whatsapp']): ?><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="<?= e(frag_link_whatsapp($ag['whatsapp'], 'Olá! Sobre o meu agendamento de ' . date('d/m \à\s H:i', $ts) . ' (' . $ag['cliente_nome'] . '):')) ?>"><?= frag_icone('whats') ?> Falar com a empresa</a><?php endif; ?>
+            <?php if ($ag['endereco']): ?><a class="gds-btn-2" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=<?= urlencode($ag['endereco']) ?>"><?= frag_icone('rota') ?> Como chegar</a><?php endif; ?>
+        </div>
+        <?php if ($podeCancelar): ?>
+        <details style="margin-top:22px"><summary class="gds-btn-2" style="color:var(--gds-erro)">Preciso cancelar</summary>
+            <form method="post" style="margin-top:14px">
+                <input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_cancel_csrf']) ?>">
+                <div class="gds-campo"><label for="motivo">Motivo (opcional)</label><input type="text" id="motivo" name="motivo" maxlength="255"></div>
+                <button type="submit" name="cancelar" value="1" class="gds-btn" style="background:var(--gds-erro);color:#fff" onclick="return confirm('Cancelar este agendamento?')">Confirmar cancelamento</button>
+            </form>
+        </details>
+        <?php endif; ?>
+        <p style="margin-top:22px;font-size:.88rem"><a href="/<?= e($ag['slug']) ?>#agendar">Fazer um novo agendamento</a></p>
+    </div>
+<?php endif; ?>
+</main>
+</body>
+</html>

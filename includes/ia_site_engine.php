@@ -13,7 +13,7 @@
 
 require_once __DIR__ . '/ia_helper.php';
 
-const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{WHATSAPP_FLOAT}}'];
+const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}'];
 const IA_MARCADORES_OBRIGATORIOS = ['{{CONTATO}}'];
 
 function ia_direcoes_visuais() {
@@ -131,9 +131,10 @@ Responda APENAS com JSON válido (sem markdown), exatamente neste formato:
 
 Regras:
 - "paginas": de 3 a 6 páginas. A primeira é sempre "inicio". Chaves em minúsculo sem acento.
-- "marcadores": escolha entre {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{WHATSAPP_FLOAT}},
+- "marcadores": escolha entre {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}},
   só os que fazem sentido. {{CONTATO}} é obrigatório. {{AGENDAMENTO}} só se o negócio marca horário com clientes.
-  {{EQUIPE}} só se houver equipe cadastrada; {{GALERIA}} só se houver fotos; {{CUPONS}} só se houver cupons; {{MAPA}} só se houver endereço.
+  {{EQUIPE}} só se houver equipe cadastrada; {{GALERIA}} só se houver fotos; {{CUPONS}} só se houver cupons; {{MAPA}} só se houver endereço; {{HORARIOS}} (tabela da semana com "aberto agora") cabe bem junto do contato;
+  {{WHATSAPP_FLOAT}} sempre que houver WhatsApp.
 - A paleta precisa de contraste real entre fundo e texto (WCAG AA), e o destaque deve guiar o olhar.
 PROMPT;
 
@@ -174,15 +175,18 @@ CONTRATO TÉCNICO (obrigatório):
    Os links do menu têm data-page-link="chave". Defina no JS a função global window.gdsMostrarPagina(chave) que troca a
    página visível, marca o link ativo e rola pro topo. Ao carregar, abra a página do #hash da URL se existir.
 5. MARCADORES: cada marcador {{...}} fica sozinho em sua própria linha, dentro de um container seu, e NUNCA dentro de
-   atributo, <a>, <p>, <button> ou <form>. Eles viram HTML real do banco. O {{AGENDAMENTO}} já vem com um calendário
-   clicável completo e funcional — não construa calendário nem formulário seu, só estilize.
-   Classes do conteúdo injetado (crie estilos bonitos para todas): .gds-servico-item (h3, p, .gds-preco, .gds-duracao),
-   .gds-equipe-item (img ou .gds-avatar-fallback, h4, p), .gds-galeria-item (img), .gds-avaliacao-item (strong, .gds-stars, p),
-   .gds-cupom-item, .gds-mapa (iframe), .gds-form (label, input, select, textarea, button), .gds-msg-sucesso, .gds-msg-erro,
-   .gds-confirmacao, .gds-btn-secundario, .gds-whatsapp-float (botão flutuante fixo), e do calendário: .gds-calendario,
-   .gds-cal-header, .gds-cal-dias-semana, .gds-cal-grid, .gds-cal-dia, .gds-cal-dia-selecionado, .gds-cal-dia-passado,
-   .gds-horarios, .gds-horario, .gds-horario-selecionado, .gds-horario-ocupado.
-   Não escreva você mesmo listas de serviços, equipe, avaliações ou formulários — isso vem dos marcadores.
+   atributo, <a>, <p>, <button> ou <form>. Na hora de exibir, cada um vira um COMPONENTE PRONTO, já com design
+   profissional próprio que herda a sua fonte e a cor do texto e usa a cor de destaque da paleta:
+   {{SERVICOS}} = cartões de serviço com preço, duração e botão "Agendar" | {{AGENDAMENTO}} = agendamento passo a passo
+   (serviço → profissional → calendário com horários livres → dados) | {{CONTATO}} = canais (WhatsApp, telefone,
+   e-mail, endereço) + formulário | {{EQUIPE}} = cartões da equipe | {{AVALIACOES}} = nota média + depoimentos +
+   formulário | {{GALERIA}} = grade com ampliação | {{CUPONS}} = cupons | {{MAPA}} = mapa com "Como chegar" |
+   {{HORARIOS}} = horário da semana | {{WHATSAPP_FLOAT}} = botão flutuante do WhatsApp.
+   Por isso: NÃO estilize classes que começam com "gds-" e NÃO crie você mesmo listas de serviços, equipe, avaliações,
+   formulários, calendário, mapa ou botão de WhatsApp — só dê a cada componente uma seção com título, um respiro
+   (padding) e largura máxima confortável (ex.: max-width 1100px; agendamento ~760px). O site deve ter a âncora/
+   página "agendar" para o {{AGENDAMENTO}}: os botões "Agendar" dos serviços levam até ele sozinhos.
+   Os seus botões de chamada (ex.: "Agendar horário" do topo) devem levar à página do {{AGENDAMENTO}} (ou {{CONTATO}}).
 6. MOBILE-FIRST: sem largura fixa que quebre abaixo de 400px; títulos com clamp(); toque mínimo 44x44px; inputs com
    font-size >= 16px; nada de rolagem horizontal em 360px; menu vira hambúrguer acessível no celular.
 7. Acessibilidade: contraste AA, foco visível (:focus-visible), botões de verdade (<button>) para ações, textos alternativos
@@ -257,7 +261,7 @@ DADOS REAIS DO NEGÓCIO (para consulta, se o pedido precisar):
 $dados
 
 Marcadores que existem hoje e DEVEM continuar no resultado (a menos que o pedido seja explicitamente removê-los): $lista
-Marcadores que podem ser adicionados se o pedido pedir: {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{WHATSAPP_FLOAT}}
+Marcadores que podem ser adicionados se o pedido pedir: {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}}
 
 $regras
 
@@ -378,5 +382,19 @@ function ia_aplicar_html_no_site($empresaId, $html, $briefing = null) {
     } else {
         $pdo->prepare("UPDATE sites SET html_gerado=?, ia_modo_total=true, atualizado_em=NOW() WHERE empresa_id=?")
             ->execute([$html, $empresaId]);
+    }
+}
+
+// Guarda as cores do design (os componentes do site — agendamento, serviços, contato — usam a mesma cor de destaque)
+function ia_salvar_tema($empresaId, $plano) {
+    global $pdo;
+    $p = (array)($plano['paleta'] ?? []);
+    $accent = $p['destaque'] ?? (array_values($p)[3] ?? null);
+    if (!is_string($accent) || !preg_match('/^#[0-9a-fA-F]{6}$/', $accent)) return;
+    try {
+        $pdo->prepare("UPDATE sites SET ia_tema=? WHERE empresa_id=?")
+            ->execute([json_encode(['accent' => $accent, 'fundo' => $p['fundo'] ?? null, 'texto' => $p['texto'] ?? null]), $empresaId]);
+    } catch (PDOException $e) {
+        // banco sem a coluna (adicional_12): os componentes usam a cor achada no CSS do site
     }
 }
