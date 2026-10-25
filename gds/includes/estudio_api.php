@@ -117,6 +117,7 @@ switch ($acao) {
         $versaoId = ia_salvar_versao($empresaId, $r['html'], 'geracao', 'Site gerado — estilo ' . $plano['direcao_nome'], $usuarioId,
             ['direcao' => $plano['direcao_chave'], 'conceito' => $plano['conceito'] ?? '']);
         ia_aplicar_html_no_site($empresaId, $r['html'], $guardado['briefing']);
+        ia_salvar_tema($empresaId, $plano);
         ia_registrar_mensagem($empresaId, 'usuario', $guardado['briefing']);
         ia_registrar_mensagem($empresaId, 'ia', 'Criei um site novo no estilo "' . $plano['direcao_nome'] . '". Conceito: ' . ($plano['conceito'] ?? '') . ' — Peça qualquer ajuste aqui no chat.', $versaoId);
         estudio_log($empresaId, $usuarioId, 'geração — ' . $plano['direcao_nome'], 'HTML com ' . strlen($r['html']) . ' caracteres');
@@ -164,6 +165,14 @@ switch ($acao) {
 
     case 'historico':
         responder_json(['ok' => true, 'versoes' => ia_listar_versoes($empresaId), 'mensagens' => ia_listar_mensagens($empresaId)]);
+
+    case 'tema':
+        $cor = $_POST['accent'] ?? '';
+        if (!preg_match('/^#[0-9a-fA-F]{6}$/', $cor)) responder_json(['ok' => false, 'erro' => 'Cor inválida.']);
+        $tema = json_decode((string)($site['ia_tema'] ?? ''), true) ?: [];
+        $tema['accent'] = $cor;
+        $pdo->prepare("UPDATE sites SET ia_tema=? WHERE empresa_id=?")->execute([json_encode($tema), $empresaId]);
+        responder_json(['ok' => true]);
 
     case 'modo':
         $ativar = ($_POST['ativo'] ?? '') === '1';

@@ -314,3 +314,6 @@ details.form-box[open] > summary { margin-bottom: 6px; }
 .cor-amostra { display: inline-block; width: 16px; height: 16px; border-radius: 4px; vertical-align: middle; border: 1px solid rgba(255,255,255,.15); }
 td.acoes > * { vertical-align: middle; }
 .linha-botoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.cor-botoes { gap: 8px; cursor: pointer; }
+.cor-botoes input[type=color] { width: 22px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; border-radius: 6px; }
+@media (max-width: 640px) { .cor-botoes span { display: none; } }

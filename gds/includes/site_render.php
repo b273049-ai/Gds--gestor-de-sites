@@ -2,8 +2,7 @@
 // ============================================================
 // RENDERIZAÇÃO DO SITE PÚBLICO (uma só implementação, usada pelo
 // site de verdade em site/index.php e pela pré-visualização em
-// site/preview.php — antes eram dois códigos diferentes que saíam
-// do sincronismo).
+// site/preview.php).
 // ============================================================
 require_once __DIR__ . '/site_fragmentos.php';
 require_once __DIR__ . '/agenda_helper.php';
@@ -11,7 +10,7 @@ require_once __DIR__ . '/agenda_helper.php';
 const SITE_SQL_BASE = "
     SELECT e.*, s.titulo, s.subtitulo, s.sobre, s.publicado, s.cor_primaria, s.cor_secundaria,
            s.galeria_imagens, s.seo_titulo, s.seo_descricao, s.layout, s.secoes, s.banner_imagem,
-           s.html_gerado, s.ia_modo_total,
+           s.html_gerado, s.ia_modo_total, s.ia_tema,
            seg.nome AS segmento_nome, pl.permite_pix
     FROM empresas e
     JOIN sites s ON s.empresa_id = e.id
@@ -19,29 +18,64 @@ const SITE_SQL_BASE = "
     LEFT JOIN planos pl ON pl.id = e.plano_id
 ";
 
+// Busca a empresa do site; se o banco ainda não tiver a coluna nova, cai na consulta antiga
+function site_buscar_empresa($where, $param) {
+    global $pdo;
+    try {
+        $st = $pdo->prepare(SITE_SQL_BASE . " WHERE $where LIMIT 1");
+        $st->execute([$param]);
+        return $st->fetch();
+    } catch (PDOException $e) {
+        $st = $pdo->prepare(str_replace(', s.ia_tema', ', NULL AS ia_tema', SITE_SQL_BASE) . " WHERE $where LIMIT 1");
+        $st->execute([$param]);
+        return $st->fetch();
+    }
+}
+
 function site_carregar_dados($empresa) {
     global $pdo;
     $id = $empresa['id'];
-    $q = function ($sql) use ($pdo, $id) { $s = $pdo->prepare($sql); $s->execute([$id]); return $s->fetchAll(); };
+    $q = function ($sql, $alternativa = null) use ($pdo, $id) {
+        try { $s = $pdo->prepare($sql); $s->execute([$id]); return $s->fetchAll(); }
+        catch (PDOException $e) { if (!$alternativa) throw $e; $s = $pdo->prepare($alternativa); $s->execute([$id]); return $s->fetchAll(); }
+    };
     $d = [];
-    $d['servicos'] = $q("SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY nome");
+    $d['servicos'] = $q("SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY destaque DESC, ordem, nome",
+                        "SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY nome");
     $d['profissionais'] = $q("SELECT * FROM profissionais WHERE empresa_id=? AND ativo=true ORDER BY nome");
     $d['cupons'] = $q("SELECT * FROM cupons WHERE empresa_id=? AND ativo=true AND (validade IS NULL OR validade >= CURRENT_DATE)");
     $d['blocos'] = $q("SELECT * FROM site_blocos WHERE empresa_id=? AND ativo=true ORDER BY ordem, id");
-    try {
-        $d['avaliacoes'] = $q("SELECT av.nota, av.comentario, COALESCE(NULLIF(av.nome_autor,''), c.nome, 'Cliente') AS autor
+    $d['avaliacoes'] = $q("SELECT av.nota, av.comentario, av.criado_em, COALESCE(NULLIF(av.nome_autor,''), c.nome, 'Cliente') AS autor
             FROM avaliacoes av LEFT JOIN clientes c ON c.id = av.cliente_id
-            WHERE av.empresa_id=? AND COALESCE(av.aprovado, true) ORDER BY av.criado_em DESC LIMIT 8");
-    } catch (PDOException $e) {
-        // banco sem o adicional_10 ainda: colunas novas não existem
-        $d['avaliacoes'] = $q("SELECT av.nota, av.comentario, COALESCE(c.nome, 'Cliente') AS autor FROM avaliacoes av
-            LEFT JOIN clientes c ON c.id = av.cliente_id WHERE av.empresa_id=? ORDER BY av.criado_em DESC LIMIT 8");
-    }
+            WHERE av.empresa_id=? AND COALESCE(av.aprovado, true) ORDER BY av.criado_em DESC LIMIT 9",
+        "SELECT av.nota, av.comentario, av.criado_em, COALESCE(c.nome, 'Cliente') AS autor FROM avaliacoes av
+            LEFT JOIN clientes c ON c.id = av.cliente_id WHERE av.empresa_id=? ORDER BY av.criado_em DESC LIMIT 9");
+    // Resumo com TODAS as avaliações aprovadas (média e distribuição), não só as 9 exibidas
+    $res = $q("SELECT nota, COUNT(*) c FROM avaliacoes WHERE empresa_id=? AND COALESCE(aprovado, true) GROUP BY nota",
+              "SELECT nota, COUNT(*) c FROM avaliacoes WHERE empresa_id=? GROUP BY nota");
+    $dist = []; $total = 0; $soma = 0;
+    foreach ($res as $r) { $dist[(int)$r['nota']] = (int)$r['c']; $total += (int)$r['c']; $soma += (int)$r['nota'] * (int)$r['c']; }
+    $d['avaliacoes_resumo'] = ['total' => $total, 'media' => $total ? $soma / $total : 0, 'dist' => $dist];
     $d['galeria'] = array_values(array_filter(array_map('trim', explode(',', $empresa['galeria_imagens'] ?? ''))));
     $d['maps_key'] = trim(get_config('google_maps_key', ''));
     $d['analytics_id'] = trim(get_config('google_analytics_id', ''));
-    $d['agenda'] = agenda_config($empresa);
+    $d['agenda'] = agenda_config($empresa) + ['tem_cupons' => !empty($d['cupons'])];
+    $d['status'] = agenda_status_agora($empresa);
+    $d['tema'] = site_tema($empresa);
     return $d;
+}
+
+// Cor de destaque dos componentes: a do design da IA, ou a escolhida no painel
+function site_tema($empresa) {
+    $tema = json_decode((string)($empresa['ia_tema'] ?? ''), true) ?: [];
+    $valida = fn($c) => is_string($c) && preg_match('/^#[0-9a-fA-F]{6}$/', $c);
+    $usaIa = pg_bool($empresa['ia_modo_total'] ?? false) && !empty($empresa['html_gerado']);
+    if ($usaIa && !$valida($tema['accent'] ?? null)) {
+        // Site gerado antes de guardarmos o tema: tenta achar a cor de destaque no próprio CSS
+        if (preg_match('/--(?:accent|acento|destaque|primary|primaria|ac|cor-destaque|brand)\s*:\s*(#[0-9a-fA-F]{6})\b/i', $empresa['html_gerado'], $m)) $tema['accent'] = $m[1];
+    }
+    if (!$valida($tema['accent'] ?? null)) $tema['accent'] = $valida($empresa['cor_primaria'] ?? null) && strtolower($empresa['cor_primaria']) !== '#1a1a2e' ? $empresa['cor_primaria'] : '#2563eb';
+    return $tema;
 }
 
 function site_estado_vazio() {
@@ -66,6 +100,29 @@ function site_limpar($campo, $max) {
     return mb_substr(trim(strip_tags((string)($_POST[$campo] ?? ''))), 0, $max);
 }
 
+function site_url_base() {
+    $host = preg_replace('/[^a-z0-9.\-:]/i', '', $_SERVER['HTTP_HOST'] ?? 'localhost');
+    return ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https://' : 'http://') . $host;
+}
+
+// Aviso por e-mail para a empresa (agendamento novo, contato novo)
+function site_notificar_empresa($empresa, $assunto, $linhas) {
+    if (empty($empresa['email']) || (isset($empresa['notificar_email']) && !pg_bool($empresa['notificar_email']))) return;
+    $host = preg_replace('/:\d+$/', '', preg_replace('/[^a-z0-9.\-:]/i', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $corpo = "Olá, {$empresa['nome']}!\n\n" . implode("\n", $linhas) . "\n\nVeja no painel: " . site_url_base() . "/empresa/index.php\n\n— GDS · Gestor de Sites";
+    $cab = "From: GDS <nao-responda@$host>\r\nContent-Type: text/plain; charset=UTF-8";
+    @mail($empresa['email'], '=?UTF-8?B?' . base64_encode($assunto) . '?=', $corpo, $cab);
+}
+
+function site_cupom_valido($empresaId, $codigo) {
+    global $pdo;
+    $codigo = strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', (string)$codigo));
+    if ($codigo === '') return null;
+    $st = $pdo->prepare("SELECT codigo, desconto_percentual FROM cupons WHERE empresa_id=? AND UPPER(codigo)=? AND ativo=true AND (validade IS NULL OR validade >= CURRENT_DATE) LIMIT 1");
+    $st->execute([$empresaId, $codigo]);
+    return $st->fetch() ?: false;
+}
+
 function site_processar_post($empresa, $dados) {
     global $pdo;
     $estado = site_estado_vazio();
@@ -74,18 +131,24 @@ function site_processar_post($empresa, $dados) {
     // ---------- CONTATO (gera lead) ----------
     if (isset($_POST['enviar_lead'])) {
         $nome = site_limpar('nome', 120); $email = site_limpar('email', 150);
-        $tel = site_limpar('telefone', 20); $msg = site_limpar('mensagem', 2000);
+        $tel = site_limpar('telefone', 20); $msg = site_limpar('mensagem', 2000); $assunto = site_limpar('assunto', 80);
         $estado['pagina_forcada'] = 'contato';
         if (site_eh_spam()) { $estado['lead'] = ['ok' => true, 'nome' => $nome]; return $estado; } // finge sucesso pro robô
         if ($nome === '' || $msg === '') {
             $estado['lead'] = ['erro' => 'Preencha seu nome e a mensagem.', 'post' => $_POST];
-        } elseif ($email === '' && $tel === '') {
-            $estado['lead'] = ['erro' => 'Informe um e-mail ou telefone para podermos responder.', 'post' => $_POST];
+        } elseif ($email === '' && strlen(preg_replace('/\D/', '', $tel)) < 10) {
+            $estado['lead'] = ['erro' => 'Informe seu WhatsApp (com DDD) ou e-mail para podermos responder.', 'post' => $_POST];
         } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $estado['lead'] = ['erro' => 'E-mail inválido.', 'post' => $_POST];
         } else {
-            $pdo->prepare("INSERT INTO leads (empresa_id, nome, email, telefone, mensagem) VALUES (?,?,?,?,?)")
-                ->execute([$empresa['id'], $nome, $email ?: null, $tel ?: null, $msg]);
+            try {
+                $pdo->prepare("INSERT INTO leads (empresa_id, nome, email, telefone, mensagem, assunto) VALUES (?,?,?,?,?,?)")
+                    ->execute([$empresa['id'], $nome, $email ?: null, $tel ?: null, $msg, $assunto ?: null]);
+            } catch (PDOException $e) {
+                $pdo->prepare("INSERT INTO leads (empresa_id, nome, email, telefone, mensagem) VALUES (?,?,?,?,?)")
+                    ->execute([$empresa['id'], $nome, $email ?: null, $tel ?: null, ($assunto ? "[$assunto] " : '') . $msg]);
+            }
+            site_notificar_empresa($empresa, "Nova mensagem pelo site: $nome", ["$nome mandou uma mensagem pelo site" . ($assunto ? " ($assunto)" : '') . ':', '', $msg, '', 'WhatsApp/telefone: ' . ($tel ?: '-'), 'E-mail: ' . ($email ?: '-')]);
             $estado['lead'] = ['ok' => true, 'nome' => $nome];
         }
         return $estado;
@@ -119,19 +182,22 @@ function site_processar_post($empresa, $dados) {
         $dataHora = (string)($_POST['ag_data_hora'] ?? '');
         $erro = '';
 
-        // Serviço e profissional precisam ser DESTA empresa (antes aceitava id de qualquer empresa)
+        // Serviço e profissional precisam ser DESTA empresa
         $servico = null; $profissional = null;
         $servicoId = (int)($_POST['ag_servico_id'] ?? 0);
         $profId = (int)($_POST['ag_profissional_id'] ?? 0);
         foreach ($dados['servicos'] as $s) if ((int)$s['id'] === $servicoId) $servico = $s;
         foreach ($dados['profissionais'] as $p) if ((int)$p['id'] === $profId) $profissional = $p;
+        $cupom = null;
+        if (trim($_POST['ag_cupom'] ?? '') !== '') $cupom = site_cupom_valido($empresa['id'], $_POST['ag_cupom']);
 
         if (site_eh_spam()) { $erro = 'Não foi possível enviar agora. Tente novamente em alguns minutos.'; }
-        elseif ($nome === '' || $tel === '') { $erro = 'Preencha seu nome e telefone.'; }
-        elseif (strlen(preg_replace('/\D/', '', $tel)) < 10) { $erro = 'Telefone inválido — use DDD + número.'; }
+        elseif ($nome === '' || $tel === '') { $erro = 'Preencha seu nome e WhatsApp.'; }
+        elseif (strlen(preg_replace('/\D/', '', $tel)) < 10) { $erro = 'WhatsApp inválido — use DDD + número.'; }
         elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) { $erro = 'E-mail inválido.'; }
         elseif (!empty($dados['servicos']) && !$servico) { $erro = 'Escolha um serviço.'; }
         elseif ($profId && !$profissional) { $erro = 'Profissional inválido.'; }
+        elseif ($cupom === false) { $erro = 'Esse cupom não existe ou já venceu. Apague o campo para continuar sem cupom.'; }
         else {
             $duracao = $servico && (int)$servico['duracao_minutos'] > 0 ? (int)$servico['duracao_minutos'] : $dados['agenda']['intervalo'];
             $erro = agenda_validar($empresa, $dataHora, $duracao, $profissional ? (int)$profissional['id'] : null);
@@ -139,6 +205,9 @@ function site_processar_post($empresa, $dados) {
         if ($erro !== '') { $estado['agendamento'] = ['erro' => $erro, 'post' => $_POST]; return $estado; }
 
         $dataSql = str_replace('T', ' ', $dataHora) . ':00';
+        $preco = $servico ? (float)$servico['preco'] : 0;
+        $valor = $cupom ? round($preco * (1 - (float)$cupom['desconto_percentual'] / 100), 2) : $preco;
+        $token = bin2hex(random_bytes(16));
         try {
             $pdo->beginTransaction();
             // Trava por empresa: dois clientes clicando no mesmo horário ao mesmo tempo não geram agendamento duplo
@@ -148,16 +217,26 @@ function site_processar_post($empresa, $dados) {
 
             $clienteId = null;
             $telDig = preg_replace('/\D/', '', $tel);
-            $busca = $pdo->prepare("SELECT id FROM clientes WHERE empresa_id=? AND ((? <> '' AND email=?) OR regexp_replace(COALESCE(telefone,''), '\D', '', 'g') = ?) LIMIT 1");
+            $busca = $pdo->prepare("SELECT id FROM clientes WHERE empresa_id=? AND ((? <> '' AND LOWER(email)=LOWER(?)) OR right(regexp_replace(COALESCE(telefone,''), '\D', '', 'g'), 11) = right(?, 11)) LIMIT 1");
             $busca->execute([$empresa['id'], $email, $email, $telDig]);
-            if ($ex = $busca->fetch()) { $clienteId = $ex['id']; }
-            else {
+            if ($ex = $busca->fetch()) {
+                $clienteId = $ex['id'];
+            } else {
                 $novo = $pdo->prepare("INSERT INTO clientes (empresa_id, nome, email, telefone) VALUES (?,?,?,?) RETURNING id");
                 $novo->execute([$empresa['id'], $nome, $email ?: null, $tel]);
                 $clienteId = $novo->fetch()['id'];
             }
-            $ins = $pdo->prepare("INSERT INTO agendamentos (empresa_id, cliente_id, servico_id, profissional_id, data_hora, status, observacoes) VALUES (?,?,?,?,?,'agendado',?) RETURNING id");
-            $ins->execute([$empresa['id'], $clienteId, $servico['id'] ?? null, $profissional['id'] ?? null, $dataSql, $obs ?: null]);
+            $pdo->exec('SAVEPOINT antes_insert');
+            try {
+                $ins = $pdo->prepare("INSERT INTO agendamentos (empresa_id, cliente_id, servico_id, profissional_id, data_hora, status, observacoes, token, valor, cupom_codigo, origem) VALUES (?,?,?,?,?,'agendado',?,?,?,?,'site') RETURNING id");
+                $ins->execute([$empresa['id'], $clienteId, $servico['id'] ?? null, $profissional['id'] ?? null, $dataSql, $obs ?: null, $token, $servico ? $valor : null, $cupom['codigo'] ?? null]);
+            } catch (PDOException $e) {
+                // banco sem as colunas novas (adicional_12): grava o básico
+                $pdo->exec('ROLLBACK TO SAVEPOINT antes_insert');
+                $token = null;
+                $ins = $pdo->prepare("INSERT INTO agendamentos (empresa_id, cliente_id, servico_id, profissional_id, data_hora, status, observacoes) VALUES (?,?,?,?,?,'agendado',?) RETURNING id");
+                $ins->execute([$empresa['id'], $clienteId, $servico['id'] ?? null, $profissional['id'] ?? null, $dataSql, trim(($obs ?: '') . ($cupom ? ' [cupom ' . $cupom['codigo'] . ']' : '')) ?: null]);
+            }
             $agId = $ins->fetch()['id'];
             $pdo->commit();
         } catch (PDOException $e) {
@@ -167,66 +246,101 @@ function site_processar_post($empresa, $dados) {
             return $estado;
         }
 
-        $dataFormatada = date('d/m/Y \à\s H:i', strtotime($dataSql));
+        $dias = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+        $ts = strtotime($dataSql);
+        $dataFormatada = $dias[(int)date('w', $ts)] . ', ' . date('d/m/Y \à\s H:i', $ts);
+        $tituloEvento = ($servico['nome'] ?? 'Agendamento') . ' - ' . $empresa['nome'];
+        $descEvento = 'Agendamento feito pelo site de ' . $empresa['nome'] . ($profissional ? ' com ' . $profissional['nome'] : '');
         $ag = ['ok' => true, 'detalhes' => [
+            'cliente_nome' => $nome,
             'servico_nome' => $servico['nome'] ?? '',
             'profissional_nome' => $profissional['nome'] ?? '',
             'data_formatada' => $dataFormatada,
+            'valor' => $servico && $preco > 0 ? 'R$ ' . number_format($valor, 2, ',', '.') : '',
+            'cupom' => $cupom['codigo'] ?? '',
+            'desconto' => $cupom ? number_format((float)$cupom['desconto_percentual'], 0) : '',
             'empresa_whatsapp' => $empresa['whatsapp'],
-            'link_calendario' => gerar_link_google_calendar(
-                ($servico['nome'] ?? 'Agendamento') . ' - ' . $empresa['nome'], $dataSql, $duracao,
-                'Agendamento feito pelo site de ' . $empresa['nome'], $empresa['endereco'] ?? ''),
+            'link_calendario' => gerar_link_google_calendar($tituloEvento, $dataSql, $duracao, $descEvento, $empresa['endereco'] ?? ''),
+            'ics' => gerar_ics_data_uri($tituloEvento, $dataSql, $duracao, $descEvento, $empresa['endereco'] ?? ''),
+            'link_gerenciar' => $token ? site_url_base() . '/site/agendamento.php?t=' . $token : '',
         ]];
 
         // PIX: se a empresa ativou pagamento online e o serviço tem preço, gera a cobrança de verdade
-        if ($servico && (float)$servico['preco'] > 0 && pg_bool($empresa['pix_ativo'] ?? false) && !empty($empresa['mercadopago_access_token'])) {
+        if ($servico && $valor > 0 && pg_bool($empresa['pix_ativo'] ?? false) && !empty($empresa['mercadopago_access_token'])) {
             require_once __DIR__ . '/mercadopago_helper.php';
-            $cob = gerar_cobranca_pix($empresa['mercadopago_access_token'], $servico['preco'], $servico['nome'] . ' - ' . $empresa['nome'], $email);
+            $cob = gerar_cobranca_pix($empresa['mercadopago_access_token'], $valor, $servico['nome'] . ' - ' . $empresa['nome'], $email);
             if ($cob['ok']) {
                 $pdo->prepare("INSERT INTO pagamentos_clientes (empresa_id, agendamento_id, cliente_id, valor, referencia_gateway) VALUES (?,?,?,?,?)")
-                    ->execute([$empresa['id'], $agId, $clienteId, $servico['preco'], $cob['mp_id']]);
+                    ->execute([$empresa['id'], $agId, $clienteId, $valor, $cob['mp_id']]);
                 $ag['pix'] = ['qr_base64' => $cob['qr_base64'], 'qr_code' => $cob['qr_code']];
             } else {
                 $ag['pix_erro'] = $cob['erro'];
             }
         }
+        site_notificar_empresa($empresa, "Novo agendamento: $nome — " . date('d/m H:i', $ts), [
+            'Novo agendamento pelo site!', '',
+            'Cliente: ' . $nome, 'WhatsApp: ' . $tel . ($email ? ' · ' . $email : ''),
+            'Serviço: ' . ($servico['nome'] ?? '-') . ($ag['detalhes']['valor'] ? ' (' . $ag['detalhes']['valor'] . ($cupom ? ', cupom ' . $cupom['codigo'] : '') . ')' : ''),
+            'Profissional: ' . ($profissional['nome'] ?? 'sem preferência'), 'Quando: ' . $dataFormatada,
+            $obs ? 'Observação: ' . $obs : '',
+        ]);
         $estado['agendamento'] = $ag;
     }
     return $estado;
 }
 
 function site_fragmentos_marcadores($empresa, $dados, $estado) {
+    $temAgenda = str_contains((string)($empresa['html_gerado'] ?? ''), '{{AGENDAMENTO}}') || !pg_bool($empresa['ia_modo_total'] ?? false);
     return [
         '{{SOBRE}}' => frag_sobre($empresa['sobre']),
-        '{{SERVICOS}}' => frag_servicos($dados['servicos']),
-        '{{EQUIPE}}' => frag_equipe($dados['profissionais']),
+        '{{SERVICOS}}' => frag_servicos($dados['servicos'], ['agendamento' => $temAgenda, 'whatsapp' => $empresa['whatsapp']]),
+        '{{EQUIPE}}' => frag_equipe($dados['profissionais'], $temAgenda),
         '{{GALERIA}}' => frag_galeria($dados['galeria'], $empresa['nome']),
-        '{{AGENDAMENTO}}' => frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $dados['agenda'], $empresa['id']),
-        '{{AVALIACOES}}' => frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao']),
-        '{{CONTATO}}' => frag_contato($estado['lead']),
+        '{{AGENDAMENTO}}' => frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $dados['agenda'], $empresa),
+        '{{AVALIACOES}}' => frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao'], true, $dados['avaliacoes_resumo']),
+        '{{CONTATO}}' => frag_contato($estado['lead'], $empresa, $dados['status']),
         '{{MAPA}}' => frag_mapa($empresa['endereco'], $dados['maps_key']),
         '{{CUPONS}}' => frag_cupons($dados['cupons']),
-        '{{WHATSAPP_FLOAT}}' => frag_whatsapp_float($empresa['whatsapp']),
+        '{{HORARIOS}}' => frag_horarios($dados['agenda'], $dados['status']),
+        '{{WHATSAPP_FLOAT}}' => site_mostrar_whatsapp_float($empresa) ? frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $empresa['nome']) : '',
     ];
+}
+
+function site_mostrar_whatsapp_float($empresa) {
+    return !isset($empresa['whatsapp_flutuante']) || $empresa['whatsapp_flutuante'] === null || pg_bool($empresa['whatsapp_flutuante']);
+}
+
+// Dados estruturados para o Google (negócio local, serviços, avaliações, horário)
+function site_json_ld($empresa, $dados) {
+    $nomesDias = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    $ag = $dados['agenda'];
+    $ld = ['@context' => 'https://schema.org', '@type' => 'LocalBusiness', 'name' => $empresa['nome'], 'url' => site_url_base() . '/' . $empresa['slug']];
+    if (!empty($empresa['seo_descricao'])) $ld['description'] = $empresa['seo_descricao'];
+    if (!empty($empresa['endereco'])) $ld['address'] = $empresa['endereco'];
+    if (!empty($empresa['telefone']) || !empty($empresa['whatsapp'])) $ld['telephone'] = $empresa['telefone'] ?: $empresa['whatsapp'];
+    if (!empty($empresa['logo'])) $ld['image'] = $empresa['logo'];
+    $ld['openingHoursSpecification'] = [[
+        '@type' => 'OpeningHoursSpecification',
+        'dayOfWeek' => array_map(fn($d) => $nomesDias[$d], array_map('intval', explode(',', $ag['dias']))),
+        'opens' => $ag['abertura'], 'closes' => $ag['fechamento'],
+    ]];
+    if ($dados['avaliacoes_resumo']['total'] > 0) {
+        $ld['aggregateRating'] = ['@type' => 'AggregateRating', 'ratingValue' => round($dados['avaliacoes_resumo']['media'], 1), 'reviewCount' => $dados['avaliacoes_resumo']['total']];
+    }
+    $ofertas = [];
+    foreach (array_slice($dados['servicos'], 0, 30) as $s) {
+        $o = ['@type' => 'Offer', 'itemOffered' => ['@type' => 'Service', 'name' => $s['nome']]];
+        if ((float)$s['preco'] > 0) { $o['price'] = number_format((float)$s['preco'], 2, '.', ''); $o['priceCurrency'] = 'BRL'; }
+        $ofertas[] = $o;
+    }
+    if ($ofertas) $ld['hasOfferCatalog'] = ['@type' => 'OfferCatalog', 'name' => 'Serviços', 'itemListElement' => $ofertas];
+    return '<script type="application/ld+json">' . json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) . '</script>';
 }
 
 function site_script_analytics($id) {
     if (!$id || !preg_match('/^[A-Za-z0-9\-_]+$/', $id)) return '';
     return '<script async src="https://www.googletagmanager.com/gtag/js?id=' . e($id) . '"></script>'
          . "<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','" . e($id) . "');</script>";
-}
-
-// Depois de enviar um formulário, mostra a página onde está a confirmação/erro —
-// funciona com qualquer navegação que a IA tenha escrito (procura o [data-page] pai).
-function site_script_foco_resultado() {
-    return "<script>document.addEventListener('DOMContentLoaded',function(){"
-         . "var alvo=document.querySelector('.gds-confirmacao,.gds-msg-erro');if(!alvo)return;"
-         . "var pag=alvo.closest('[data-page]');"
-         . "if(pag){var k=pag.getAttribute('data-page');"
-         . "if(typeof window.gdsMostrarPagina==='function'){try{window.gdsMostrarPagina(k);}catch(e){}}"
-         . "if(getComputedStyle(pag).display==='none'){document.querySelectorAll('[data-page]').forEach(function(el){el.style.setProperty('display',el===pag?'block':'none','important');});}}"
-         . "setTimeout(function(){alvo.scrollIntoView({behavior:'smooth',block:'center'});},120);"
-         . "});</script>";
 }
 
 function site_script_preview() {
@@ -238,18 +352,19 @@ function site_script_preview() {
 // ------------------------------------------------------------
 function site_render_ia($empresa, $dados, $estado, $preview = false) {
     $html = strtr($empresa['html_gerado'], site_fragmentos_marcadores($empresa, $dados, $estado));
-    $extras = frag_css_apoio();
+    // Site antigo sem o marcador do WhatsApp: o botão entra mesmo assim
+    if (!str_contains($empresa['html_gerado'], '{{WHATSAPP_FLOAT}}') && site_mostrar_whatsapp_float($empresa)) {
+        $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $empresa['nome'])) . '</body>', $html, 1);
+    }
+    $extras = frag_css_apoio($dados['tema']) . site_json_ld($empresa, $dados);
     if (!$preview) $extras .= site_script_analytics($dados['analytics_id']);
     if (stripos($html, '</head>') !== false) {
         $html = preg_replace('/<\/head>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], $extras) . '</head>', $html, 1);
     } else {
         $html = $extras . $html;
     }
-    $fim = site_script_foco_resultado() . ($preview ? site_script_preview() : '');
-    if (stripos($html, '</body>') !== false) {
-        $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], $fim) . '</body>', $html, 1);
-    } else {
-        $html .= $fim;
+    if ($preview) {
+        $html = stripos($html, '</body>') !== false ? preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], site_script_preview()) . '</body>', $html, 1) : $html . site_script_preview();
     }
     return $html;
 }
@@ -279,44 +394,21 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     };
 
     if (trim($empresa['sobre'] ?? '') !== '') $secao('sobre', 'Sobre', '<p class="lead">' . nl2br(e($empresa['sobre'])) . '</p>');
-    if ($dados['servicos']) {
-        $h = '<div class="psite-grid">';
-        foreach ($dados['servicos'] as $s) {
-            $h .= '<div class="psite-item"><h3>' . e($s['nome']) . '</h3><p>' . e($s['descricao']) . '</p><span class="psite-price">' . frag_preco($s['preco']) . '</span>'
-                . ((int)$s['duracao_minutos'] > 0 ? '<span class="psite-dur">' . (int)$s['duracao_minutos'] . ' min</span>' : '') . '</div>';
-        }
-        $secao('servicos', 'Serviços', $h . '</div>');
-    }
-    if ($dados['profissionais']) {
-        $h = '<div class="psite-team">';
-        foreach ($dados['profissionais'] as $p) {
-            $h .= '<div class="psite-person">' . ($p['foto'] ? '<img src="' . e($p['foto']) . '" alt="' . e($p['nome']) . '" loading="lazy">' : '<div class="avatar-fallback">' . e(mb_strtoupper(mb_substr($p['nome'], 0, 1))) . '</div>')
-                . '<h3>' . e($p['nome']) . '</h3><p>' . e($p['especialidade']) . '</p></div>';
-        }
-        $secao('equipe', 'Equipe', $h . '</div>');
-    }
-    if ($dados['galeria']) {
-        $h = '<div class="psite-gallery">';
-        foreach ($dados['galeria'] as $i => $img) $h .= '<img src="' . e($img) . '" alt="Foto ' . ($i + 1) . ' de ' . e($nome) . '" loading="lazy">';
-        $secao('galeria', 'Galeria', $h . '</div>');
-    }
+    $f = site_fragmentos_marcadores($empresa, $dados, $estado);
+    if ($dados['servicos']) $secao('servicos', 'Serviços', $f['{{SERVICOS}}']);
+    if ($dados['profissionais']) $secao('equipe', 'Equipe', $f['{{EQUIPE}}']);
+    if ($dados['galeria']) $secao('galeria', 'Galeria', $f['{{GALERIA}}']);
     if ($dados['blocos']) {
         $h = '';
         foreach ($dados['blocos'] as $b) $h .= '<div class="psite-bloco"><h3>' . e($b['titulo']) . '</h3><p>' . nl2br(e($b['conteudo'])) . '</p></div>';
         $secao('blocos', '', $h, 'Destaques');
     }
-    if ($dados['cupons']) {
-        $h = '<div class="psite-grid psite-grid-cupons">';
-        foreach ($dados['cupons'] as $c) $h .= '<div class="psite-cupom"><strong>' . e($c['codigo']) . '</strong> — ' . number_format((float)$c['desconto_percentual'], 0) . '% de desconto<p>' . e($c['descricao']) . '</p></div>';
-        $secao('cupons', 'Cupons ativos', $h . '</div>');
-    }
-    $mapa = $empresa['endereco'] ? '<div class="psite-mapa">' . frag_mapa($empresa['endereco'], $dados['maps_key']) . '</div>' : '';
-    $agenda = $dados['agenda'];
-    $horario = '<p class="psite-horario">' . psite_icon('relogio') . ' Atendimento ' . e(site_dias_texto($agenda['dias'])) . ', das ' . e($agenda['abertura']) . ' às ' . e($agenda['fechamento']) . '</p>';
-    $secao('agendar', 'Agendar horário', '<div class="psite-form-wrap"><div><p class="lead">Escolha o serviço, o profissional (se quiser) e o melhor horário. Confirmamos com você em seguida.</p>' . $horario . $mapa . '</div><div>'
-        . frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $agenda, $empresa['id']) . '</div></div>', 'Agendar');
-    $secao('avaliacoes', 'Avaliações', frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao']));
-    $secao('contato', 'Contato', frag_contato($estado['lead']));
+    if ($dados['cupons']) $secao('cupons', 'Cupons ativos', $f['{{CUPONS}}']);
+    $secao('agendar', 'Agendar horário', '<p class="lead" style="margin-bottom:22px">Escolha o serviço, o profissional e o melhor horário — leva menos de um minuto.</p>' . $f['{{AGENDAMENTO}}'], 'Agendar');
+    $secao('avaliacoes', 'Avaliações', $f['{{AVALIACOES}}']);
+    $secao('contato', 'Contato', $f['{{CONTATO}}']
+        . ($empresa['endereco'] ? '<div style="margin-top:28px">' . $f['{{MAPA}}'] . '</div>' : '')
+        . '<div style="margin-top:28px;max-width:420px"><h3 style="margin-bottom:12px">Horário de atendimento</h3>' . $f['{{HORARIOS}}'] . '</div>');
 
     $ordemPadrao = ['sobre', 'servicos', 'equipe', 'galeria', 'blocos', 'cupons', 'agendar', 'avaliacoes', 'contato'];
     $ordem = !empty($empresa['secoes']) ? array_values(array_filter(explode(',', $empresa['secoes']))) : $ordemPadrao;
@@ -326,13 +418,10 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     $titulo = $empresa['seo_titulo'] ?: ($empresa['titulo'] ?: $nome);
     $descricao = $empresa['seo_descricao'] ?: ('Conheça ' . $nome . ($empresa['segmento_nome'] ? ' — ' . $empresa['segmento_nome'] : '') . ($empresa['endereco'] ? ' em ' . $empresa['endereco'] : ''));
     $corP = cor_hex_valida_site($empresa['cor_primaria'], '#4f7cff');
+    // O template tem fundo escuro: cor de destaque escura demais (como o antigo padrão #1a1a2e) deixaria os botões invisíveis
+    if (frag_luminancia($corP) < 0.05) $corP = '#4f7cff';
     $corS = cor_hex_valida_site($empresa['cor_secundaria'], '#16213e');
     $ctaAlvo = isset($sec['agendar']) && in_array('agendar', $ordem, true) ? 'agendar' : 'contato';
-
-    $schema = ['@context' => 'https://schema.org', '@type' => 'LocalBusiness', 'name' => $nome, 'description' => $descricao];
-    if ($empresa['endereco']) $schema['address'] = $empresa['endereco'];
-    if ($empresa['telefone'] || $empresa['whatsapp']) $schema['telephone'] = $empresa['telefone'] ?: $empresa['whatsapp'];
-    if ($empresa['logo']) $schema['image'] = $empresa['logo'];
 
     ob_start(); ?>
 <!DOCTYPE html>
@@ -353,7 +442,8 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/assets/css/site-publico.css?v=2">
 <style>:root{ --accent: <?= $corP ?>; --accent-2: <?= $corS ?>; }</style>
-<script type="application/ld+json"><?= json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?></script>
+<?= frag_css_apoio(['accent' => $corP]) ?>
+<?= site_json_ld($empresa, $dados) ?>
 <?= $preview ? '' : site_script_analytics($dados['analytics_id']) ?>
 </head>
 <body class="layout-<?= e($layout) ?>">
@@ -401,7 +491,7 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     <span><?= e($nome) ?><?= $empresa['endereco'] ? ' — ' . e($empresa['endereco']) : '' ?></span>
     <span>© <?= date('Y') ?> · Site por GDS</span>
 </footer>
-<?= frag_whatsapp_float($empresa['whatsapp']) ?>
+<?= site_mostrar_whatsapp_float($empresa) ? frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $nome) : '' ?>
 <script>
 function mostrarPagina(chave) {
     var alvo = document.querySelector('.psite-page[data-page="' + chave + '"]');

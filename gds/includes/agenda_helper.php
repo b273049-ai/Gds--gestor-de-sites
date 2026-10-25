@@ -3,18 +3,51 @@
 // Regras de disponibilidade da agenda (usadas pelo site público,
 // pelo endpoint de horários e pelo painel da empresa).
 // Um horário está ocupado se ele SE SOBREPÕE a outro agendamento
-// (levando em conta a duração do serviço), e não só se começa na
-// mesma hora exata — que era o que o sistema verificava antes.
+// (levando em conta a duração do serviço), à pausa de almoço ou a
+// uma folga cadastrada — e não só se começa na mesma hora exata.
 // ============================================================
 
+function agenda_hm_para_min($hm) {
+    [$h, $m] = array_map('intval', explode(':', substr((string)$hm, 0, 5) . ':0'));
+    return $h * 60 + $m;
+}
+
 function agenda_config($empresa) {
+    $pausaIni = !empty($empresa['pausa_inicio']) ? substr($empresa['pausa_inicio'], 0, 5) : '';
+    $pausaFim = !empty($empresa['pausa_fim']) ? substr($empresa['pausa_fim'], 0, 5) : '';
+    if ($pausaIni === '' || $pausaFim === '' || $pausaFim <= $pausaIni) { $pausaIni = $pausaFim = ''; }
     return [
         'abertura'   => substr($empresa['horario_abertura'] ?? '08:00', 0, 5) ?: '08:00',
         'fechamento' => substr($empresa['horario_fechamento'] ?? '19:00', 0, 5) ?: '19:00',
         'intervalo'  => max(10, (int)($empresa['intervalo_agenda'] ?? 30) ?: 30),
         'dias'       => ($empresa['dias_funcionamento'] ?? '') !== '' && $empresa['dias_funcionamento'] !== null ? $empresa['dias_funcionamento'] : '1,2,3,4,5,6',
         'antecedencia_dias' => (int)($empresa['antecedencia_max_dias'] ?? 60),
+        'pausa_inicio' => $pausaIni,
+        'pausa_fim'    => $pausaFim,
     ];
+}
+
+// Folgas/feriados: [ 'Y-m-d' => [null (empresa toda) | profissional_id, ...] ]
+function agenda_bloqueios($empresaId, $de, $ate) {
+    global $pdo;
+    try {
+        $st = $pdo->prepare("SELECT data, profissional_id FROM agenda_bloqueios WHERE empresa_id=? AND data BETWEEN ?::date AND ?::date");
+        $st->execute([$empresaId, $de, $ate]);
+    } catch (PDOException $e) {
+        return []; // banco ainda sem a tabela (adicional_12)
+    }
+    $r = [];
+    foreach ($st->fetchAll() as $b) $r[$b['data']][] = $b['profissional_id'] ? (int)$b['profissional_id'] : null;
+    return $r;
+}
+
+// Dias do período em que a empresa inteira está fechada (folga/feriado)
+function agenda_dias_fechados($empresaId, $de, $ate) {
+    $fechados = [];
+    foreach (agenda_bloqueios($empresaId, $de, $ate) as $dia => $quem) {
+        if (in_array(null, $quem, true)) $fechados[] = $dia;
+    }
+    return $fechados;
 }
 
 // Agendamentos ativos de um dia: [inicio_min, fim_min, profissional_id]
@@ -30,6 +63,10 @@ function agenda_ocupacoes_do_dia($empresaId, $dataYmd) {
         $t = strtotime($r['data_hora']);
         $ini = (int)date('G', $t) * 60 + (int)date('i', $t);
         $lista[] = [$ini, $ini + (int)$r['dur'], $r['profissional_id'] ? (int)$r['profissional_id'] : null];
+    }
+    // Profissional de folga nesse dia = ocupado o dia inteiro
+    foreach (agenda_bloqueios($empresaId, $dataYmd, $dataYmd)[$dataYmd] ?? [] as $prof) {
+        if ($prof) $lista[] = [0, 24 * 60, $prof];
     }
     return $lista;
 }
@@ -58,19 +95,30 @@ function agenda_intervalo_livre($ocupacoes, $ini, $dur, $profissionalId, $qtdPro
     return $profissionalId ? true : $sobrepostos < $qtdProfissionais;
 }
 
-function agenda_horarios_ocupados($empresa, $dataYmd, $duracao, $profissionalId = null) {
+function agenda_bate_na_pausa($cfg, $ini, $dur) {
+    if ($cfg['pausa_inicio'] === '') return false;
+    $pIni = agenda_hm_para_min($cfg['pausa_inicio']); $pFim = agenda_hm_para_min($cfg['pausa_fim']);
+    return $pIni < $ini + $dur && $ini < $pFim;
+}
+
+// Todos os horários do dia, com a situação de cada um
+function agenda_horarios_do_dia($empresa, $dataYmd, $duracao, $profissionalId = null) {
     $cfg = agenda_config($empresa);
+    if (in_array($dataYmd, agenda_dias_fechados($empresa['id'], $dataYmd, $dataYmd), true)) return ['fechado' => true, 'livres' => [], 'ocupados' => []];
     $oc = agenda_ocupacoes_do_dia($empresa['id'], $dataYmd);
     $qtd = agenda_qtd_profissionais($empresa['id']);
-    [$ah, $am] = array_map('intval', explode(':', $cfg['abertura']));
-    [$fh, $fm] = array_map('intval', explode(':', $cfg['fechamento']));
-    $ocupados = [];
-    for ($m = $ah * 60 + $am; $m + $duracao <= $fh * 60 + $fm; $m += $cfg['intervalo']) {
-        if (!agenda_intervalo_livre($oc, $m, $duracao, $profissionalId, $qtd)) {
-            $ocupados[] = sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
-        }
+    $livres = []; $ocupados = [];
+    for ($m = agenda_hm_para_min($cfg['abertura']); $m + $duracao <= agenda_hm_para_min($cfg['fechamento']); $m += $cfg['intervalo']) {
+        $h = sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
+        if (agenda_bate_na_pausa($cfg, $m, $duracao)) continue; // horário de almoço nem aparece
+        if (agenda_intervalo_livre($oc, $m, $duracao, $profissionalId, $qtd)) $livres[] = $h; else $ocupados[] = $h;
     }
-    return $ocupados;
+    return ['fechado' => false, 'livres' => $livres, 'ocupados' => $ocupados];
+}
+
+// Compatibilidade com quem só precisa da lista de ocupados
+function agenda_horarios_ocupados($empresa, $dataYmd, $duracao, $profissionalId = null) {
+    return agenda_horarios_do_dia($empresa, $dataYmd, $duracao, $profissionalId)['ocupados'];
 }
 
 // Validação completa de um pedido de agendamento. Retorna '' se ok, ou a mensagem de erro.
@@ -84,12 +132,12 @@ function agenda_validar($empresa, $dataHora, $duracao, $profissionalId = null, $
     }
     $diasAbertos = array_map('intval', explode(',', $cfg['dias']));
     if (!in_array((int)$dt->format('w'), $diasAbertos, true)) return 'Não atendemos nesse dia da semana.';
+    if (agenda_dias_fechados($empresa['id'], $dt->format('Y-m-d'), $dt->format('Y-m-d'))) return 'Não vamos atender nesse dia (folga/feriado). Escolha outra data.';
     $ini = (int)$dt->format('G') * 60 + (int)$dt->format('i');
-    [$ah, $am] = array_map('intval', explode(':', $cfg['abertura']));
-    [$fh, $fm] = array_map('intval', explode(':', $cfg['fechamento']));
-    if ($ini < $ah * 60 + $am || $ini + $duracao > $fh * 60 + $fm) {
+    if ($ini < agenda_hm_para_min($cfg['abertura']) || $ini + $duracao > agenda_hm_para_min($cfg['fechamento'])) {
         return 'Fora do horário de atendimento (' . $cfg['abertura'] . ' às ' . $cfg['fechamento'] . ').';
     }
+    if (agenda_bate_na_pausa($cfg, $ini, $duracao)) return 'Esse horário cai na pausa (' . $cfg['pausa_inicio'] . ' às ' . $cfg['pausa_fim'] . '). Escolha outro.';
     $oc = agenda_ocupacoes_do_dia($empresa['id'], $dt->format('Y-m-d'));
     if ($ignorarAgendamentoId) {
         // (usado ao remarcar: o próprio agendamento não conta como conflito)
@@ -107,4 +155,19 @@ function agenda_validar($empresa, $dataHora, $duracao, $profissionalId = null, $
             : 'Esse horário acabou de ser reservado. Escolha outro.';
     }
     return '';
+}
+
+// "Aberto agora" / "Fechado" para mostrar no site
+function agenda_status_agora($empresa) {
+    $cfg = agenda_config($empresa);
+    $agora = (int)date('G') * 60 + (int)date('i');
+    $hoje = date('Y-m-d');
+    $abertoHoje = in_array((int)date('w'), array_map('intval', explode(',', $cfg['dias'])), true)
+        && !agenda_dias_fechados($empresa['id'], $hoje, $hoje);
+    $dentro = $agora >= agenda_hm_para_min($cfg['abertura']) && $agora < agenda_hm_para_min($cfg['fechamento']);
+    $naPausa = $cfg['pausa_inicio'] !== '' && $agora >= agenda_hm_para_min($cfg['pausa_inicio']) && $agora < agenda_hm_para_min($cfg['pausa_fim']);
+    if ($abertoHoje && $dentro && !$naPausa) return ['aberto' => true, 'texto' => 'Aberto agora · fecha às ' . $cfg['fechamento']];
+    if ($abertoHoje && $naPausa) return ['aberto' => false, 'texto' => 'Em pausa · volta às ' . $cfg['pausa_fim']];
+    if ($abertoHoje && $agora < agenda_hm_para_min($cfg['abertura'])) return ['aberto' => false, 'texto' => 'Fechado · abre hoje às ' . $cfg['abertura']];
+    return ['aberto' => false, 'texto' => 'Fechado agora'];
 }

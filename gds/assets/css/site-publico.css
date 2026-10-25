@@ -320,7 +320,7 @@ a { color: inherit; }
 
 /* ---------- v2: horários livres/ocupados, avaliações pelo site, etc. ---------- */
 .psite-brand { text-decoration: none; color: var(--text); }
-.psite-preview-aviso { position: sticky; top: 0; z-index: 999; background: #4f7cff; color: #fff; text-align: center; padding: 6px; font-size: 13px; }
+.psite-preview-aviso { position: relative; z-index: 999; background: #4f7cff; color: #fff; text-align: center; padding: 6px; font-size: 13px; }
 .psite-dur { display: inline-block; margin-left: 10px; font-size: 13px; color: var(--text-dim); }
 .psite-horario { display: flex; align-items: center; gap: 8px; color: var(--text-dim); margin-top: 18px; font-size: 14px; }
 .psite-horario svg { width: 16px; height: 16px; stroke: var(--accent); }

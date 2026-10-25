@@ -1,0 +1,287 @@
+/* ============================================================
+   GDS — componentes funcionais do site público
+   (serviços, agendamento, contato, WhatsApp, equipe, avaliações,
+   galeria, cupons, mapa e horários)
+
+   - Funcionam em qualquer design: herdam a fonte e a cor do texto do
+     site e usam a cor de destaque do tema (--gds-tema-accent).
+   - Funcionam em fundo claro ou escuro (superfícies e bordas são
+     derivadas da cor do texto com color-mix).
+   - Seletores sempre começam em .gds-c para não serem desmontados pelo
+     CSS genérico do site (button{...}, section p{...} etc).
+   ============================================================ */
+
+.gds-c {
+    --gds-accent: var(--gds-tema-accent, #2563eb);
+    --gds-on-accent: var(--gds-tema-on-accent, #ffffff);
+    --gds-line: rgba(128, 128, 128, .28);
+    --gds-soft: rgba(128, 128, 128, .07);
+    --gds-soft-2: rgba(128, 128, 128, .13);
+    --gds-muted: inherit;
+    --gds-ok: #16a34a;
+    --gds-erro: #dc2626;
+    --gds-r: 16px;
+    --gds-r-sm: 10px;
+    box-sizing: border-box;
+    font: inherit;
+    color: inherit;
+    line-height: 1.5;
+    text-align: left;
+    width: 100%;
+}
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+    .gds-c {
+        --gds-line: color-mix(in srgb, currentColor 16%, transparent);
+        --gds-soft: color-mix(in srgb, currentColor 5%, transparent);
+        --gds-soft-2: color-mix(in srgb, currentColor 10%, transparent);
+        --gds-accent-soft: color-mix(in srgb, var(--gds-accent) 14%, transparent);
+    }
+}
+.gds-c *, .gds-c *::before, .gds-c *::after { box-sizing: border-box; }
+.gds-c h3, .gds-c h4, .gds-c p { margin: 0; padding: 0; letter-spacing: normal; text-transform: none; text-shadow: none; }
+.gds-c h3 { font-size: 1.08rem; line-height: 1.3; font-weight: 700; }
+.gds-c h4 { font-size: 1rem; line-height: 1.3; font-weight: 600; }
+.gds-c p { font-size: .95rem; }
+.gds-c img { max-width: 100%; display: block; }
+.gds-c a { color: inherit; }
+.gds-c .gds-mute { opacity: .72; }
+.gds-c .gds-vazio { opacity: .72; padding: 18px 0; }
+.gds-c [hidden] { display: none !important; }
+
+/* ---------- botões ---------- */
+.gds-c .gds-btn, .gds-c button.gds-btn {
+    all: unset; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 46px; padding: 12px 20px; border-radius: 999px;
+    background: var(--gds-accent); color: var(--gds-on-accent);
+    font: inherit; font-weight: 700; font-size: .95rem; line-height: 1.2; text-align: center;
+    cursor: pointer; text-decoration: none; white-space: nowrap;
+    transition: transform .15s ease, box-shadow .2s ease, filter .2s ease, opacity .2s;
+}
+.gds-c .gds-btn:hover { filter: brightness(1.08); box-shadow: 0 8px 22px -8px var(--gds-accent); transform: translateY(-1px); }
+.gds-c .gds-btn:active { transform: scale(.97); }
+.gds-c .gds-btn:focus-visible, .gds-c .gds-btn-2:focus-visible, .gds-c .gds-op:focus-within, .gds-c .gds-dia:focus-visible, .gds-c .gds-hora:focus-visible { outline: 3px solid var(--gds-accent); outline-offset: 2px; }
+.gds-c .gds-btn[disabled], .gds-c .gds-btn[aria-disabled=true] { opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; filter: none; }
+.gds-c .gds-btn-2, .gds-c button.gds-btn-2 {
+    all: unset; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; padding: 10px 18px; border-radius: 999px;
+    border: 1.5px solid var(--gds-line); color: inherit; background: transparent;
+    font: inherit; font-weight: 600; font-size: .92rem; cursor: pointer; text-decoration: none; white-space: nowrap;
+    transition: border-color .2s, background .2s;
+}
+.gds-c .gds-btn-2:hover { border-color: var(--gds-accent); background: var(--gds-soft); }
+.gds-c .gds-btn-wa { background: #25d366; color: #fff; }
+.gds-c .gds-btn-wa:hover { box-shadow: 0 8px 22px -8px #25d366; }
+.gds-c .gds-btn-bloco { width: 100%; }
+.gds-c .gds-ico { width: 18px; height: 18px; flex-shrink: 0; }
+.gds-c .gds-acoes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+/* ---------- cartões e chips ---------- */
+.gds-c .gds-card { border: 1px solid var(--gds-line); border-radius: var(--gds-r); background: var(--gds-soft); padding: 20px; }
+.gds-c .gds-chip { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--gds-soft-2); }
+.gds-c .gds-chip-accent { background: var(--gds-accent); color: var(--gds-on-accent); }
+.gds-c .gds-filtros { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.gds-c .gds-filtro { all: unset; cursor: pointer; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--gds-line); font-size: .9rem; font-weight: 600; }
+.gds-c .gds-filtro[aria-pressed=true] { background: var(--gds-accent); color: var(--gds-on-accent); border-color: var(--gds-accent); }
+
+/* ---------- formulários ---------- */
+.gds-c .gds-campo { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.gds-c .gds-campo label, .gds-c .gds-rotulo { font-size: .85rem; font-weight: 600; opacity: .85; }
+.gds-c input[type=text], .gds-c input[type=tel], .gds-c input[type=email], .gds-c select, .gds-c textarea {
+    all: unset; box-sizing: border-box; display: block; width: 100%;
+    padding: 13px 14px; border-radius: var(--gds-r-sm); border: 1.5px solid var(--gds-line);
+    background: var(--gds-soft); color: inherit; font: inherit; font-size: 16px; line-height: 1.4;
+    transition: border-color .2s, box-shadow .2s;
+}
+.gds-c textarea { min-height: 96px; resize: vertical; white-space: pre-wrap; }
+.gds-c select { cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 20px) 55%, calc(100% - 14px) 55%; background-size: 6px 6px; background-repeat: no-repeat; padding-right: 40px; }
+.gds-c select option { color: #111; background: #fff; }
+.gds-c input:focus, .gds-c select:focus, .gds-c textarea:focus { border-color: var(--gds-accent); box-shadow: 0 0 0 4px var(--gds-accent-soft, rgba(37, 99, 235, .15)); }
+.gds-c input::placeholder, .gds-c textarea::placeholder { opacity: .55; color: inherit; }
+.gds-c .gds-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.gds-c .gds-nota-lgpd { font-size: .78rem; opacity: .65; margin-top: 10px; }
+.gds-c .gds-alerta { padding: 12px 16px; border-radius: var(--gds-r-sm); font-size: .92rem; margin-bottom: 14px; border: 1px solid; }
+.gds-c .gds-alerta-erro { color: var(--gds-erro); border-color: color-mix(in srgb, var(--gds-erro) 40%, transparent); background: color-mix(in srgb, var(--gds-erro) 9%, transparent); }
+.gds-c .gds-alerta-ok { color: var(--gds-ok); border-color: color-mix(in srgb, var(--gds-ok) 40%, transparent); background: color-mix(in srgb, var(--gds-ok) 9%, transparent); }
+.gds-c .gds-honey { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---------- SERVIÇOS ---------- */
+.gds-c .gds-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.gds-c .gds-svc { display: flex; flex-direction: column; border: 1px solid var(--gds-line); border-radius: var(--gds-r); background: var(--gds-soft); overflow: hidden; transition: transform .25s ease, border-color .25s, box-shadow .25s; position: relative; }
+.gds-c .gds-svc:hover { transform: translateY(-3px); border-color: var(--gds-accent); box-shadow: 0 18px 40px -24px var(--gds-accent); }
+.gds-c .gds-svc-img { aspect-ratio: 16 / 10; width: 100%; object-fit: cover; }
+.gds-c .gds-svc-corpo { padding: 18px 18px 0; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.gds-c .gds-svc-topo { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.gds-c .gds-svc-desc { opacity: .78; font-size: .92rem; }
+.gds-c .gds-svc-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 6px; }
+.gds-c .gds-svc-rodape { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 18px; flex-wrap: wrap; }
+.gds-c .gds-preco { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
+.gds-c .gds-preco small { font-size: .72rem; font-weight: 600; opacity: .7; display: block; letter-spacing: 0; }
+.gds-c .gds-svc-destaque { border-color: var(--gds-accent); }
+.gds-c .gds-svc .gds-btn { min-height: 40px; padding: 9px 16px; font-size: .88rem; }
+
+/* ---------- EQUIPE ---------- */
+.gds-c .gds-equipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 16px; }
+.gds-c .gds-pro { text-align: center; border: 1px solid var(--gds-line); border-radius: var(--gds-r); padding: 24px 16px 18px; background: var(--gds-soft); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.gds-c .gds-avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; margin-bottom: 8px; border: 3px solid var(--gds-accent); }
+.gds-c div.gds-avatar { display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; background: var(--gds-accent); color: var(--gds-on-accent); }
+.gds-c .gds-pro .gds-btn-2 { margin-top: 10px; min-height: 38px; padding: 8px 14px; font-size: .85rem; }
+
+/* ---------- GALERIA + LIGHTBOX ---------- */
+.gds-c .gds-galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+.gds-c .gds-foto { all: unset; cursor: zoom-in; display: block; border-radius: var(--gds-r-sm); overflow: hidden; aspect-ratio: 4 / 3; }
+.gds-c .gds-foto img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }
+.gds-c .gds-foto:hover img { transform: scale(1.05); }
+.gds-lightbox { position: fixed; inset: 0; z-index: 10000; background: rgba(0, 0, 0, .92); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.gds-lightbox img { max-width: 100%; max-height: 86vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); }
+.gds-lightbox button { all: unset; position: absolute; color: #fff; font-size: 34px; cursor: pointer; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255, 255, 255, .12); }
+.gds-lightbox .gds-lb-fechar { top: 16px; right: 16px; font-size: 26px; }
+.gds-lightbox .gds-lb-ant { left: 12px; top: 50%; transform: translateY(-50%); }
+.gds-lightbox .gds-lb-prox { right: 12px; top: 50%; transform: translateY(-50%); }
+.gds-lightbox .gds-lb-cont { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: #fff; font: 600 14px/1 system-ui, sans-serif; opacity: .8; }
+
+/* ---------- AVALIAÇÕES ---------- */
+.gds-c .gds-resumo-aval { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; margin-bottom: 22px; }
+.gds-c .gds-nota-grande { font-size: 3rem; font-weight: 800; line-height: 1; }
+.gds-c .gds-estrelas { color: #f5b301; letter-spacing: 2px; font-size: 1.05rem; white-space: nowrap; }
+.gds-c .gds-barras { flex: 1; min-width: 200px; display: grid; gap: 4px; }
+.gds-c .gds-barra { display: grid; grid-template-columns: 26px 1fr 28px; gap: 8px; align-items: center; font-size: .8rem; }
+.gds-c .gds-barra span:nth-child(2) { height: 7px; border-radius: 4px; background: var(--gds-soft-2); overflow: hidden; }
+.gds-c .gds-barra i { display: block; height: 100%; background: #f5b301; border-radius: 4px; }
+.gds-c .gds-avals { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 14px; }
+.gds-c .gds-aval { border: 1px solid var(--gds-line); border-radius: var(--gds-r); padding: 18px; background: var(--gds-soft); display: flex; flex-direction: column; gap: 10px; }
+.gds-c .gds-aval-topo { display: flex; gap: 12px; align-items: center; }
+.gds-c .gds-ini { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; background: var(--gds-accent); color: var(--gds-on-accent); flex-shrink: 0; }
+.gds-c .gds-aval-topo small { display: block; font-size: .78rem; opacity: .65; }
+.gds-c .gds-avaliar { margin-top: 22px; }
+.gds-c .gds-avaliar > summary { cursor: pointer; display: inline-flex; list-style: none; }
+.gds-c .gds-avaliar > summary::-webkit-details-marker { display: none; }
+.gds-c .gds-avaliar[open] > summary { margin-bottom: 16px; }
+.gds-c .gds-star-input { display: inline-flex; flex-direction: row-reverse; gap: 4px; }
+.gds-c .gds-star-input input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.gds-c .gds-star-input label { font-size: 2rem; cursor: pointer; color: var(--gds-soft-2); line-height: 1; opacity: 1; transition: transform .1s; color: rgba(128, 128, 128, .45); }
+.gds-c .gds-star-input label:hover, .gds-c .gds-star-input label:hover ~ label, .gds-c .gds-star-input input:checked ~ label { color: #f5b301; }
+.gds-c .gds-star-input input:focus-visible + label { outline: 2px solid var(--gds-accent); border-radius: 4px; }
+
+/* ---------- CUPONS ---------- */
+.gds-c .gds-cupons { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.gds-c .gds-cupom { display: flex; border-radius: var(--gds-r); overflow: hidden; border: 1.5px dashed var(--gds-accent); }
+.gds-c .gds-cupom-valor { background: var(--gds-accent); color: var(--gds-on-accent); padding: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 92px; font-weight: 800; font-size: 1.5rem; line-height: 1; }
+.gds-c .gds-cupom-valor small { font-size: .7rem; font-weight: 700; margin-top: 4px; }
+.gds-c .gds-cupom-info { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.gds-c .gds-codigo { font-family: ui-monospace, Menlo, monospace; font-weight: 800; font-size: 1.05rem; letter-spacing: .06em; }
+.gds-c .gds-copiar { all: unset; cursor: pointer; font-size: .82rem; font-weight: 700; color: var(--gds-accent); align-self: flex-start; }
+
+/* ---------- MAPA / CONTATO / HORÁRIOS ---------- */
+.gds-c .gds-mapa-box { border-radius: var(--gds-r); overflow: hidden; border: 1px solid var(--gds-line); }
+.gds-c .gds-mapa-box iframe { display: block; width: 100%; height: 300px; border: 0; }
+.gds-c .gds-mapa-info { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 14px 16px; background: var(--gds-soft); }
+.gds-c.gds-contato { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 24px; align-items: start; }
+.gds-c .gds-infos { display: grid; gap: 10px; }
+.gds-c .gds-info { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border: 1px solid var(--gds-line); border-radius: var(--gds-r); background: var(--gds-soft); text-decoration: none; transition: border-color .2s; }
+a.gds-info:hover { border-color: var(--gds-accent) !important; }
+.gds-c .gds-info-ico { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: var(--gds-accent); color: var(--gds-on-accent); flex-shrink: 0; }
+.gds-c .gds-info-ico.wa { background: #25d366; color: #fff; }
+.gds-c .gds-info small { display: block; font-size: .78rem; opacity: .65; }
+.gds-c .gds-info strong { font-weight: 700; word-break: break-word; }
+.gds-c .gds-status { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; font-weight: 700; }
+.gds-c .gds-status::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--gds-erro); }
+.gds-c .gds-status.aberto::before { background: var(--gds-ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--gds-ok) 25%, transparent); }
+.gds-c .gds-horarios-tab { width: 100%; border-collapse: collapse; font-size: .95rem; }
+.gds-c .gds-horarios-tab td { padding: 9px 4px; border-bottom: 1px solid var(--gds-line); }
+.gds-c .gds-horarios-tab td:last-child { text-align: right; font-weight: 600; }
+.gds-c .gds-horarios-tab tr.hoje td { font-weight: 800; color: var(--gds-accent); }
+
+/* ---------- AGENDAMENTO (passo a passo) ---------- */
+.gds-c.gds-agendamento { max-width: 760px; }
+.gds-c .gds-passos { display: flex; gap: 6px; margin-bottom: 22px; counter-reset: passo; }
+.gds-c .gds-passo-ind { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: .78rem; font-weight: 600; opacity: .5; }
+.gds-c .gds-passo-ind::before { content: ''; height: 4px; border-radius: 4px; background: var(--gds-soft-2); }
+.gds-c .gds-passo-ind.feito, .gds-c .gds-passo-ind.atual { opacity: 1; }
+.gds-c .gds-passo-ind.feito::before, .gds-c .gds-passo-ind.atual::before { background: var(--gds-accent); }
+.gds-c .gds-passo h3 { margin-bottom: 14px; font-size: 1.15rem; }
+.gds-js .gds-c .gds-passo:not(.ativo) { display: none; }
+.gds-c .gds-passo { animation: gds-entra .35s cubic-bezier(.16, 1, .3, 1); }
+@keyframes gds-entra { from { opacity: 0; transform: translateY(8px); } }
+.gds-c .gds-opcoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+.gds-c .gds-op { position: relative; display: flex; gap: 12px; align-items: center; padding: 14px 16px; border-radius: var(--gds-r-sm); border: 1.5px solid var(--gds-line); background: var(--gds-soft); cursor: pointer; transition: border-color .2s, background .2s; }
+.gds-c .gds-op:hover { border-color: var(--gds-accent); }
+.gds-c .gds-op input { position: absolute; opacity: 0; pointer-events: none; }
+.gds-c .gds-op:has(input:checked) { border-color: var(--gds-accent); background: var(--gds-accent-soft, var(--gds-soft-2)); box-shadow: inset 0 0 0 1px var(--gds-accent); }
+.gds-c .gds-op .gds-op-txt { flex: 1; min-width: 0; }
+.gds-c .gds-op strong { display: block; font-size: .95rem; }
+.gds-c .gds-op small { display: block; font-size: .8rem; opacity: .7; }
+.gds-c .gds-op .gds-op-preco { font-weight: 800; white-space: nowrap; text-align: right; }
+.gds-c .gds-op .gds-op-preco small { display: block; font-size: .7rem; font-weight: 600; opacity: .7; }
+.gds-c .gds-op img, .gds-c .gds-op .gds-mini { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.gds-c .gds-op .gds-mini { display: flex; align-items: center; justify-content: center; font-weight: 800; background: var(--gds-accent); color: var(--gds-on-accent); }
+.gds-c .gds-cal-wrap { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 22px; align-items: start; }
+.gds-c .gds-cal { border: 1px solid var(--gds-line); border-radius: var(--gds-r); padding: 14px; background: var(--gds-soft); }
+.gds-c .gds-cal-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 700; text-transform: capitalize; }
+.gds-c .gds-cal-nav { all: unset; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; border: 1px solid var(--gds-line); }
+.gds-c .gds-cal-nav:hover:not([disabled]) { border-color: var(--gds-accent); }
+.gds-c .gds-cal-nav[disabled] { opacity: .3; cursor: default; }
+.gds-c .gds-cal-sem { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: .72rem; font-weight: 700; opacity: .55; margin-bottom: 6px; }
+.gds-c .gds-cal-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.gds-c .gds-dia { all: unset; box-sizing: border-box; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 10px; cursor: pointer; font-size: .92rem; font-weight: 600; min-height: 36px; transition: background .15s; }
+.gds-c .gds-dia:hover:not([disabled]) { background: var(--gds-soft-2); }
+.gds-c .gds-dia[disabled] { opacity: .25; cursor: not-allowed; }
+.gds-c .gds-dia.fechado { text-decoration: line-through; text-decoration-thickness: 1px; }
+.gds-c .gds-dia.hoje { box-shadow: inset 0 0 0 1.5px var(--gds-line); }
+.gds-c .gds-dia[aria-pressed=true] { background: var(--gds-accent); color: var(--gds-on-accent); opacity: 1; }
+.gds-c .gds-turno { margin-bottom: 14px; }
+.gds-c .gds-turno-tit { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .6; margin-bottom: 8px; }
+.gds-c .gds-horas { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.gds-c .gds-hora { all: unset; box-sizing: border-box; text-align: center; padding: 10px 4px; border-radius: 10px; border: 1.5px solid var(--gds-line); cursor: pointer; font-weight: 700; font-size: .92rem; min-height: 42px; transition: border-color .15s, background .15s; }
+.gds-c .gds-hora:hover:not([disabled]) { border-color: var(--gds-accent); }
+.gds-c .gds-hora[aria-pressed=true] { background: var(--gds-accent); border-color: var(--gds-accent); color: var(--gds-on-accent); }
+.gds-c .gds-hora[disabled] { opacity: .3; text-decoration: line-through; cursor: not-allowed; }
+.gds-c .gds-carregando { opacity: .7; font-size: .92rem; padding: 10px 0; }
+.gds-c .gds-nav-passos { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+.gds-c .gds-resumo { border: 1px solid var(--gds-line); border-radius: var(--gds-r); padding: 16px 18px; background: var(--gds-soft); display: grid; gap: 8px; margin-bottom: 18px; font-size: .95rem; }
+.gds-c .gds-resumo div { display: flex; justify-content: space-between; gap: 12px; }
+.gds-c .gds-resumo div span:first-child { opacity: .7; }
+.gds-c .gds-resumo div span:last-child { font-weight: 700; text-align: right; }
+.gds-c .gds-resumo .gds-total { border-top: 1px dashed var(--gds-line); padding-top: 10px; font-size: 1.05rem; }
+.gds-c .gds-cupom-campo { display: flex; gap: 8px; }
+.gds-c .gds-cupom-campo input { text-transform: uppercase; }
+.gds-c .gds-cupom-campo .gds-btn-2 { flex-shrink: 0; }
+.gds-c .gds-cupom-msg { font-size: .85rem; margin-top: 6px; font-weight: 600; }
+
+/* ---------- confirmação ---------- */
+.gds-c .gds-sucesso { text-align: center; border: 1px solid var(--gds-line); border-radius: var(--gds-r); padding: 32px 22px; background: var(--gds-soft); }
+.gds-c .gds-sucesso-ico { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; background: var(--gds-ok); color: #fff; animation: gds-pop .5s cubic-bezier(.16, 1, .3, 1); }
+@keyframes gds-pop { from { transform: scale(.4); opacity: 0; } }
+.gds-c .gds-sucesso h3 { font-size: 1.35rem; margin-bottom: 6px; }
+.gds-c .gds-sucesso .gds-resumo { text-align: left; margin: 18px 0 6px; }
+.gds-c .gds-sucesso .gds-acoes { justify-content: center; }
+.gds-c .gds-pix { margin-top: 18px; border: 1.5px solid var(--gds-accent); border-radius: var(--gds-r); padding: 18px; text-align: center; }
+.gds-c .gds-pix img { width: 220px; max-width: 100%; margin: 10px auto; border-radius: 8px; background: #fff; padding: 8px; }
+.gds-c .gds-pix textarea { font-family: ui-monospace, monospace; font-size: 12px; min-height: 70px; }
+
+/* ---------- BOTÃO FLUTUANTE DO WHATSAPP ---------- */
+.gds-wa { position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); z-index: 9990; display: flex; align-items: flex-end; flex-direction: column; gap: 10px; font-family: inherit; }
+.gds-wa-btn { display: flex; align-items: center; gap: 10px; height: 58px; padding: 0 20px 0 16px; border-radius: 999px; background: #25d366; color: #fff !important; text-decoration: none !important; font-weight: 700; font-size: 15px; box-shadow: 0 10px 30px -6px rgba(37, 211, 102, .6), 0 4px 12px rgba(0, 0, 0, .2); transition: transform .2s ease; position: relative; }
+.gds-wa-btn:hover { transform: translateY(-2px) scale(1.03); }
+.gds-wa-btn svg { width: 28px; height: 28px; fill: #fff; flex-shrink: 0; }
+.gds-wa-btn::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 0 rgba(37, 211, 102, .55); animation: gds-pulso 2.6s infinite; }
+@keyframes gds-pulso { 70% { box-shadow: 0 0 0 16px rgba(37, 211, 102, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); } }
+.gds-wa-balao { position: relative; max-width: 250px; background: #fff; color: #1f2937; padding: 12px 34px 12px 14px; border-radius: 14px 14px 4px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); font: 500 14px/1.4 system-ui, -apple-system, sans-serif; animation: gds-entra .4s ease; }
+.gds-wa-balao strong { display: block; margin-bottom: 2px; }
+.gds-wa-balao button { all: unset; position: absolute; top: 6px; right: 8px; cursor: pointer; font-size: 18px; line-height: 1; color: #6b7280; width: 22px; height: 22px; text-align: center; }
+@media (max-width: 640px) {
+    .gds-wa-btn { width: 58px; padding: 0; justify-content: center; }
+    .gds-wa-btn span { display: none; }
+}
+
+/* ---------- responsivo ---------- */
+@media (max-width: 720px) {
+    .gds-c.gds-contato, .gds-c .gds-cal-wrap { grid-template-columns: 1fr; }
+    .gds-c .gds-linha { grid-template-columns: 1fr; }
+    .gds-c .gds-passo-ind span { display: none; }
+    .gds-c .gds-nav-passos .gds-btn, .gds-c .gds-nav-passos .gds-btn-2 { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .gds-c *, .gds-wa-btn::after, .gds-wa-balao { animation: none !important; transition: none !important; }
+}

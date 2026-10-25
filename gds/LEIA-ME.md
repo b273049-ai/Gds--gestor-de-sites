@@ -15,6 +15,7 @@
    - `sql/adicional_8_seguranca.sql`
    - `sql/adicional_9_dominio.sql`
    - `sql/adicional_10_estudio_ia.sql` ← **novo**: Estúdio IA (conversa + versões), avaliações pelo site, horário de atendimento e índices
+   - `sql/adicional_12_conteudo_site.sql` ← **novo**: categorias/fotos de serviço, folgas, cupom e cancelamento pelo cliente (aplicado sozinho pelo sistema)
    - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
    O `adicional_10` também é aplicado sozinho pelo sistema no primeiro acesso ao painel, se tiver faltado.
@@ -86,6 +87,22 @@ Admin → Empresas → **Estúdio** (ou a própria empresa, se o plano tiver "Pe
 | o modelo "..." não existe | Clique em "Ver modelos disponíveis" e escolha um da lista |
 | a chave de API foi recusada | Copie a chave de novo, inteira, e confira se é do serviço certo |
 | A hospedagem encerrou a requisição por tempo | Sua hospedagem corta requisições longas; use uma IA mais rápida (Groq) ou peça mais tempo ao suporte |
+
+## Componentes do site (agendamento, serviços, contato, WhatsApp…)
+Os blocos funcionais do site têm design próprio, que se adapta às cores de qualquer site (claro ou escuro) —
+a IA só decide onde eles ficam. No Estúdio IA, "Cor dos botões" troca a cor de destaque deles.
+- **Serviços**: cartões com foto, descrição, duração, preço ("a partir de" opcional), selo de destaque,
+  filtro por categoria e botão "Agendar" que já abre o agendamento com o serviço escolhido.
+- **Agendamento passo a passo**: serviço → profissional → calendário só com horários livres (manhã/tarde/noite,
+  respeitando pausa de almoço, folgas e feriados) → dados, com cupom de desconto e resumo do valor.
+  Na confirmação: Google Agenda, arquivo para iPhone/Outlook, confirmar pelo WhatsApp e PIX.
+  O cliente recebe um link para ver ou **cancelar** o agendamento sozinho.
+- **Contato**: WhatsApp, telefone, e-mail, endereço com rota, Instagram e "aberto agora", mais formulário com assunto.
+- **WhatsApp flutuante** com mensagem pronta configurável e balão de convite.
+- **Equipe** ("Agendar com fulano"), **avaliações** (nota média, distribuição, estrelas clicáveis),
+  **galeria** com ampliação, **cupons** com "copiar código", **mapa** com "Como chegar"/Waze e **horários** da semana.
+- A empresa recebe **e-mail** a cada agendamento, cancelamento ou mensagem (desligável em Configurações).
+- Dados estruturados para o Google (negócio local, serviços, horário, nota média).
 
 ## O que já funciona 100%
 - Cadastro/login separado por papel (admin x empresa), com CSRF, recuperação de senha por e-mail e troca de senha.

@@ -13,6 +13,8 @@ $iaPronta = ia_configurada();
 $previewUrl = '/site/preview.php?empresa_id=' . $empresaIdEst . '&modo=ia';
 $urlPublica = '/' . $empresa['slug'];
 $direcoes = ia_direcoes_visuais();
+$corBotoes = (json_decode((string)($site['ia_tema'] ?? ''), true) ?: [])['accent'] ?? '';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $corBotoes)) $corBotoes = preg_match('/^#[0-9a-fA-F]{6}$/', $site['cor_primaria'] ?? '') ? $site['cor_primaria'] : '#2563eb';
 $sugestoes = [
     'Deixe o topo mais impactante, com uma headline maior',
     'Troque a paleta para tons mais quentes',
@@ -42,6 +44,7 @@ $sugestoes = [
         <span id="pillModo" class="pill <?= $modoIa ? 'pill-ok' : 'pill-neutro' ?>" title="Quando ativo, o site público usa o design criado pela IA"><?= $modoIa ? 'Design IA ativo' : 'Usando template' ?></span>
     </div>
     <div class="estudio-acoes">
+        <label class="btn btn-ghost cor-botoes" title="Cor dos botões de agendamento, serviços e contato"><input type="color" id="corBotoes" value="<?= e($corBotoes) ?>" onchange="Estudio.salvarCor(this.value)"> <span>Cor dos botões</span></label>
         <div class="seg" role="group" aria-label="Tamanho da tela">
             <button type="button" class="seg-btn ativo" data-device="desktop" title="Computador"><?= icone('desktop') ?></button>
             <button type="button" class="seg-btn" data-device="tablet" title="Tablet"><?= icone('tablet') ?></button>
@@ -376,6 +379,13 @@ const Estudio = (() => {
         toast(publicado ? 'Site publicado! Já está no ar.' : 'Site tirado do ar.', publicado ? 'sucesso' : 'info');
     }
 
+    async function salvarCor(cor) {
+        const r = await api('tema', { accent: cor });
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        toast('Cor dos botões atualizada.', 'sucesso');
+        recarregarPreview();
+    }
+
     async function alternarModo(ativo) {
         const r = await api('modo', { ativo: ativo ? '1' : '0' });
         if (!r.ok) { toast(r.erro, 'erro'); return; }
@@ -399,7 +409,7 @@ const Estudio = (() => {
     window.addEventListener('beforeunload', (e) => { if (ocupado) { e.preventDefault(); e.returnValue = ''; } });
     carregarHistorico(true);
 
-    return { gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
+    return { salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
 })();
 </script>
 </body>

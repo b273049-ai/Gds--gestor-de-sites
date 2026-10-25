@@ -12,9 +12,8 @@ session_write_close(); // a pré-visualização não precisa travar a sessão (o
 
 $modo = ($_GET['modo'] ?? 'template') === 'ia' ? 'ia' : 'template';
 
-$stmt = $pdo->prepare(SITE_SQL_BASE . " WHERE e.id = ? LIMIT 1");
-$stmt->execute([$empresaIdSolicitada]);
-$empresa = $stmt->fetch();
+gds_garantir_schema();
+$empresa = site_buscar_empresa('e.id = ?', $empresaIdSolicitada);
 if (!$empresa) { echo 'Empresa não encontrada.'; exit; }
 
 $dados = site_carregar_dados($empresa);
