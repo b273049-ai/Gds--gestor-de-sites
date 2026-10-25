@@ -171,8 +171,14 @@ const Estudio = (() => {
         } catch (e) {
             return { ok: false, erro: 'Sem conexão com o servidor. Verifique a internet e tente de novo.' };
         }
-        try { return await resp.json(); }
-        catch (e) { return { ok: false, erro: resp.status === 504 || resp.status === 524 ? 'A hospedagem encerrou a requisição por tempo. Tente de novo (às vezes a segunda vai mais rápido).' : 'O servidor respondeu com erro (' + resp.status + ').' }; }
+        const texto = await resp.text();
+        try { return JSON.parse(texto); }
+        catch (e) {
+            if ([502, 503, 504, 520, 522, 524].includes(resp.status)) return { ok: false, erro: 'A hospedagem encerrou a requisição por tempo (a IA demorou demais). Tente de novo — ou use uma IA mais rápida (Groq) em Configurações.' };
+            // Mostra o começo da resposta do servidor (ajuda a descobrir o problema)
+            const limpo = texto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+            return { ok: false, erro: 'O servidor respondeu com erro (' + resp.status + ')' + (limpo ? ': ' + limpo : '. Veja o log de erros do PHP na hospedagem.') };
+        }
     }
 
     function toast(msg, tipo = 'info') {

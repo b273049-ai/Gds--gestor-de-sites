@@ -17,13 +17,17 @@
    - `sql/adicional_10_estudio_ia.sql` ← **novo**: Estúdio IA (conversa + versões), avaliações pelo site, horário de atendimento e índices
    - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
+   O `adicional_10` também é aplicado sozinho pelo sistema no primeiro acesso ao painel, se tiver faltado.
 
 ## 2. Configurar conexão
 No Supabase: **Project Settings → Database → Connection string** (aba "URI" ou "Connection parameters").
 Como sua hospedagem PHP provavelmente não suporta IPv6, use o **Connection Pooling** (Session/Transaction pooler),
 não a conexão direta.
 
-Abra `config/db.php` e troque:
+**Jeito mais fácil:** copie `config/local.exemplo.php` para `config/local.php` e preencha. Esse arquivo não vai
+para o GitHub, então a senha não fica exposta.
+
+Ou abra `config/db.php` e troque:
 - `DB_HOST` → o host do pooler, algo como `aws-0-sa-east-1.pooler.supabase.com`
 - `DB_PORT` → `6543` (transaction pooler) — deixe como está se não souber qual usar
 - `DB_USER` → formato `postgres.SEU_PROJECT_REF` (o Supabase mostra isso pronto na tela de conexão)

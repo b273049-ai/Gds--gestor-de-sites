@@ -18,10 +18,18 @@ date_default_timezone_set('America/Sao_Paulo');
 // Também dá pra configurar por variáveis de ambiente (GDS_DB_HOST, GDS_DB_PORT,
 // GDS_DB_NAME, GDS_DB_USER, GDS_DB_PASS, GDS_DB_SSLMODE) — se existirem, elas
 // têm prioridade sobre os valores escritos abaixo.
+//
+// O MAIS SIMPLES: copie config/local.exemplo.php para config/local.php e
+// preencha lá. Esse arquivo não vai para o GitHub (está no .gitignore),
+// então a senha do banco não fica exposta no repositório.
 // ============================================================
+$GLOBALS['gds_local'] = is_file(__DIR__ . '/local.php') ? (include __DIR__ . '/local.php') : [];
+
 function gds_env($nome, $padrao) {
     $v = getenv($nome);
-    return ($v === false || $v === '') ? $padrao : $v;
+    if ($v !== false && $v !== '') return $v;
+    $local = $GLOBALS['gds_local'][$nome] ?? null;
+    return ($local === null || $local === '') ? $padrao : (string)$local;
 }
 
 define('DB_HOST', gds_env('GDS_DB_HOST', 'SEU_HOST.pooler.supabase.com')); // <-- CONFIGURE AQUI

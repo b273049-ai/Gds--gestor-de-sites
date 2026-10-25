@@ -31,6 +31,8 @@ function exigir_login($role = null) {
         exit;
     }
 
+    gds_garantir_schema();
+
     $ehPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
     $temAcaoGet = !$ehPost && count(array_intersect(array_keys($_GET), GDS_ACOES_GET)) > 0;
     if (($ehPost || $temAcaoGet) && !csrf_valido()) {
@@ -192,6 +194,7 @@ function empresa_pode_usar_estudio($empresaId) {
 
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/ia_helper.php';
+require_once __DIR__ . '/migracoes.php';
 
 // Link wa.me a partir de um telefone brasileiro (acrescenta o 55 quando vier só DDD + número)
 function link_whatsapp($telefone, $mensagem = '') {
