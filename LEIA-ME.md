@@ -68,8 +68,20 @@ Admin → Empresas → **Estúdio** (ou a própria empresa, se o plano tiver "Pe
   frequentes") — cada pedido vira uma nova versão.
 - **Versões**: volte para qualquer versão anterior com um clique.
 - **Pré-visualização** em computador, tablet e celular; editor de código; botão Publicar.
-- Provedores: Google Gemini (tem plano gratuito) ou Anthropic Claude (modelo padrão `claude-opus-5-5`, configurável).
-  Botão "Testar conexão com a IA" em Configurações.
+- Provedores: Google Gemini (plano gratuito), Groq / OpenRouter / Mistral (planos gratuitos, formato
+  "compatível com OpenAI") ou Anthropic Claude (pago, modelo padrão `claude-opus-5-5`).
+- **IA reserva**: se a principal estourar o limite grátis ou cair, a reserva assume sozinha. Com IAs grátis,
+  configure duas (ex.: Gemini + Groq). No Gemini dá também para definir um "modelo reserva" (ex.: um Flash-Lite).
+- Em Configurações, cada IA tem os botões **"Ver modelos disponíveis"** (lista os modelos que a SUA chave pode usar
+  — evita erro de nome de modelo) e **"Testar"**. Os erros aparecem explicados em português, com o que fazer.
+
+### Problemas comuns com a IA
+| Mensagem | O que fazer |
+|---|---|
+| limite de uso do plano grátis atingido | Espere, troque para um modelo com mais cota (Flash-Lite) ou configure uma IA reserva |
+| o modelo "..." não existe | Clique em "Ver modelos disponíveis" e escolha um da lista |
+| a chave de API foi recusada | Copie a chave de novo, inteira, e confira se é do serviço certo |
+| A hospedagem encerrou a requisição por tempo | Sua hospedagem corta requisições longas; use uma IA mais rápida (Groq) ou peça mais tempo ao suporte |
 
 ## O que já funciona 100%
 - Cadastro/login separado por papel (admin x empresa), com CSRF, recuperação de senha por e-mail e troca de senha.
