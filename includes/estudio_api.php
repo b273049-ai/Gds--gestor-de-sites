@@ -7,6 +7,35 @@
 require_once __DIR__ . '/ia_site_engine.php';
 
 @set_time_limit(300); // planejar + gerar (e às vezes emendar) pode passar dos 2 minutos
+@ini_set('memory_limit', '256M');
+
+// Nunca devolve um "erro 500" mudo: qualquer falha vira uma mensagem que aparece no chat
+function estudio_explicar_erro($msg) {
+    $m = (string)$msg;
+    if (stripos($m, 'does not exist') !== false || stripos($m, 'não existe') !== false || stripos($m, 'undefined column') !== false) {
+        return 'O banco de dados está desatualizado. Rode o arquivo sql/adicional_10_estudio_ia.sql no Supabase (SQL Editor → New query → Run) e tente de novo. Detalhe: ' . mb_substr($m, 0, 200);
+    }
+    if (stripos($m, 'Maximum execution time') !== false) {
+        return 'A hospedagem encerrou o processo por tempo (a IA demorou demais). Tente de novo, ou use uma IA mais rápida (Groq) em Configurações.';
+    }
+    if (stripos($m, 'Allowed memory size') !== false) {
+        return 'O servidor ficou sem memória ao processar o site. Tente um pedido menor.';
+    }
+    return 'Erro interno no servidor: ' . mb_substr($m, 0, 300);
+}
+set_exception_handler(function (Throwable $e) {
+    error_log('GDS Estúdio IA: ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
+    if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
+    echo json_encode(['ok' => false, 'erro' => estudio_explicar_erro($e->getMessage())], JSON_UNESCAPED_UNICODE);
+});
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if (!$e || !in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) return;
+    error_log('GDS Estúdio IA (fatal): ' . $e['message'] . ' em ' . $e['file'] . ':' . $e['line']);
+    if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
+    echo json_encode(['ok' => false, 'erro' => estudio_explicar_erro($e['message'])], JSON_UNESCAPED_UNICODE);
+});
+gds_garantir_schema();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     responder_json(['ok' => false, 'erro' => 'Método inválido.'], 405);
