@@ -313,3 +313,4 @@ details.form-box[open] > summary { margin-bottom: 6px; }
 .estilo-opcao small { display: block; color: var(--text-dim); font-size: 12.5px; }
 .cor-amostra { display: inline-block; width: 16px; height: 16px; border-radius: 4px; vertical-align: middle; border: 1px solid rgba(255,255,255,.15); }
 td.acoes > * { vertical-align: middle; }
+.linha-botoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
