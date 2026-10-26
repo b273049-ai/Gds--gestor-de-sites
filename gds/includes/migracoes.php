@@ -5,7 +5,7 @@
 // de repetir). Assim ninguém precisa lembrar de colar SQL no Supabase
 // depois de atualizar os arquivos da plataforma.
 // ============================================================
-const GDS_SCHEMA_VERSAO = 14;
+const GDS_SCHEMA_VERSAO = 15;
 
 // versão => [arquivo, consulta que diz se ela já está aplicada]
 function gds_migracoes() {
@@ -15,6 +15,7 @@ function gds_migracoes() {
         12 => ['adicional_12_conteudo_site.sql', "to_regclass('public.agenda_bloqueios') IS NOT NULL AND " . $coluna('sites', 'ia_tema') . " AND " . $coluna('leads', 'assunto') . " AND " . $coluna('empresas', 'instagram') . " AND " . $coluna('servicos', 'preco_a_partir')],
         13 => ['adicional_13_segmentos.sql', $coluna('segmentos', 'modo_atendimento') . " AND " . $coluna('empresas', 'segmento_descricao') . " AND " . $coluna('pedidos', 'local_evento') . " AND EXISTS (SELECT 1 FROM segmentos WHERE slug='dj')"],
         14 => ['adicional_14_mais_segmentos.sql', $coluna('segmentos', 'grupo') . " AND EXISTS (SELECT 1 FROM segmentos WHERE slug='palestrante')"],
+        15 => ['adicional_15_whatsapp_delivery_dominio.sql', "to_regclass('public.whatsapp_mensagens') IS NOT NULL AND " . $coluna('empresas', 'wa_modo') . " AND " . $coluna('pedidos', 'token') . " AND " . $coluna('empresas', 'dominio_status') . " AND " . $coluna('agendamentos', 'lembrete_enviado_em')],
     ];
 }
 

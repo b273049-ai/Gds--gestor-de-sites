@@ -324,3 +324,71 @@ td.acoes > * { vertical-align: middle; }
 .cor-botoes { gap: 8px; cursor: pointer; }
 .cor-botoes input[type=color] { width: 22px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; border-radius: 6px; }
 @media (max-width: 640px) { .cor-botoes span { display: none; } }
+
+/* ---------- Pedidos (cartões) ---------- */
+.pedidos-lista { display: grid; gap: 12px; }
+.pedido-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.pedido-card.status-novo { border-color: rgba(245,185,76,.55); box-shadow: 0 0 0 3px rgba(245,185,76,.08); }
+.pedido-card.status-cancelado, .pedido-card.status-concluido { opacity: .78; }
+.pedido-card header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.pedido-corpo { display: grid; grid-template-columns: minmax(160px, 220px) 1fr auto; gap: 16px; padding: 14px 16px; }
+@media (max-width: 760px) { .pedido-corpo { grid-template-columns: 1fr; } }
+.pedido-cliente { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.pedido-cliente small { color: var(--text-dim); }
+.pedido-detalhe { font-size: 14px; line-height: 1.55; }
+.pedido-detalhe p { margin: 6px 0 0; }
+.pedido-itens { list-style: none; margin: 0; padding: 0; }
+.pedido-itens li { display: flex; gap: 6px; padding: 3px 0; }
+.pedido-itens li span { margin-left: auto; color: var(--text-dim); }
+.pedido-obs { background: var(--surface-3); border-radius: 8px; padding: 8px 10px; }
+.pedido-valor { font-size: 20px; font-weight: 700; white-space: nowrap; text-align: right; }
+.pedido-valor small { display: block; font-size: 11px; font-weight: 500; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+.pedido-card footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 10px 16px 14px; border-top: 1px dashed var(--border); }
+.pedido-card footer form.inline { margin: 0; }
+.pedido-card footer button { margin-top: 0; }
+.pedido-card details > summary { list-style: none; cursor: pointer; }
+.pedido-card details > summary::-webkit-details-marker { display: none; }
+.pedido-card details[open] { flex-basis: 100%; }
+.pedido-card details[open] > form { margin-top: 10px; padding: 14px; background: var(--surface-2, var(--surface-3)); border-radius: 10px; max-width: 560px; }
+.vazio-box { text-align: center; padding: 40px 20px; color: var(--text-dim); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
+
+/* Aviso com botão "Enviar pelo WhatsApp" */
+.alerta-wa { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.alerta-wa em { flex: 1 1 260px; opacity: .85; }
+.alerta-wa small { flex-basis: 100%; opacity: .75; }
+.btn-wa, .btn.btn-wa { background: #25d366; color: #fff; border-color: #25d366; }
+
+/* ---------- WhatsApp automático ---------- */
+.wa-status { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.wa-bolinha { width: 12px; height: 12px; border-radius: 50%; background: var(--text-dim); flex: none; }
+.wa-bolinha.ok { background: #25d366; box-shadow: 0 0 0 4px rgba(37,211,102,.18); }
+.wa-bolinha.aviso { background: var(--warn); }
+.wa-modos { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin: 10px 0 4px; }
+.wa-modo { display: flex; gap: 10px; align-items: flex-start; padding: 14px; border: 1.5px solid var(--border); border-radius: 12px; cursor: pointer; background: var(--surface); }
+.wa-modo:has(input:checked) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--surface)); }
+.wa-modo input { width: auto !important; margin-top: 3px; accent-color: var(--primary); }
+.wa-modo small { display: block; color: var(--text-dim); font-weight: 400; margin-top: 2px; }
+.wa-modo.desativado { opacity: .5; cursor: not-allowed; }
+.wa-qr { display: grid; place-items: center; gap: 10px; padding: 18px; background: #fff; border-radius: 14px; max-width: 320px; color: #111; text-align: center; }
+.wa-qr img { width: 260px; height: 260px; image-rendering: pixelated; }
+.wa-eventos { display: grid; gap: 10px; }
+.wa-evento { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.wa-evento > summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.wa-evento > summary::-webkit-details-marker { display: none; }
+.wa-evento > summary small { display: block; color: var(--text-dim); }
+.wa-evento > summary .wa-sw { margin-left: auto; }
+.wa-evento .wa-evento-corpo { padding: 0 14px 14px; display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 760px) { .wa-evento .wa-evento-corpo { grid-template-columns: 1fr; } }
+.wa-previa { background: #e7ffdb; color: #111b21; border-radius: 10px 10px 10px 2px; padding: 10px 12px; white-space: pre-wrap; font-size: 14px; line-height: 1.45; box-shadow: 0 1px 1px rgba(0,0,0,.12); align-self: start; }
+.wa-vars { font-size: 12px; color: var(--text-dim); }
+.wa-vars code { cursor: pointer; }
+.switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; }
+.switch input { opacity: 0; width: 0 !important; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--surface-3); border-radius: 999px; transition: .2s; }
+.switch span::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.switch input:checked + span { background: #25d366; }
+.switch input:checked + span::before { transform: translateX(18px); }
+.dns-tabela td, .dns-tabela th { font-family: ui-monospace, monospace; font-size: 13px; }
+.passos-dominio { display: grid; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+.passos-dominio li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--surface-3); }
+.passos-dominio li .ico { width: 22px; flex: none; text-align: center; }

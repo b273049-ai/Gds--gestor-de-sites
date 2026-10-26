@@ -16,6 +16,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_dados'])) {
     $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([atendimento_modo_valido($modoAt) ? $modoAt : null, $empresaId]);
     flash('sucesso', 'Dados atualizados!'); $voltar('dados'); exit;
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_delivery'])) {
+    $formas = implode(', ', array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim($x), 0, 40), explode(',', (string)($_POST['formas_pagamento'] ?? ''))))), 0, 8));
+    $entrega = isset($_POST['aceita_entrega']); $retirada = isset($_POST['aceita_retirada']);
+    $pdo->prepare("UPDATE empresas SET pedido_online=?, aceita_entrega=?, aceita_retirada=?, taxa_entrega=?, pedido_minimo=?, formas_pagamento=?, tempo_entrega=? WHERE id=?")
+        ->execute([isset($_POST['pedido_online']) ? 'true' : 'false', $entrega ? 'true' : 'false', $retirada ? 'true' : 'false',
+                   max(0, valor_decimal($_POST['taxa_entrega'] ?? '0')), max(0, valor_decimal($_POST['pedido_minimo'] ?? '0')),
+                   $formas ?: 'Pix, Cartão na entrega, Dinheiro', mb_substr(trim($_POST['tempo_entrega'] ?? ''), 0, 60) ?: null, $empresaId]);
+    flash(!$entrega && !$retirada && isset($_POST['pedido_online']) ? 'aviso' : 'sucesso', !$entrega && !$retirada && isset($_POST['pedido_online']) ? 'Salvo — mas marque entrega ou retirada para o carrinho aparecer no site.' : 'Pedidos pelo site salvos!');
+    $voltar('delivery'); exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['nova_folga'])) {
     $data = $_POST['folga_data'] ?? '';
     $ate = ($_POST['folga_ate'] ?? '') ?: $data;
@@ -178,6 +189,28 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         </tbody></table></div>
         <?php endif; ?>
     </div>
+
+    <?php $modoAt = atendimento_info_empresa($empresaId)['modo']; $lig = fn($c) => !isset($empresa[$c]) || $empresa[$c] === null || pg_bool($empresa[$c]); ?>
+    <form method="post" class="form-box largo" id="delivery">
+        <?= csrf_campo() ?>
+        <h3><?= icone('pacote', 16) ?> Pedidos pelo site (delivery / retirada)</h3>
+        <?php if ($modoAt !== 'catalogo'): ?><p class="dica">O carrinho aparece quando a forma de atendimento é <strong>Catálogo com pedido</strong> (em "Como seus clientes contratam", acima).</p><?php endif; ?>
+        <label class="check"><input type="checkbox" name="pedido_online" <?= $lig('pedido_online') ? 'checked' : '' ?>> Clientes montam o pedido no site (carrinho) e eu recebo em Pedidos + WhatsApp</label>
+        <div class="form-row">
+            <div><label class="check" style="margin-top:10px"><input type="checkbox" name="aceita_entrega" <?= $lig('aceita_entrega') ? 'checked' : '' ?>> Faço entrega</label></div>
+            <div><label class="check" style="margin-top:10px"><input type="checkbox" name="aceita_retirada" <?= $lig('aceita_retirada') ? 'checked' : '' ?>> Cliente pode retirar no local</label></div>
+        </div>
+        <div class="form-row">
+            <div><label>Taxa de entrega (R$)</label><input type="text" inputmode="decimal" name="taxa_entrega" value="<?= number_format((float)($empresa['taxa_entrega'] ?? 0), 2, ',', '') ?>"></div>
+            <div><label>Pedido mínimo (R$, 0 = sem mínimo)</label><input type="text" inputmode="decimal" name="pedido_minimo" value="<?= number_format((float)($empresa['pedido_minimo'] ?? 0), 2, ',', '') ?>"></div>
+        </div>
+        <label>Formas de pagamento (separadas por vírgula)</label>
+        <input type="text" name="formas_pagamento" value="<?= e($empresa['formas_pagamento'] ?? 'Pix, Cartão na entrega, Dinheiro') ?>">
+        <p class="dica">Se tiver "Dinheiro", o cliente pode informar o troco.</p>
+        <label>Tempo médio (aparece no carrinho)</label>
+        <input type="text" name="tempo_entrega" maxlength="60" value="<?= e($empresa['tempo_entrega'] ?? '') ?>" placeholder="Ex: Entrega em 40–60 min">
+        <button type="submit" name="salvar_delivery" value="1">Salvar</button>
+    </form>
 
     <form method="post" class="form-box largo" id="cor">
         <?= csrf_campo() ?>

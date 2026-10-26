@@ -285,3 +285,55 @@ a.gds-info:hover { border-color: var(--gds-accent) !important; }
 @media (prefers-reduced-motion: reduce) {
     .gds-c *, .gds-wa-btn::after, .gds-wa-balao { animation: none !important; transition: none !important; }
 }
+
+/* Aviso "enviamos no seu WhatsApp" */
+.gds-c .gds-aviso-wa { display: inline-flex; align-items: center; gap: 8px; margin: 10px auto 0; padding: 8px 14px; border-radius: 999px; font-size: .9rem;
+    background: color-mix(in srgb, #25d366 14%, transparent); color: inherit; }
+.gds-c .gds-aviso-wa svg { width: 18px; height: 18px; color: #25d366; flex: none; }
+
+/* ---------- Carrinho / pedido pelo site ----------
+   O painel tem fundo próprio (claro) para ficar legível sobre qualquer design. */
+.gds-c.gds-carrinho-raiz { width: auto; }
+html.gds-sem-rolagem { overflow: hidden; }
+.gds-c .gds-carrinho-barra { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9990; display: flex; align-items: center; gap: 12px;
+    min-height: 54px; padding: 10px 14px 10px 10px; border: 0; border-radius: 999px; background: var(--gds-accent); color: var(--gds-on-accent);
+    font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 14px 34px -10px rgba(0,0,0,.45); white-space: nowrap; width: max-content; max-width: calc(100vw - 110px); }
+@media (max-width: 480px) { .gds-c .gds-carrinho-barra { left: 16px; transform: none; } .gds-c .gds-carrinho-barra.gds-pulo { animation-name: gds-pulo-m; } }
+@keyframes gds-pulo-m { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.06); } }
+.gds-c .gds-carrinho-barra[hidden] { display: none; }
+.gds-c .gds-carrinho-barra .gds-carrinho-qtd { display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 8px; border-radius: 999px; background: rgba(255,255,255,.22); }
+.gds-c .gds-carrinho-barra.gds-pulo { animation: gds-pulo .45s cubic-bezier(.16,1,.3,1); }
+@keyframes gds-pulo { 0% { transform: translateX(-50%) scale(1); } 40% { transform: translateX(-50%) scale(1.08); } 100% { transform: translateX(-50%) scale(1); } }
+.gds-c .gds-carrinho-fundo { position: fixed; inset: 0; z-index: 9991; background: rgba(10,12,18,.55); }
+.gds-c .gds-carrinho-fundo[hidden], .gds-c .gds-carrinho[hidden] { display: none; }
+.gds-c .gds-carrinho { position: fixed; top: 0; right: 0; bottom: 0; z-index: 9992; width: min(440px, 100vw); display: flex; flex-direction: column;
+    background: #fff; color: #16181d; box-shadow: -20px 0 50px -20px rgba(0,0,0,.4); animation: gds-entra .35s cubic-bezier(.16,1,.3,1);
+    --gds-line: #e3e5ea; --gds-soft: #f5f6f8; --gds-soft-2: #eceef2; }
+@keyframes gds-entra { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.gds-c .gds-carrinho header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--gds-line); }
+.gds-c .gds-carrinho header h3 { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; color: inherit; }
+.gds-c .gds-carrinho-x { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: var(--gds-soft); color: inherit; border-radius: 12px; cursor: pointer; }
+.gds-c .gds-carrinho-corpo { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; }
+.gds-c .gds-carrinho-itens { list-style: none; margin: 0 0 14px; padding: 0; }
+.gds-c .gds-carrinho-itens li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gds-line); }
+.gds-c .gds-ci-nome { font-weight: 600; }
+.gds-c .gds-ci-qtd { display: inline-flex; align-items: center; gap: 4px; background: var(--gds-soft); border-radius: 999px; padding: 3px; }
+.gds-c .gds-ci-qtd button { width: 32px; height: 32px; border: 0; border-radius: 999px; background: #fff; color: inherit; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.gds-c .gds-ci-qtd b { min-width: 22px; text-align: center; }
+.gds-c .gds-ci-preco { font-weight: 700; white-space: nowrap; }
+.gds-c .gds-carrinho-vazio { text-align: center; padding: 30px 0; }
+.gds-c .gds-carrinho-dados[hidden], .gds-c .gds-carrinho-dados [hidden] { display: none; }
+.gds-c .gds-opcoes-2 { grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
+.gds-c .gds-op-mini { padding: 10px 12px; }
+.gds-c .gds-linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 420px) { .gds-c .gds-linha2, .gds-c .gds-opcoes-2 { grid-template-columns: 1fr; } }
+.gds-c .gds-carrinho-rodape { position: sticky; bottom: -16px; margin: 14px -18px -16px; padding: 14px 18px 18px; background: #fff; border-top: 1px solid var(--gds-line); }
+.gds-c .gds-carrinho-totais > div { display: flex; justify-content: space-between; padding: 3px 0; font-size: .95rem; }
+.gds-c .gds-carrinho-totais > div[hidden] { display: none; }
+.gds-c .gds-carrinho-totais .gds-total { font-size: 1.1rem; padding-top: 6px; }
+.gds-c .gds-carrinho-minimo { color: var(--gds-erro); font-size: .88rem; margin: 6px 0 0; }
+.gds-c .gds-btn-bloco, .gds-c button.gds-btn.gds-btn-bloco { display: flex; width: 100%; justify-content: center; margin-top: 12px; min-height: 52px; }
+.gds-c .gds-btn.gds-adicionado { background: var(--gds-ok); }
+.gds-c .gds-invalido { border-color: var(--gds-erro) !important; }
+.gds-c .gds-carrinho input, .gds-c .gds-carrinho select, .gds-c .gds-carrinho textarea { background: #fff; color: #16181d; }
+@media (prefers-reduced-motion: reduce) { .gds-c .gds-carrinho, .gds-c .gds-carrinho-barra.gds-pulo { animation: none; } }

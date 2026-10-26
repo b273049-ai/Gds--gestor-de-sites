@@ -18,6 +18,7 @@
    - `sql/adicional_12_conteudo_site.sql` ← **novo**: categorias/fotos de serviço, folgas, cupom e cancelamento pelo cliente (aplicado sozinho pelo sistema)
    - `sql/adicional_13_segmentos.sql` ← **novo**: segmentos inteligentes, forma de atendimento e pedidos de orçamento pelo site (aplicado sozinho pelo sistema)
    - `sql/adicional_14_mais_segmentos.sql` ← **novo**: 161 segmentos organizados em 18 grupos (aplicado sozinho pelo sistema)
+   - `sql/adicional_15_whatsapp_delivery_dominio.sql` ← **novo**: WhatsApp automático, pedidos de delivery e verificação de domínio (aplicado sozinho pelo sistema)
    - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
    O `adicional_10` também é aplicado sozinho pelo sistema no primeiro acesso ao painel, se tiver faltado.
@@ -111,6 +112,36 @@ Cada negócio conquista cliente de um jeito, e o site segue isso:
 - Os botões que a IA escreve usam `{{LINK_PRINCIPAL}}`, `{{TEXTO_PRINCIPAL}}` e `{{LINK_WHATSAPP}}` — o número real do WhatsApp
   é sempre o cadastrado (links de WhatsApp com número inventado são corrigidos), e o WhatsApp abre em nova aba.
 - Pedidos de orçamento chegam em **Pedidos/Orçamentos** (com serviço, data do evento, local e "pelo site") e por e-mail.
+
+## WhatsApp automático (a plataforma manda as mensagens sozinha)
+O cliente final recebe no WhatsApp: agendamento recebido, **confirmado**, **lembrete** antes do horário, cancelado,
+pedido de avaliação; orçamento recebido, **orçamento com o valor**, aprovado; **pedido do delivery** recebido,
+em preparo, **saiu para entrega** / pronto para retirada, entregue. A empresa também é avisada no WhatsApp dela
+a cada agendamento, orçamento ou pedido novo.
+
+1. **Admin → WhatsApp**: escolha o serviço — **Evolution API** (gratuita; roda num VPS à parte, ex.: Hostinger VPS
+   com o modelo Evolution API), **Z-API** (paga) ou **Webhook** (n8n/Make). Cole a URL e a chave, salve,
+   clique em **Gerar QR code** e leia com o WhatsApp do número da plataforma. Use **Enviar teste**.
+2. Cada empresa, em **WhatsApp automático**, escolhe: usar o número da plataforma (zero configuração),
+   **conectar o próprio WhatsApp por QR code**, ou desligar. Lá ela liga/desliga e edita cada mensagem (com prévia).
+3. Sem integração nenhuma, nada se perde: a mensagem fica pronta no painel com o botão **Enviar pelo WhatsApp**.
+4. Lembretes: rodam sozinhos com o uso do painel; para ficar pontual crie um **Cron Job** a cada 5 minutos
+   com a URL mostrada em Admin → WhatsApp (`cron.php?chave=...`).
+
+## Pedidos de delivery pelo site
+Em negócios com a forma **Catálogo / delivery** (hamburgueria, pizzaria, açaí, loja…), cada item tem o botão
+**Adicionar** e aparece o carrinho: entrega ou retirada, endereço, taxa de entrega, pedido mínimo, forma de
+pagamento (com troco) e observações. O pedido chega em **Pedidos/Orçamentos** com botões de próximo passo
+(Confirmar → Saiu para entrega → Entregue) e o cliente acompanha numa página própria (`/site/pedido.php`).
+Configure em **Configurações → Pedidos pelo site**.
+
+## Domínio próprio do cliente
+1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
+2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)
+   para criar no Registro.br/GoDaddy/Hostinger, com passo a passo.
+3. Na Hostinger: **Sites → Painel → Domínios → Domínios estacionados** → adicione o domínio (o admin recebe e-mail
+   quando uma empresa cadastra um). O SSL sai sozinho em 1–2 h.
+4. Clique em **Verificar**: o sistema testa DNS → ativação no servidor → HTTPS e explica o que falta.
 
 ## Componentes do site (agendamento, serviços, contato, WhatsApp…)
 Os blocos funcionais do site têm design próprio, que se adapta às cores de qualquer site (claro ou escuro) —

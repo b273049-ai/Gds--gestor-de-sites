@@ -224,7 +224,7 @@ function ia_estrategia_conversao($modo, $temWhats) {
         'agendamento' => "O objetivo do site é o visitante AGENDAR. O botão principal (topo e final das páginas) leva a {{LINK_PRINCIPAL}} e o texto pode ser {{TEXTO_PRINCIPAL}}. Mostre serviços com preço — cada serviço já tem o botão \"Agendar\" que abre o agendamento com ele escolhido.$whats",
         'orcamento'   => "O objetivo do site é o visitante PEDIR ORÇAMENTO (não existe agendamento de horário). O botão principal leva a {{LINK_PRINCIPAL}} (formulário de orçamento). Mostre os serviços/pacotes — cada um já tem o botão \"Pedir orçamento\". Prova social (eventos/obras/trabalhos já feitos, galeria, depoimentos) é essencial.$whats",
         'contato'     => "O objetivo do site é o visitante ENTRAR EM CONTATO. O botão principal leva a {{LINK_PRINCIPAL}}" . ($temWhats ? ' (WhatsApp)' : ' (contato)') . '. Explique bem a proposta de valor, como funciona e por que escolher este negócio.',
-        'catalogo'    => "O objetivo do site é o visitante ESCOLHER E PEDIR. O botão principal leva a {{LINK_PRINCIPAL}} (cardápio/produtos). Cada item já tem o botão \"Pedir\" pelo WhatsApp. Destaque preços, entrega/retirada, formas de pagamento e horário.",
+        'catalogo'    => "O objetivo do site é o visitante ESCOLHER E PEDIR. O botão principal leva a {{LINK_PRINCIPAL}} (cardápio/produtos). Cada item já tem o botão \"Adicionar\" e o carrinho de pedido aparece sozinho (entrega/retirada, pagamento) — não crie carrinho. Destaque preços, entrega/retirada, formas de pagamento e horário.",
     ][$modo] ?? '';
 }
 

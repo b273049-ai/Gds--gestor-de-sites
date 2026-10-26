@@ -11,12 +11,14 @@
         <?= menu_item('/empresa/clientes.php', 'clientes.php', 'usuarios', 'Clientes') ?>
         <?= menu_item('/empresa/pedidos.php', 'pedidos.php', 'prancheta', 'Pedidos/Orçamentos') ?>
         <?= menu_item('/empresa/leads.php', 'leads.php', 'caixa', 'Contatos do site') ?>
+        <?= menu_item('/empresa/whatsapp.php', 'whatsapp.php', 'chat', 'WhatsApp automático') ?>
         <div class="sidebar-grupo">Meu catálogo</div>
         <?= menu_item('/empresa/servicos.php', 'servicos.php', 'tesoura', 'Serviços') ?>
         <?= menu_item('/empresa/profissionais.php', 'profissionais.php', 'cracha', 'Profissionais') ?>
         <?= menu_item('/empresa/cupons.php', 'cupons.php', 'cupom', 'Cupons') ?>
         <?= menu_item('/empresa/avaliacoes.php', 'avaliacoes.php', 'estrela', 'Avaliações') ?>
         <div class="sidebar-grupo">Conta</div>
+        <?= menu_item('/empresa/dominio.php', 'dominio.php', 'globo', 'Meu domínio') ?>
         <?= menu_item('/empresa/assinatura.php', 'assinatura.php', 'cartao', 'Minha Assinatura') ?>
         <?= menu_item('/empresa/configuracoes.php', 'configuracoes.php', 'engrenagem', 'Configurações') ?>
     </nav>

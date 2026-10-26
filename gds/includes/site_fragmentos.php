@@ -38,6 +38,8 @@ function frag_icone($nome) {
         'rota'     => '<path d="m3 11 19-9-9 19-2-8-8-2z"/>',
         'download' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
         'estrela'  => '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
+        'sacola'   => '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/>',
+        'x'        => '<path d="M18 6 6 18M6 6l12 12"/>',
     ];
     if ($nome === 'whats') {
         return '<svg class="gds-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.28-1.38a9.9 9.9 0 0 0 4.76 1.21h.01c5.46 0 9.9-4.45 9.9-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.16c-.24.68-1.4 1.3-1.93 1.38-.5.08-1.12.11-1.81-.11-.42-.13-.95-.31-1.64-.6-2.88-1.24-4.76-4.15-4.9-4.34-.14-.19-1.17-1.55-1.17-2.97 0-1.41.74-2.1 1-2.39.26-.28.57-.35.76-.35.19 0 .38 0 .55.01.18.01.42-.07.65.5.24.58.81 2 .88 2.14.07.15.11.32.02.51-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.28-.12.56.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.68-.79.87-1.06.19-.28.37-.23.62-.14.26.09 1.63.77 1.91.91.28.14.47.21.54.33.07.12.07.68-.17 1.36z"/></svg>';
@@ -102,7 +104,7 @@ function frag_sobre($sobre) {
 // SERVIÇOS — cartões com duração, preço e botão de agendar
 // ------------------------------------------------------------
 function frag_servicos($servicos, $opts = []) {
-    if (empty($servicos)) return '<div class="gds-c"><p class="gds-vazio">Em breve, nossos serviços aparecerão aqui.</p></div>';
+    if (empty($servicos)) return '<div class="gds-c"><p class="gds-vazio">Em breve, ' . (($opts['modo'] ?? '') === 'catalogo' ? 'nosso cardápio/produtos' : 'nossos serviços') . ' aparecerão aqui.</p></div>';
     $categorias = array_values(array_unique(array_filter(array_map(fn($s) => trim((string)($s['categoria'] ?? '')), $servicos))));
 
     $html = '<div class="gds-c gds-servicos" id="gds-servicos" data-gds-filtravel>';
@@ -121,7 +123,7 @@ function frag_servicos($servicos, $opts = []) {
                . ($destaque ? '<span class="gds-chip gds-chip-accent">' . frag_icone('estrela') . ' Destaque</span>' : '') . '</div>';
         if (!empty($s['descricao'])) $html .= '<p class="gds-svc-desc">' . e($s['descricao']) . '</p>';
         $meta = '';
-        if ($d = frag_duracao($s['duracao_minutos'] ?? 0)) $meta .= '<span class="gds-chip">' . frag_icone('relogio') . ' ' . $d . '</span>';
+        if (($opts['modo'] ?? 'agendamento') === 'agendamento' && ($d = frag_duracao($s['duracao_minutos'] ?? 0))) $meta .= '<span class="gds-chip">' . frag_icone('relogio') . ' ' . $d . '</span>';
         if (!empty($s['categoria']) && count($categorias) <= 1) $meta .= '<span class="gds-chip">' . e($s['categoria']) . '</span>';
         if ($meta) $html .= '<div class="gds-svc-meta">' . $meta . '</div>';
         $html .= '</div><div class="gds-svc-rodape"><div class="gds-preco">' . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de</small>R$ ' . number_format((float)$s['preco'], 2, ',', '.') : frag_preco($s['preco'])) . '</div>';
@@ -142,6 +144,9 @@ function frag_botao_servico($s, $opts) {
     }
     if (($modo === 'orcamento' || $modo === 'agendamento') && !empty($opts['tem_orcamento'])) {
         return '<a class="gds-btn" href="#gds-orcamento" data-gds-orcar-servico="' . $id . '">Pedir orçamento ' . frag_icone('seta') . '</a>';
+    }
+    if ($modo === 'catalogo' && !empty($opts['carrinho']) && (float)$s['preco'] > 0) {
+        return '<button type="button" class="gds-btn" data-gds-add="' . $id . '" data-nome="' . e($s['nome']) . '" data-preco="' . (float)$s['preco'] . '">' . frag_icone('sacola') . ' Adicionar</button>';
     }
     if ($whats) {
         if ($modo === 'catalogo') {
@@ -358,12 +363,14 @@ function frag_orcamento($servicos, $estado = [], $empresa = []) {
     if (!empty($estado['ok'])) {
         $html = '<div class="gds-c gds-orcamento" id="gds-orcamento"><div class="gds-sucesso" data-gds-sucesso><div class="gds-sucesso-ico">' . frag_icone('check') . '</div>'
               . '<h3>Pedido de orçamento enviado!</h3><p class="gds-mute">' . (!empty($estado['nome']) ? e(explode(' ', $estado['nome'])[0]) . ', r' : 'R') . 'ecebemos tudo e vamos te responder com o orçamento o quanto antes.</p>';
+        if (!empty($estado['wa_automatico'])) $html .= '<p class="gds-aviso-wa">' . frag_icone('whats') . ' Enviamos a confirmação para o seu WhatsApp — o valor também chega por lá.</p>';
         if (!empty($estado['resumo'])) {
             $html .= '<div class="gds-resumo">';
             foreach ($estado['resumo'] as [$rot, $val]) $html .= '<div><span>' . e($rot) . '</span><span>' . e($val) . '</span></div>';
             $html .= '</div>';
         }
-        if (so_digitos_frag($whats)) {
+        if (!empty($estado['link_acompanhar'])) $html .= '<p style="margin-top:14px;font-size:.88rem"><a href="' . e($estado['link_acompanhar']) . '">Acompanhe seu pedido nº ' . (int)($estado['codigo'] ?? 0) . ' aqui</a></p>';
+        if (so_digitos_frag($whats) && empty($estado['wa_automatico'])) {
             $html .= '<div class="gds-acoes"><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($whats, $estado['msg_whatsapp'] ?? 'Olá! Acabei de pedir um orçamento pelo site.')) . '">' . frag_icone('whats') . ' Enviar também pelo WhatsApp (resposta mais rápida)</a></div>';
         }
         return $html . '</div></div>';
@@ -505,6 +512,7 @@ function frag_agendamento_confirmado($estado, $empresa) {
     $d = $estado['detalhes'] ?? [];
     $html = '<div class="gds-c gds-agendamento"><div class="gds-sucesso" data-gds-sucesso><div class="gds-sucesso-ico">' . frag_icone('check') . '</div>'
           . '<h3>Agendamento solicitado!</h3><p class="gds-mute">' . (!empty($d['cliente_nome']) ? e(explode(' ', $d['cliente_nome'])[0]) . ', a' : 'A') . 'notamos tudo. Você receberá a confirmação em breve.</p>'
+          . (!empty($estado['wa_automatico']) ? '<p class="gds-aviso-wa">' . frag_icone('whats') . ' Mandamos os detalhes para o seu WhatsApp.</p>' : '')
           . '<div class="gds-resumo">';
     foreach ([['Serviço', $d['servico_nome'] ?? ''], ['Profissional', $d['profissional_nome'] ?? ''], ['Quando', $d['data_formatada'] ?? '']] as [$r, $v]) {
         if ($v !== '') $html .= '<div><span>' . $r . '</span><span>' . e($v) . '</span></div>';
@@ -538,9 +546,9 @@ function frag_agendamento_confirmado($estado, $empresa) {
 // ------------------------------------------------------------
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=3">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=5">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';}</style>'
-         . '<script src="/assets/js/gds-site.js?v=3" defer></script>';
+         . '<script src="/assets/js/gds-site.js?v=5" defer></script>';
 }
 
 // Texto branco ou escuro, o que tiver mais contraste com a cor de fundo
@@ -553,4 +561,68 @@ function frag_luminancia($hex) {
     if (!preg_match('/^[0-9a-fA-F]{6}$/', $hex)) return 0.5;
     $lin = function ($c) { $c = hexdec($c) / 255; return $c <= 0.03928 ? $c / 12.92 : (($c + 0.055) / 1.055) ** 2.4; };
     return 0.2126 * $lin(substr($hex, 0, 2)) + 0.7152 * $lin(substr($hex, 2, 2)) + 0.0722 * $lin(substr($hex, 4, 2));
+}
+
+// ------------------------------------------------------------
+// CARRINHO / PEDIDO PELO SITE (delivery e retirada)
+// Barra flutuante + painel com itens, entrega/retirada, pagamento e dados.
+// O total é recalculado no servidor com os preços do banco.
+// ------------------------------------------------------------
+function frag_carrinho($empresa, $estado = []) {
+    $taxa = (float)($empresa['taxa_entrega'] ?? 0);
+    $minimo = (float)($empresa['pedido_minimo'] ?? 0);
+    $entrega = !isset($empresa['aceita_entrega']) || $empresa['aceita_entrega'] === null || pg_bool($empresa['aceita_entrega']);
+    $retirada = !isset($empresa['aceita_retirada']) || $empresa['aceita_retirada'] === null || pg_bool($empresa['aceita_retirada']);
+    $formas = array_values(array_filter(array_map('trim', explode(',', (string)($empresa['formas_pagamento'] ?? '') ?: 'Pix, Cartão na entrega, Dinheiro'))));
+    $p = $estado['post'] ?? [];
+    $ok = !empty($estado['ok']);
+    $html = '<div class="gds-c gds-carrinho-raiz" data-gds-carrinho data-empresa="' . (int)$empresa['id'] . '" data-taxa="' . $taxa . '" data-minimo="' . $minimo . '"'
+          . ($ok ? ' data-limpar="1" data-aberto="1"' : (!empty($estado['erro']) ? ' data-aberto="1"' : '')) . '>';
+    // Barra flutuante
+    $html .= '<button type="button" class="gds-carrinho-barra" data-gds-carrinho-abrir hidden><span class="gds-carrinho-qtd" data-gds-qtd>0</span>'
+           . '<span>Ver pedido</span><strong data-gds-subtotal>R$ 0,00</strong></button>';
+    // Painel
+    $html .= '<div class="gds-carrinho-fundo" data-gds-carrinho-fechar hidden></div>'
+           . '<section class="gds-carrinho" role="dialog" aria-modal="true" aria-labelledby="gds-carrinho-titulo" hidden>'
+           . '<header><h3 id="gds-carrinho-titulo">' . frag_icone('sacola') . ' Seu pedido</h3><button type="button" class="gds-carrinho-x" data-gds-carrinho-fechar aria-label="Fechar">' . frag_icone('x') . '</button></header>';
+    if ($ok) {
+        $d = $estado;
+        $html .= '<div class="gds-carrinho-corpo"><div class="gds-sucesso" data-gds-sucesso><div class="gds-sucesso-ico">' . frag_icone('check') . '</div>'
+               . '<h3>Pedido nº ' . (int)$d['codigo'] . ' recebido!</h3><p class="gds-mute">' . e(explode(' ', $d['nome'] ?? '')[0]) . ', já estamos cuidando dele.</p>'
+               . (!empty($d['wa_automatico']) ? '<p class="gds-aviso-wa">' . frag_icone('whats') . ' Você vai receber as atualizações no seu WhatsApp.</p>' : '')
+               . '<div class="gds-resumo">';
+        foreach ($d['itens'] as $i) $html .= '<div><span>' . (int)$i['qtd'] . '× ' . e($i['nome']) . '</span><span>' . e(frag_preco($i['preco'] * $i['qtd'])) . '</span></div>';
+        if ($d['taxa'] > 0) $html .= '<div><span>Entrega</span><span>' . e(frag_preco($d['taxa'])) . '</span></div>';
+        $html .= '<div class="gds-total"><span>Total</span><span>' . e(frag_preco($d['total'])) . '</span></div></div>'
+               . '<div class="gds-acoes">' . (!empty($d['link']) ? '<a class="gds-btn" href="' . e($d['link']) . '">Acompanhar pedido</a>' : '');
+        if (empty($d['wa_automatico']) && so_digitos_frag($empresa['whatsapp'] ?? '')) {
+            $html .= '<a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($empresa['whatsapp'], $d['msg_whatsapp'] ?? '')) . '">' . frag_icone('whats') . ' Enviar pelo WhatsApp</a>';
+        }
+        return $html . '</div></div></div></section></div>';
+    }
+    $radio = function ($valor, $rotulo, $checked) {
+        return '<label class="gds-op gds-op-mini"><input type="radio" name="pd_tipo_entrega" value="' . $valor . '"' . ($checked ? ' checked' : '') . ' required><span class="gds-op-txt"><strong>' . $rotulo . '</strong></span></label>';
+    };
+    $tipoSel = $p['pd_tipo_entrega'] ?? ($entrega ? 'entrega' : 'retirada');
+    $html .= '<form method="post" class="gds-carrinho-corpo" data-gds-carrinho-form novalidate>' . frag_alerta_erro($estado['erro'] ?? '')
+           . '<input type="hidden" name="fazer_pedido" value="1"><input type="hidden" name="pd_itens" data-gds-itens value="' . e($p['pd_itens'] ?? '') . '">'
+           . '<ul class="gds-carrinho-itens" data-gds-lista></ul><p class="gds-mute gds-carrinho-vazio" data-gds-vazio>Seu pedido está vazio. Escolha os itens no cardápio.</p>'
+           . '<div class="gds-carrinho-dados" data-gds-dados>'
+           . '<div class="gds-opcoes gds-opcoes-2">' . ($entrega ? $radio('entrega', '🛵 Entrega' . ($taxa > 0 ? ' (+' . frag_preco($taxa) . ')' : ''), $tipoSel === 'entrega') : '')
+           . ($retirada ? $radio('retirada', '🏪 Retirar no local', $tipoSel === 'retirada' || !$entrega) : '') . '</div>'
+           . ($entrega ? '<div class="gds-campo" data-gds-endereco><label for="pd_endereco">Endereço de entrega</label><input type="text" id="pd_endereco" name="pd_endereco" maxlength="250" autocomplete="street-address" placeholder="Rua, número, bairro, complemento" value="' . e($p['pd_endereco'] ?? '') . '"></div>' : '')
+           . '<div class="gds-linha2"><div class="gds-campo"><label for="pd_nome">Seu nome</label><input type="text" id="pd_nome" name="pd_nome" required maxlength="120" autocomplete="name" value="' . e($p['pd_nome'] ?? '') . '"></div>'
+           . '<div class="gds-campo"><label for="pd_telefone">WhatsApp</label><input type="tel" id="pd_telefone" name="pd_telefone" required inputmode="tel" autocomplete="tel" data-gds-tel placeholder="(00) 00000-0000" value="' . e($p['pd_telefone'] ?? '') . '"></div></div>'
+           . '<div class="gds-linha2"><div class="gds-campo"><label for="pd_pagamento">Pagamento</label><select id="pd_pagamento" name="pd_pagamento" data-gds-pagamento>';
+    foreach ($formas as $f) $html .= '<option' . (($p['pd_pagamento'] ?? '') === $f ? ' selected' : '') . '>' . e($f) . '</option>';
+    $html .= '</select></div><div class="gds-campo" data-gds-troco hidden><label for="pd_troco">Troco para quanto?</label><input type="text" id="pd_troco" name="pd_troco" inputmode="decimal" placeholder="Ex: 100" value="' . e($p['pd_troco'] ?? '') . '"></div></div>'
+           . '<div class="gds-campo"><label for="pd_obs">Observações (opcional)</label><textarea id="pd_obs" name="pd_obs" rows="2" maxlength="500" placeholder="Ex: sem cebola, ponto da carne, portão azul">' . e($p['pd_obs'] ?? '') . '</textarea></div>'
+           . frag_honeypot()
+           . '</div><div class="gds-carrinho-rodape"><div class="gds-carrinho-totais"><div><span>Subtotal</span><span data-gds-subtotal>R$ 0,00</span></div>'
+           . '<div data-gds-linha-taxa><span>Entrega</span><span data-gds-taxa>' . e(frag_preco($taxa)) . '</span></div>'
+           . '<div class="gds-total"><span>Total</span><strong data-gds-total>R$ 0,00</strong></div></div>'
+           . ($minimo > 0 ? '<p class="gds-mute gds-carrinho-minimo" data-gds-minimo-aviso hidden>Pedido mínimo: ' . e(frag_preco($minimo)) . '</p>' : '')
+           . (!empty($empresa['tempo_entrega']) ? '<p class="gds-mute" style="margin:4px 0 0;font-size:.85rem">⏱ ' . e($empresa['tempo_entrega']) . '</p>' : '')
+           . '<button type="submit" class="gds-btn gds-btn-bloco" data-gds-finalizar>Fazer pedido</button></div></form></section></div>';
+    return $html;
 }

@@ -7,12 +7,13 @@
 require_once __DIR__ . '/site_fragmentos.php';
 require_once __DIR__ . '/agenda_helper.php';
 require_once __DIR__ . '/atendimento.php';
+require_once __DIR__ . '/whatsapp.php';
 
 const SITE_SQL_BASE = "
     SELECT e.*, s.titulo, s.subtitulo, s.sobre, s.publicado, s.cor_primaria, s.cor_secundaria,
            s.galeria_imagens, s.seo_titulo, s.seo_descricao, s.layout, s.secoes, s.banner_imagem,
            s.html_gerado, s.ia_modo_total, s.ia_tema,
-           seg.nome AS segmento_nome, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta,
+           seg.nome AS segmento_nome, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo,
            pl.permite_pix
     FROM empresas e
     JOIN sites s ON s.empresa_id = e.id
@@ -28,7 +29,7 @@ function site_buscar_empresa($where, $param) {
         $st->execute([$param]);
         return $st->fetch();
     } catch (PDOException $e) {
-        $legado = str_replace([', s.ia_tema', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta'], [', NULL AS ia_tema', 'NULL AS modo_segmento, NULL AS segmento_cta'], SITE_SQL_BASE);
+        $legado = str_replace([', s.ia_tema', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], [', NULL AS ia_tema', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
         $st = $pdo->prepare($legado . " WHERE $where LIMIT 1");
         $st->execute([$param]);
         return $st->fetch();
@@ -83,7 +84,7 @@ function site_tema($empresa) {
 }
 
 function site_estado_vazio() {
-    return ['lead' => [], 'agendamento' => [], 'avaliacao' => [], 'orcamento' => [], 'pagina_forcada' => null];
+    return ['lead' => [], 'agendamento' => [], 'avaliacao' => [], 'orcamento' => [], 'pedido' => [], 'pagina_forcada' => null];
 }
 
 // ------------------------------------------------------------
@@ -131,6 +132,7 @@ function site_processar_post($empresa, $dados) {
     global $pdo;
     $estado = site_estado_vazio();
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') return $estado;
+    wa_adiar();
 
     // ---------- CONTATO (gera lead) ----------
     if (isset($_POST['enviar_lead'])) {
@@ -152,6 +154,8 @@ function site_processar_post($empresa, $dados) {
                 $pdo->prepare("INSERT INTO leads (empresa_id, nome, email, telefone, mensagem) VALUES (?,?,?,?,?)")
                     ->execute([$empresa['id'], $nome, $email ?: null, $tel ?: null, ($assunto ? "[$assunto] " : '') . $msg]);
             }
+            wa_notificar_empresa($empresa, 'contato', ['nome' => $nome, 'telefone' => $tel ?: $email, 'mensagem' => ($assunto ? "[$assunto] " : '') . $msg], 'lead');
+            if ($tel !== '') wa_notificar_cliente($empresa, 'contato_recebido', $tel, ['nome' => explode(' ', $nome)[0]], 'lead');
             site_notificar_empresa($empresa, "Nova mensagem pelo site: $nome", ["$nome mandou uma mensagem pelo site" . ($assunto ? " ($assunto)" : '') . ':', '', $msg, '', 'WhatsApp/telefone: ' . ($tel ?: '-'), 'E-mail: ' . ($email ?: '-')]);
             $estado['lead'] = ['ok' => true, 'nome' => $nome];
         }
@@ -214,22 +218,43 @@ function site_processar_post($empresa, $dados) {
                 $n->execute([$empresa['id'], $nome, $email ?: null, $tel]);
                 $clienteId = $n->fetch()['id'];
             }
+            $tokenPedido = bin2hex(random_bytes(16));
+            $pdo->beginTransaction();
+            $pdo->exec('SAVEPOINT antes_pedido');
             try {
-                $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status, origem, servico_id, data_evento, local_evento) VALUES (?,?,?,?, 'novo', 'site', ?,?,?)")
-                    ->execute([$empresa['id'], $clienteId, $descricao, $servico ? (float)$servico['preco'] : 0, $servico['id'] ?? null, $dataEvento, $local ?: null]);
+                $ins = $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status, origem, servico_id, data_evento, local_evento, tipo, token) VALUES (?,?,?,?, 'novo', 'site', ?,?,?, 'orcamento', ?) RETURNING id");
+                $ins->execute([$empresa['id'], $clienteId, $descricao, $servico ? (float)$servico['preco'] : 0, $servico['id'] ?? null, $dataEvento, $local ?: null, $tokenPedido]);
             } catch (PDOException $e) {
-                $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status) VALUES (?,?,?,?, 'novo')")
-                    ->execute([$empresa['id'], $clienteId, '[site] ' . $descricao, $servico ? (float)$servico['preco'] : 0]);
+                $pdo->exec('ROLLBACK TO SAVEPOINT antes_pedido');
+                $tokenPedido = null;
+                $ins = $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status) VALUES (?,?,?,?, 'novo') RETURNING id");
+                $ins->execute([$empresa['id'], $clienteId, '[site] ' . $descricao, $servico ? (float)$servico['preco'] : 0]);
             }
+            $pedidoId = (int)$ins->fetch()['id'];
+            $pdo->commit();
         } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
             error_log('GDS orçamento: ' . $e->getMessage());
             $estado['orcamento'] = ['erro' => 'Não foi possível enviar agora. Tente de novo ou chame no WhatsApp.', 'post' => $_POST];
             return $estado;
         }
+        $varsOrc = ['nome' => explode(' ', $nome)[0], 'telefone' => $tel, 'codigo' => (string)$pedidoId,
+            'servico' => implode("\n", array_map(fn($r) => $r[0] . ': ' . $r[1], $resumo)) ?: 'Orçamento personalizado',
+            'mensagem' => $detalhes ? 'Detalhes: ' . mb_strimwidth($detalhes, 0, 600, '…') : '',
+            'link' => $tokenPedido ? wa_url_publica($empresa, '/site/pedido.php?t=' . $tokenPedido) : ''];
+        wa_notificar_cliente($empresa, 'orcamento_recebido', $tel, $varsOrc, 'pedido', $pedidoId);
+        wa_notificar_empresa($empresa, 'orcamento', ['nome' => $nome] + $varsOrc, 'pedido', $pedidoId);
         $msgWa = "Olá! Acabei de pedir um orçamento pelo site.\n" . implode("\n", array_map(fn($r) => $r[0] . ': ' . $r[1], $resumo)) . ($detalhes ? "\nDetalhes: " . mb_strimwidth($detalhes, 0, 400, '…') : '') . "\nNome: $nome";
         site_notificar_empresa($empresa, "Novo pedido de orçamento: $nome", array_merge(['Novo pedido de orçamento pelo site!', '', 'Cliente: ' . $nome, 'WhatsApp: ' . $tel . ($email ? ' · ' . $email : '')],
             array_map(fn($r) => $r[0] . ': ' . $r[1], $resumo), $detalhes ? ['', 'Detalhes:', $detalhes] : []));
-        $estado['orcamento'] = ['ok' => true, 'nome' => $nome, 'resumo' => $resumo, 'msg_whatsapp' => $msgWa];
+        $estado['orcamento'] = ['ok' => true, 'nome' => $nome, 'resumo' => $resumo, 'msg_whatsapp' => $msgWa, 'codigo' => $pedidoId,
+            'link_acompanhar' => $tokenPedido ? '/site/pedido.php?t=' . $tokenPedido : '', 'wa_automatico' => wa_remetente($empresa) !== null];
+        return $estado;
+    }
+
+    // ---------- PEDIDO PELO SITE (delivery / retirada) ----------
+    if (isset($_POST['fazer_pedido'])) {
+        $estado['pedido'] = site_processar_pedido($empresa, $dados);
         return $estado;
     }
 
@@ -336,6 +361,11 @@ function site_processar_post($empresa, $dados) {
                 $ag['pix_erro'] = $cob['erro'];
             }
         }
+        $varsAg = wa_vars_agendamento(['data_hora' => $dataSql, 'cliente_nome' => $nome, 'telefone' => $tel, 'servico_nome' => $servico['nome'] ?? 'Atendimento',
+            'profissional_nome' => $profissional['nome'] ?? '', 'valor' => $servico ? $valor : 0, 'token' => $token], $empresa);
+        wa_notificar_cliente($empresa, 'agendamento_recebido', $tel, $varsAg, 'agendamento', $agId);
+        wa_notificar_empresa($empresa, 'agendamento', ['nome' => $nome] + $varsAg, 'agendamento', $agId);
+        $ag['wa_automatico'] = wa_remetente($empresa) !== null;
         site_notificar_empresa($empresa, "Novo agendamento: $nome — " . date('d/m H:i', $ts), [
             'Novo agendamento pelo site!', '',
             'Cliente: ' . $nome, 'WhatsApp: ' . $tel . ($email ? ' · ' . $email : ''),
@@ -348,13 +378,105 @@ function site_processar_post($empresa, $dados) {
     return $estado;
 }
 
+// A empresa vende pelo carrinho do site? (catálogo + pedido online ligado + entrega ou retirada)
+function site_pedido_online($empresa, $modo) {
+    if ($modo !== 'catalogo') return false;
+    $lig = fn($c) => !isset($empresa[$c]) || $empresa[$c] === null || pg_bool($empresa[$c]);
+    return $lig('pedido_online') && ($lig('aceita_entrega') || $lig('aceita_retirada'));
+}
+
+function site_processar_pedido($empresa, $dados) {
+    global $pdo;
+    $p = $_POST;
+    $nome = site_limpar('pd_nome', 120); $tel = site_limpar('pd_telefone', 20);
+    $tipo = ($_POST['pd_tipo_entrega'] ?? '') === 'retirada' ? 'retirada' : 'entrega';
+    $endereco = site_limpar('pd_endereco', 250); $obs = site_limpar('pd_obs', 500);
+    $formas = array_values(array_filter(array_map('trim', explode(',', (string)($empresa['formas_pagamento'] ?? '') ?: 'Pix, Cartão na entrega, Dinheiro'))));
+    $pagamento = in_array($_POST['pd_pagamento'] ?? '', $formas, true) ? $_POST['pd_pagamento'] : ($formas[0] ?? '');
+    $troco = valor_decimal_site($_POST['pd_troco'] ?? '');
+    $lig = fn($c) => !isset($empresa[$c]) || $empresa[$c] === null || pg_bool($empresa[$c]);
+    if (!site_pedido_online($empresa, $dados['modo'])) return ['erro' => 'Pedidos pelo site estão desligados. Chame no WhatsApp.', 'post' => $p];
+    if (site_eh_spam()) return ['erro' => 'Não foi possível enviar agora. Tente novamente em alguns minutos.', 'post' => $p];
+
+    // Itens: só id e quantidade vêm do navegador; nome e preço saem do banco
+    $porId = [];
+    foreach ($dados['servicos'] as $sv) $porId[(int)$sv['id']] = $sv;
+    $itens = []; $subtotal = 0;
+    foreach ((array)json_decode((string)($_POST['pd_itens'] ?? ''), true) as $it) {
+        $id = (int)($it['id'] ?? 0); $qtd = max(0, min(99, (int)($it['qtd'] ?? 0)));
+        if ($qtd < 1 || !isset($porId[$id]) || (float)$porId[$id]['preco'] <= 0) continue;
+        $preco = (float)$porId[$id]['preco'];
+        $itens[] = ['id' => $id, 'nome' => $porId[$id]['nome'], 'qtd' => $qtd, 'preco' => $preco];
+        $subtotal += $preco * $qtd;
+        if (count($itens) >= 50) break;
+    }
+    $taxa = $tipo === 'entrega' ? (float)($empresa['taxa_entrega'] ?? 0) : 0;
+    $total = round($subtotal + $taxa, 2);
+    $minimo = (float)($empresa['pedido_minimo'] ?? 0);
+    $erro = '';
+    if (!$itens) $erro = 'Seu pedido está vazio.';
+    elseif ($nome === '' || strlen(preg_replace('/\D/', '', $tel)) < 10) $erro = 'Informe seu nome e WhatsApp (com DDD).';
+    elseif ($tipo === 'entrega' && !$lig('aceita_entrega')) $erro = 'No momento só aceitamos retirada no local.';
+    elseif ($tipo === 'retirada' && !$lig('aceita_retirada')) $erro = 'No momento só fazemos entrega.';
+    elseif ($tipo === 'entrega' && mb_strlen($endereco) < 8) $erro = 'Informe o endereço completo para a entrega.';
+    elseif ($minimo > 0 && $subtotal < $minimo) $erro = 'O pedido mínimo é R$ ' . number_format($minimo, 2, ',', '.') . '.';
+    elseif ($troco !== null && $troco > 0 && $troco < $total) $erro = 'O troco precisa ser maior que o total do pedido.';
+    if ($erro !== '') return ['erro' => $erro, 'post' => $p];
+
+    $linhas = array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'], $itens);
+    $descricao = implode(', ', $linhas);
+    $token = bin2hex(random_bytes(16));
+    try {
+        $pdo->beginTransaction();
+        $telDig = preg_replace('/\D/', '', $tel);
+        $busca = $pdo->prepare("SELECT id FROM clientes WHERE empresa_id=? AND right(regexp_replace(COALESCE(telefone,''), '\D', '', 'g'), 11) = right(?, 11) LIMIT 1");
+        $busca->execute([$empresa['id'], $telDig]);
+        $clienteId = ($b = $busca->fetch()) ? $b['id'] : null;
+        if (!$clienteId) {
+            $n = $pdo->prepare("INSERT INTO clientes (empresa_id, nome, telefone) VALUES (?,?,?) RETURNING id");
+            $n->execute([$empresa['id'], $nome, $tel]);
+            $clienteId = $n->fetch()['id'];
+        }
+        $ins = $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status, origem, tipo, itens, tipo_entrega, endereco_entrega, forma_pagamento, troco_para, taxa_entrega, observacoes, token)
+            VALUES (?,?,?,?, 'novo', 'site', 'delivery', ?,?,?,?,?,?,?,?) RETURNING id");
+        $ins->execute([$empresa['id'], $clienteId, $descricao, $total, json_encode($itens, JSON_UNESCAPED_UNICODE), $tipo, $tipo === 'entrega' ? $endereco : null,
+                       $pagamento, $troco ?: null, $taxa, $obs ?: null, $token]);
+        $pedidoId = (int)$ins->fetch()['id'];
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('GDS pedido: ' . $e->getMessage());
+        return ['erro' => 'Não foi possível enviar o pedido agora. Tente de novo ou chame no WhatsApp.', 'post' => $p];
+    }
+    $linhaPedido = ['id' => $pedidoId, 'itens' => json_encode($itens), 'tipo_entrega' => $tipo, 'endereco_entrega' => $endereco, 'taxa_entrega' => $taxa,
+                    'forma_pagamento' => $pagamento, 'troco_para' => $troco, 'valor' => $total, 'cliente_nome' => $nome, 'telefone' => $tel, 'token' => $token, 'tipo' => 'delivery'];
+    $vars = wa_vars_pedido($linhaPedido, $empresa);
+    if ($obs) $vars['mensagem'] = 'Obs.: ' . $obs;
+    wa_notificar_cliente($empresa, 'pedido_recebido', $tel, $vars, 'pedido', $pedidoId);
+    wa_notificar_empresa($empresa, 'pedido', ['nome' => $nome] + $vars + ['itens' => $vars['itens'] . ($obs ? "\nObs.: $obs" : '')], 'pedido', $pedidoId);
+    site_notificar_empresa($empresa, "Novo pedido nº $pedidoId: $nome", array_merge(["Novo pedido pelo site (nº $pedidoId)!", '', 'Cliente: ' . $nome . ' · ' . $tel], $linhas,
+        ['', $vars['entrega'], 'Total: ' . wa_dinheiro($total) . ' (' . $vars['pagamento'] . ')', $obs ? 'Obs.: ' . $obs : '']));
+    $msgWa = "Olá! Fiz o pedido nº $pedidoId pelo site:\n" . implode("\n", $linhas) . "\n" . $vars['entrega'] . "\nTotal: " . wa_dinheiro($total) . ' (' . $vars['pagamento'] . ")\nNome: $nome";
+    return ['ok' => true, 'codigo' => $pedidoId, 'nome' => $nome, 'itens' => $itens, 'taxa' => $taxa, 'total' => $total,
+            'link' => '/site/pedido.php?t=' . $token, 'wa_automatico' => wa_remetente($empresa) !== null, 'msg_whatsapp' => $msgWa];
+}
+
+function valor_decimal_site($s) {
+    $s = trim((string)$s);
+    if ($s === '') return null;
+    if (str_contains($s, ',')) { $s = str_replace('.', '', $s); $s = str_replace(',', '.', $s); }
+    $s = preg_replace('/[^0-9.]/', '', $s);
+    return is_numeric($s) ? (float)$s : null;
+}
+
 function site_fragmentos_marcadores($empresa, $dados, $estado) {
     $html = (string)($empresa['html_gerado'] ?? '');
     $modoTemplate = !pg_bool($empresa['ia_modo_total'] ?? false) || $html === '';
     $modo = $dados['modo'];
     $temAgenda = $modoTemplate ? $modo === 'agendamento' : str_contains($html, '{{AGENDAMENTO}}');
     $temOrcamento = $modoTemplate ? $modo === 'orcamento' : str_contains($html, '{{ORCAMENTO}}');
-    $optsServicos = ['modo' => $modo, 'tem_agendamento' => $temAgenda, 'tem_orcamento' => $temOrcamento, 'tem_contato' => true, 'whatsapp' => $empresa['whatsapp']];
+    $optsServicos = ['modo' => $modo, 'tem_agendamento' => $temAgenda, 'tem_orcamento' => $temOrcamento, 'tem_contato' => true, 'whatsapp' => $empresa['whatsapp'],
+                     'carrinho' => site_pedido_online($empresa, $modo)];
     $info = atendimento_modos()[$modo];
     $linkWhats = so_digitos_frag($empresa['whatsapp'] ?? '') ? frag_link_whatsapp($empresa['whatsapp'], trim((string)($empresa['whatsapp_mensagem'] ?? '')) ?: 'Olá! Vim pelo site e gostaria de mais informações.') : '#gds-contato';
     $linkPrincipal = ['agendamento' => $temAgenda ? '#gds-agendamento' : $linkWhats, 'orcamento' => $temOrcamento ? '#gds-orcamento' : $linkWhats,
@@ -381,6 +503,12 @@ function site_fragmentos_marcadores($empresa, $dados, $estado) {
 
 // O componente principal da forma de atendimento precisa existir no site.
 // Se o design (feito antes, ou pela IA esquecendo) não tiver, ele entra numa seção própria.
+// "Serviços" / "Cardápio" / "Produtos" conforme o tipo de negócio
+function site_titulo_catalogo($empresa, $modo) {
+    if ($modo !== 'catalogo') return 'Serviços';
+    return ($empresa['segmento_grupo'] ?? '') === 'Alimentação e Bebidas' || in_array($empresa['segmento_slug'] ?? '', ['restaurante', 'delivery'], true) ? 'Cardápio' : 'Produtos';
+}
+
 // Texto do botão principal: o do segmento só vale se a forma de atendimento for a mesma dele
 function site_texto_cta($empresa, $modo) {
     $doSegmento = trim((string)($empresa['segmento_cta'] ?? ''));
@@ -455,6 +583,9 @@ function site_render_ia($empresa, $dados, $estado, $preview = false) {
     if (!str_contains($empresa['html_gerado'], '{{WHATSAPP_FLOAT}}') && site_mostrar_whatsapp_float($empresa)) {
         $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $empresa['nome'])) . '</body>', $html, 1);
     }
+    if (site_pedido_online($empresa, $dados['modo'])) {
+        $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], frag_carrinho($empresa, $estado['pedido'] ?? [])) . '</body>', $html, 1);
+    }
     $extras = frag_css_apoio($dados['tema']) . site_json_ld($empresa, $dados);
     if (!$preview) $extras .= site_script_analytics($dados['analytics_id']);
     if (stripos($html, '</head>') !== false) {
@@ -494,7 +625,7 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
 
     if (trim($empresa['sobre'] ?? '') !== '') $secao('sobre', 'Sobre', '<p class="lead">' . nl2br(e($empresa['sobre'])) . '</p>');
     $f = site_fragmentos_marcadores($empresa, $dados, $estado);
-    if ($dados['servicos']) $secao('servicos', 'Serviços', $f['{{SERVICOS}}']);
+    if ($dados['servicos']) $secao('servicos', site_titulo_catalogo($empresa, $dados['modo']), $f['{{SERVICOS}}']);
     if ($dados['profissionais']) $secao('equipe', 'Equipe', $f['{{EQUIPE}}']);
     if ($dados['galeria']) $secao('galeria', 'Galeria', $f['{{GALERIA}}']);
     if ($dados['blocos']) {
@@ -596,6 +727,7 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     <span>© <?= date('Y') ?> · Site por GDS</span>
 </footer>
 <?= site_mostrar_whatsapp_float($empresa) ? frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $nome) : '' ?>
+<?= site_pedido_online($empresa, $dados['modo']) ? frag_carrinho($empresa, $estado['pedido'] ?? []) : '' ?>
 <script>
 function mostrarPagina(chave) {
     var alvo = document.querySelector('.psite-page[data-page="' + chave + '"]');
