@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
 }
 
 $planos = $pdo->query("SELECT * FROM planos ORDER BY valor")->fetchAll();
-$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true OR id=" . (int)($empresa['segmento_id'] ?? 0) . " ORDER BY (slug='outro'), nome")->fetchAll();
+$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true OR id=" . (int)($empresa['segmento_id'] ?? 0) . " " . SEGMENTOS_ORDEM)->fetchAll();
 $statusOpcoes = ['ativo' => 'Ativo', 'pendente' => 'Pendente', 'suspenso' => 'Suspenso (site sai do ar e login bloqueado)', 'cancelado' => 'Cancelado (site sai do ar e login bloqueado)'];
 ?>
 <!DOCTYPE html>
