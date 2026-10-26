@@ -20,7 +20,7 @@ if (isset($_GET['excluir'])) {
     header('Location: templates.php'); exit;
 }
 
-$segmentos = $pdo->query("SELECT * FROM segmentos ORDER BY nome")->fetchAll();
+$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true " . SEGMENTOS_ORDEM)->fetchAll();
 $templates = $pdo->query("SELECT t.*, s.nome AS segmento_nome FROM templates t LEFT JOIN segmentos s ON s.id = t.segmento_id ORDER BY t.nome")->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -39,7 +39,7 @@ $templates = $pdo->query("SELECT t.*, s.nome AS segmento_nome FROM templates t L
             <label>Nome</label><input type="text" name="nome" required>
             <div class="form-row">
                 <div><label>Segmento (vazio = universal)</label>
-                    <select name="segmento_id"><option value="">— universal —</option><?php foreach ($segmentos as $s): ?><option value="<?= $s['id'] ?>"><?= e($s['nome']) ?></option><?php endforeach; ?></select></div>
+                    <select name="segmento_id"><option value="">— universal —</option><?= segmentos_options($segmentos) ?></select></div>
                 <div><label>Estilo visual</label>
                     <select name="layout"><?php foreach ($estilos as $val => $label): ?><option value="<?= $val ?>"><?= $label ?></option><?php endforeach; ?></select></div>
             </div>

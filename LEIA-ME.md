@@ -17,6 +17,7 @@
    - `sql/adicional_10_estudio_ia.sql` ← **novo**: Estúdio IA (conversa + versões), avaliações pelo site, horário de atendimento e índices
    - `sql/adicional_12_conteudo_site.sql` ← **novo**: categorias/fotos de serviço, folgas, cupom e cancelamento pelo cliente (aplicado sozinho pelo sistema)
    - `sql/adicional_13_segmentos.sql` ← **novo**: segmentos inteligentes, forma de atendimento e pedidos de orçamento pelo site (aplicado sozinho pelo sistema)
+   - `sql/adicional_14_mais_segmentos.sql` ← **novo**: 161 segmentos organizados em 18 grupos (aplicado sozinho pelo sistema)
    - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
    O `adicional_10` também é aplicado sozinho pelo sistema no primeiro acesso ao painel, se tiver faltado.
@@ -99,8 +100,11 @@ Cada negócio conquista cliente de um jeito, e o site segue isso:
 | **Catálogo** | restaurante, loja, delivery | "Pedir" pelo WhatsApp com o item | `{{SERVICOS}}` |
 
 - **Admin → Segmentos**: cada segmento tem forma de atendimento, texto do botão, orientação para a IA e serviços típicos.
-  O botão **✨ Preencher com IA** preenche tudo a partir do nome. Já vêm 24 segmentos prontos (inclusive DJ e Agência/venda de sites)
-  e o "Outro" (a empresa descreve o tipo de negócio).
+  O botão **✨ Preencher com IA** preenche tudo a partir do nome. Já vêm **161 segmentos prontos em 18 grupos**
+  (Alimentação — hamburgueria, pizzaria, fast food, delivery, açaí, marmitaria…; Beleza; Saúde; Esporte; Pets; Eventos;
+  Casa e Construção; Automotivo; Serviços Profissionais; Tecnologia e Marketing — incluindo venda de sites; Educação;
+  Turismo; Comércio e Lojas; Imóveis; Religião e ONGs; Agro e Indústria; Pessoal e Criativo) e o "Outro"
+  (a empresa descreve o tipo de negócio). Nas listas eles aparecem separados por grupo; na tela de Segmentos dá para buscar e filtrar.
 - A forma vale nesta ordem: escolha da empresa (Configurações → "Como seus clientes contratam", ou no admin/Estúdio) > segmento > agendamento.
 - **No Estúdio IA a IA estuda o negócio antes de criar** (tipo, público, tom, forma de atendimento, serviços e perguntas frequentes).
   Se a empresa não tem serviços, ela pode cadastrar os sugeridos. Se a forma mudar depois, o site troca o componente sozinho.

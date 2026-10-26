@@ -51,16 +51,32 @@ function atendimento_modo_da_linha($empresa) {
     return 'agendamento';
 }
 
+// Ordem padrão das listas de segmentos: por grupo, "Outro" sempre no fim
+const SEGMENTOS_ORDEM = "ORDER BY (slug='outro'), COALESCE(grupo, 'zzz'), nome";
+
+// <option>s dos segmentos dentro de <optgroup> por grupo (Alimentação, Beleza, Saúde...)
+function segmentos_options($segmentos, $selecionado = '') {
+    $porGrupo = [];
+    foreach ($segmentos as $s) $porGrupo[trim((string)($s['grupo'] ?? '')) ?: 'Sem grupo'][] = $s;
+    $html = '';
+    foreach ($porGrupo as $grupo => $lista) {
+        $html .= '<optgroup label="' . e($grupo) . '">';
+        foreach ($lista as $s) {
+            $html .= '<option value="' . (int)$s['id'] . '" data-slug="' . e($s['slug'] ?? '') . '"' . ((string)$selecionado === (string)$s['id'] ? ' selected' : '') . '>' . e($s['nome']) . '</option>';
+        }
+        $html .= '</optgroup>';
+    }
+    return $html;
+}
+
 // Campos "Segmento + Outro (descreva) + Como os clientes contratam" usados nos
 // formulários de empresa (cadastro e edição no admin)
 function atendimento_campos_form($segmentos, $segId, $segDescricao, $modo) {
     $modos = atendimento_modos();
     $opts = (string)$segId === '' ? '<option value="">— escolha o segmento —</option>' : '';
     $modoSeg = [];
-    foreach ($segmentos as $s) {
-        $modoSeg[$s['id']] = $s['modo_atendimento'] ?? '';
-        $opts .= '<option value="' . (int)$s['id'] . '" data-slug="' . e($s['slug'] ?? '') . '"' . ((string)$segId === (string)$s['id'] ? ' selected' : '') . '>' . e($s['nome']) . '</option>';
-    }
+    foreach ($segmentos as $s) $modoSeg[$s['id']] = $s['modo_atendimento'] ?? '';
+    $opts .= segmentos_options($segmentos, $segId);
     $optsModo = '<option value="">Automático (pelo segmento)</option>';
     foreach ($modos as $k => $m) $optsModo .= '<option value="' . e($k) . '"' . ($modo === $k ? ' selected' : '') . '>' . e($m['nome']) . '</option>';
     $nomesModo = array_map(fn($m) => $m['nome'], $modos);

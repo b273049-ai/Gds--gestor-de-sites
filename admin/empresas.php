@@ -65,7 +65,7 @@ $where = []; $params = [];
 if ($busca !== '') { $where[] = "(e.nome ILIKE ? OR e.email ILIKE ? OR e.slug ILIKE ?)"; array_push($params, "%$busca%", "%$busca%", "%$busca%"); }
 if (in_array($filtroStatus, ['ativo', 'pendente', 'suspenso', 'cancelado'], true)) { $where[] = "e.status = ?"; $params[] = $filtroStatus; }
 
-$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true ORDER BY (slug='outro'), nome")->fetchAll();
+$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true " . SEGMENTOS_ORDEM)->fetchAll();
 $planos = $pdo->query("SELECT * FROM planos WHERE ativo=true ORDER BY valor")->fetchAll();
 $stmt = $pdo->prepare("
     SELECT e.*, sg.nome AS segmento_nome, p.nome AS plano_nome, s.publicado, s.ia_modo_total
