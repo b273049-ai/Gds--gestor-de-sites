@@ -24,9 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar_status']) &
 $clientes = $pdo->prepare("SELECT id, nome FROM clientes WHERE empresa_id=? ORDER BY nome"); $clientes->execute([$empresaId]); $clientes = $clientes->fetchAll();
 $filtro = $_GET['status'] ?? '';
 $params = [$empresaId];
-$sql = "SELECT p.*, c.nome AS cliente_nome, c.telefone FROM pedidos p LEFT JOIN clientes c ON c.id = p.cliente_id WHERE p.empresa_id=?";
+$sql = "SELECT p.*, c.nome AS cliente_nome, c.telefone, c.email AS cliente_email, sv.nome AS servico_nome FROM pedidos p LEFT JOIN clientes c ON c.id = p.cliente_id LEFT JOIN servicos sv ON sv.id = p.servico_id WHERE p.empresa_id=?";
 if (isset($statusOpcoes[$filtro])) { $sql .= " AND p.status=?"; $params[] = $filtro; }
 $pedidos = $pdo->prepare($sql . " ORDER BY p.criado_em DESC LIMIT 300"); $pedidos->execute($params); $pedidos = $pedidos->fetchAll();
+$novosSite = count(array_filter($pedidos, fn($p) => ($p['origem'] ?? '') === 'site' && $p['status'] === 'novo'));
 $totAberto = array_sum(array_map(fn($p) => in_array($p['status'], ['novo', 'em_andamento'], true) ? (float)$p['valor'] : 0, $pedidos));
 ?>
 <!DOCTYPE html>
@@ -36,7 +37,7 @@ $totAberto = array_sum(array_map(fn($p) => in_array($p['status'], ['novo', 'em_a
 <div class="layout">
 <?php include '_sidebar.php'; ?>
 <main class="content">
-    <div class="page-header"><div><h1>Pedidos e orçamentos</h1><p class="subtitulo">Em aberto nesta lista: R$ <?= number_format($totAberto, 2, ',', '.') ?></p></div></div>
+    <div class="page-header"><div><h1>Pedidos e orçamentos</h1><p class="subtitulo">Em aberto nesta lista: R$ <?= number_format($totAberto, 2, ',', '.') ?><?= $novosSite ? ' · <strong>' . $novosSite . ' pedido(s) novo(s) chegaram pelo site</strong>' : '' ?></p></div></div>
     <?= flash_render() ?>
     <details class="form-box" <?= $pedidos ? '' : 'open' ?>>
         <summary><?= icone('mais') ?> Novo pedido/orçamento</summary>
@@ -62,7 +63,10 @@ $totAberto = array_sum(array_map(fn($p) => in_array($p['status'], ['novo', 'em_a
         <tr>
             <td><?= date('d/m/Y', strtotime($p['criado_em'])) ?></td>
             <td><?= e($p['cliente_nome'] ?? '—') ?><?php if ($p['telefone']): ?><span class="mini"><a class="link" target="_blank" href="<?= e(link_whatsapp($p['telefone'])) ?>"><?= e($p['telefone']) ?></a></span><?php endif; ?></td>
-            <td><?= e($p['descricao']) ?><?php if ($p['veiculo_info']): ?><span class="mini">🚗 <?= e($p['veiculo_info']) ?></span><?php endif; ?></td>
+            <td><?php if (($p['origem'] ?? '') === 'site'): ?><span class="badge badge-site">pelo site</span> <?php endif; ?><?php if (!empty($p['servico_nome'])): ?><strong><?= e($p['servico_nome']) ?></strong><br><?php endif; ?><?= nl2br(e($p['descricao'])) ?>
+                <?php if (!empty($p['data_evento'])): ?><span class="mini">📅 <?= date('d/m/Y', strtotime($p['data_evento'])) ?></span><?php endif; ?>
+                <?php if (!empty($p['local_evento'])): ?><span class="mini">📍 <?= e($p['local_evento']) ?></span><?php endif; ?>
+                <?php if (!empty($p['cliente_email'])): ?><span class="mini">✉ <a class="link" href="mailto:<?= e($p['cliente_email']) ?>"><?= e($p['cliente_email']) ?></a></span><?php endif; ?><?php if ($p['veiculo_info']): ?><span class="mini">🚗 <?= e($p['veiculo_info']) ?></span><?php endif; ?></td>
             <td>R$ <?= number_format($p['valor'], 2, ',', '.') ?></td>
             <td><form method="post"><?= csrf_campo() ?><input type="hidden" name="pedido_id" value="<?= $p['id'] ?>"><input type="hidden" name="atualizar_status" value="1">
                 <select name="status" onchange="this.form.submit()" aria-label="Status"><?php foreach ($statusOpcoes as $val => $label): ?><option value="<?= $val ?>" <?= $p['status'] == $val ? 'selected' : '' ?>><?= $label ?></option><?php endforeach; ?></select></form></td>

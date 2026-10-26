@@ -13,7 +13,7 @@
 
 require_once __DIR__ . '/ia_helper.php';
 
-const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}'];
+const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}'];
 const IA_MARCADORES_OBRIGATORIOS = ['{{CONTATO}}'];
 
 function ia_direcoes_visuais() {
@@ -61,17 +61,21 @@ function ia_contexto_empresa($empresaId) {
     $emp['avaliacoes_total'] = (int)($aval[0]['total'] ?? 0);
     $emp['avaliacoes_media'] = round((float)($aval[0]['media'] ?? 0), 1);
     $emp['galeria'] = array_values(array_filter(array_map('trim', explode(',', $emp['galeria_imagens'] ?? ''))));
+    $emp['atendimento'] = atendimento_info_empresa($empresaId);
     return $emp;
 }
 
 function ia_contexto_texto($ctx) {
+    $at = $ctx['atendimento'] ?? [];
     $l = [];
     $l[] = "Nome: {$ctx['nome']}";
-    $l[] = 'Segmento: ' . ($ctx['segmento_nome'] ?: 'não informado');
+    $l[] = 'Segmento cadastrado: ' . ($at['segmento_texto'] ?? ($ctx['segmento_nome'] ?: 'não informado'))
+         . (!empty($at['descricao_ia']) ? "\n  Como esse tipo de negócio costuma funcionar: {$at['descricao_ia']}" : '');
     if ($ctx['endereco']) $l[] = "Endereço: {$ctx['endereco']}";
-    if ($ctx['whatsapp']) $l[] = "WhatsApp: {$ctx['whatsapp']}";
+    $l[] = $ctx['whatsapp'] ? "WhatsApp: {$ctx['whatsapp']}" : 'WhatsApp: NÃO cadastrado (não prometa atendimento por WhatsApp)';
     if ($ctx['telefone']) $l[] = "Telefone: {$ctx['telefone']}";
     if ($ctx['email']) $l[] = "E-mail: {$ctx['email']}";
+    if (!empty($ctx['instagram'])) $l[] = "Instagram: {$ctx['instagram']}";
     if (!empty($ctx['horario_abertura']) && !empty($ctx['horario_fechamento'])) {
         $l[] = 'Horário de atendimento: ' . substr($ctx['horario_abertura'], 0, 5) . ' às ' . substr($ctx['horario_fechamento'], 0, 5);
     }
@@ -79,12 +83,14 @@ function ia_contexto_texto($ctx) {
     if ($ctx['objetivo']) $l[] = "Objetivo do site: {$ctx['objetivo']}";
     if ($ctx['sobre']) $l[] = "Texto 'sobre' já cadastrado: {$ctx['sobre']}";
     if ($ctx['servicos']) {
-        $l[] = 'Serviços reais (com preço):';
+        $l[] = 'Serviços/produtos reais cadastrados:';
         foreach ($ctx['servicos'] as $s) {
-            $l[] = '  - ' . $s['nome'] . ' — R$ ' . number_format((float)$s['preco'], 2, ',', '.')
+            $l[] = '  - ' . $s['nome'] . ' — ' . ((float)$s['preco'] > 0 ? 'R$ ' . number_format((float)$s['preco'], 2, ',', '.') : 'sob consulta')
                  . ($s['duracao_minutos'] ? " ({$s['duracao_minutos']} min)" : '')
                  . ($s['descricao'] ? ": {$s['descricao']}" : '');
         }
+    } else {
+        $l[] = 'Serviços/produtos: nenhum cadastrado ainda.';
     }
     if ($ctx['profissionais']) {
         $l[] = 'Equipe: ' . implode('; ', array_map(fn($p) => $p['nome'] . ($p['especialidade'] ? " ({$p['especialidade']})" : ''), $ctx['profissionais']));
@@ -102,8 +108,32 @@ function ia_contexto_texto($ctx) {
     return implode("\n", $l);
 }
 
+// Texto que explica as 4 formas de atendimento para a IA escolher/seguir
+function ia_texto_formas_atendimento() {
+    return <<<TXT
+FORMAS DE ATENDIMENTO (como o site transforma visitante em cliente):
+- "agendamento": o cliente marca dia e horário (barbearia, salão, clínica, dentista, estética, terapia, pet shop...).
+- "orcamento": o cliente descreve o que precisa (data do evento, local, detalhes) e pede orçamento — NÃO existe
+  horário marcado (DJ, fotógrafo, buffet/eventos, obras e reformas, mecânica, advocacia, agência, consultoria...).
+- "contato": o cliente conversa pelo WhatsApp/formulário para tirar dúvidas ou pedir proposta (imobiliária, software,
+  cursos, hotel...).
+- "catalogo": o cliente escolhe produto/prato com preço e pede pelo WhatsApp (restaurante, delivery, loja).
+TXT;
+}
+
+// Marcadores obrigatórios para cada forma de atendimento
+function ia_marcadores_do_modo($modo, $ctx) {
+    $m = ['{{CONTATO}}'];
+    if ($modo === 'agendamento') $m[] = '{{AGENDAMENTO}}';
+    if ($modo === 'orcamento') $m[] = '{{ORCAMENTO}}';
+    if ($modo === 'catalogo' || !empty($ctx['servicos'])) $m[] = '{{SERVICOS}}';
+    if (!empty($ctx['whatsapp'])) $m[] = '{{WHATSAPP_FLOAT}}';
+    return $m;
+}
+
 // ------------------------------------------------------------
-// ETAPA 1 — decisões de design (antes de escrever qualquer código)
+// ETAPA 1 — a IA ESTUDA o negócio (tipo, forma de atendimento, público,
+// serviços, perguntas frequentes) e toma as decisões de design
 // ------------------------------------------------------------
 function ia_planejar_site($ctx, $briefing, $direcaoChave = null, $preferencias = '') {
     $direcoes = ia_direcoes_visuais();
@@ -114,31 +144,48 @@ function ia_planejar_site($ctx, $briefing, $direcaoChave = null, $preferencias =
     [$direcaoNome, $direcaoDesc] = $direcoes[$direcaoChave];
     $dados = ia_contexto_texto($ctx);
     $pref = trim($preferencias) !== '' ? "\nPREFERÊNCIAS EXPLÍCITAS DO DONO (têm prioridade): \"$preferencias\"" : '';
+    $at = $ctx['atendimento'] ?? ['modo' => 'agendamento', 'modo_origem' => 'padrao'];
+    $formas = ia_texto_formas_atendimento();
+    $regraModo = $at['modo_origem'] === 'empresa'
+        ? "A forma de atendimento deste negócio JÁ FOI DEFINIDA pelo dono: \"{$at['modo']}\". Use exatamente essa."
+        : ($at['modo_origem'] === 'segmento'
+            ? "O segmento cadastrado sugere \"{$at['modo']}\", mas o cadastro pode estar errado: decida pela DESCRIÇÃO DO DONO e pelos dados reais."
+            : 'Decida a forma de atendimento pela descrição do dono e pelos dados reais.');
 
     $prompt = <<<PROMPT
-Você é um diretor de arte digital sênior. Tome DECISÕES CONCRETAS E FINAIS de design pra este negócio específico —
-nada de teoria: decisões que um desenvolvedor vai seguir ao pé da letra.
+Você é um estrategista de marketing digital e diretor de arte sênior. Primeiro ESTUDE este negócio (o que ele vende,
+para quem, e o que o visitante do site precisa fazer para virar cliente). Depois tome DECISÕES CONCRETAS de design
+que um desenvolvedor vai seguir ao pé da letra.
 
 DADOS REAIS DO NEGÓCIO:
 $dados
 
 O QUE O DONO CONTOU: "$briefing"$pref
 
+$formas
+$regraModo
+
 DIREÇÃO VISUAL BASE: $direcaoNome — $direcaoDesc
 
 Responda APENAS com JSON válido (sem markdown), exatamente neste formato:
-{"fonte_titulo":"fonte do Google Fonts","fonte_corpo":"outra fonte do Google Fonts que combine","paleta":{"fundo":"#hex","superficie":"#hex","texto":"#hex","destaque":"#hex","destaque_2":"#hex"},"conceito":"1-2 frases com a metáfora visual específica DESTE negócio","motivos_visuais":["elemento gráfico concreto 1","elemento 2","elemento 3"],"headline":"título principal do site, curto e marcante, em português","subheadline":"frase de apoio","cta":"texto do botão principal","paginas":[{"chave":"inicio","titulo":"Início","conteudo":"o que vai nessa página"}],"marcadores":["{{CONTATO}}"]}
+{"analise":{"tipo_negocio":"o que o negócio é, em poucas palavras (ex.: DJ para casamentos e festas)","modo_atendimento":"agendamento|orcamento|contato|catalogo","motivo_modo":"1 frase","publico":"quem é o cliente ideal","o_que_o_visitante_quer":"1 frase","tom_de_voz":"ex.: animado e jovem","servicos_sugeridos":[{"nome":"...","descricao":"até 15 palavras","preco":null,"duracao_minutos":null}],"perguntas_frequentes":[{"pergunta":"...","resposta":"..."}]},
+"fonte_titulo":"fonte do Google Fonts","fonte_corpo":"outra fonte do Google Fonts que combine","paleta":{"fundo":"#hex","superficie":"#hex","texto":"#hex","destaque":"#hex","destaque_2":"#hex"},"conceito":"1-2 frases com a metáfora visual específica DESTE negócio","motivos_visuais":["elemento gráfico concreto 1","elemento 2","elemento 3"],"headline":"título principal, curto e marcante","subheadline":"frase de apoio","cta":"texto do botão principal (coerente com a forma de atendimento)","paginas":[{"chave":"inicio","titulo":"Início","conteudo":"o que vai nessa página"}],"marcadores":["{{CONTATO}}"]}
 
 Regras:
-- "paginas": de 3 a 6 páginas. A primeira é sempre "inicio". Chaves em minúsculo sem acento.
-- "marcadores": escolha entre {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}},
-  só os que fazem sentido. {{CONTATO}} é obrigatório. {{AGENDAMENTO}} só se o negócio marca horário com clientes.
-  {{EQUIPE}} só se houver equipe cadastrada; {{GALERIA}} só se houver fotos; {{CUPONS}} só se houver cupons; {{MAPA}} só se houver endereço; {{HORARIOS}} (tabela da semana com "aberto agora") cabe bem junto do contato;
-  {{WHATSAPP_FLOAT}} sempre que houver WhatsApp.
+- "servicos_sugeridos": de 3 a 8 serviços/pacotes/produtos típicos DESTE negócio, baseados no que o dono contou.
+  "preco" só se o dono informou valores (senão null). "duracao_minutos" só se for agendamento (senão null).
+- "perguntas_frequentes": 4 a 6 dúvidas reais que um cliente desse negócio tem antes de contratar, com respostas
+  curtas e genéricas o bastante para não inventar fatos (sem preços, prêmios ou números inventados).
+- "paginas": de 3 a 6. A primeira é sempre "inicio". Chaves em minúsculo sem acento. Inclua uma página
+  "agendar" (forma agendamento) ou "orcamento" (forma orcamento) e sempre "contato".
+- "marcadores": escolha entre {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{ORCAMENTO}} {{AVALIACOES}}
+  {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}}. {{CONTATO}} sempre. {{AGENDAMENTO}} SOMENTE na forma
+  "agendamento"; {{ORCAMENTO}} SOMENTE na forma "orcamento". {{EQUIPE}} só se houver equipe; {{GALERIA}} só se houver
+  fotos; {{CUPONS}} só se houver cupons; {{MAPA}} e {{HORARIOS}} só se houver endereço físico de atendimento.
 - A paleta precisa de contraste real entre fundo e texto (WCAG AA), e o destaque deve guiar o olhar.
 PROMPT;
 
-    $r = chamar_ia_json($prompt, 1500, 60, 0.9, ['esforco' => 'low']);
+    $r = chamar_ia_json($prompt, 3000, 75, 0.9, ['esforco' => 'low']);
     $plano = $r['ok'] ? $r['dados'] : null;
 
     // Se o planejamento falhar, segue com um plano padrão em vez de travar tudo
@@ -148,16 +195,37 @@ PROMPT;
             'paleta' => ['fundo' => '#0b0e1f', 'superficie' => '#12162e', 'texto' => '#eef0fa',
                          'destaque' => $ctx['cor_primaria'] ?: '#4f7cff', 'destaque_2' => $ctx['cor_secundaria'] ?: '#16213e'],
             'conceito' => $briefing, 'motivos_visuais' => [],
-            'headline' => $ctx['titulo'] ?: $ctx['nome'], 'subheadline' => $ctx['subtitulo'] ?: '', 'cta' => 'Fale com a gente',
+            'headline' => $ctx['titulo'] ?: $ctx['nome'], 'subheadline' => $ctx['subtitulo'] ?: '', 'cta' => atendimento_modos()[$at['modo']]['cta'],
             'paginas' => [['chave' => 'inicio', 'titulo' => 'Início', 'conteudo' => 'apresentação'], ['chave' => 'servicos', 'titulo' => 'Serviços', 'conteudo' => 'serviços'], ['chave' => 'contato', 'titulo' => 'Contato', 'conteudo' => 'contato']],
             'marcadores' => ['{{SOBRE}}', '{{SERVICOS}}', '{{CONTATO}}', '{{WHATSAPP_FLOAT}}'],
         ];
     }
-    $plano['marcadores'] = array_values(array_intersect(IA_MARCADORES, array_unique(array_merge($plano['marcadores'] ?? [], IA_MARCADORES_OBRIGATORIOS))));
+    $analise = is_array($plano['analise'] ?? null) ? $plano['analise'] : [];
+    // Forma de atendimento final: a do dono (se definida) > a que a IA concluiu > a do segmento
+    $modo = $at['modo_origem'] === 'empresa' ? $at['modo']
+          : (atendimento_modo_valido($analise['modo_atendimento'] ?? null) ? $analise['modo_atendimento'] : $at['modo']);
+    $analise['modo_atendimento'] = $modo;
+    $plano['analise'] = $analise;
+    $plano['modo'] = $modo;
+
+    $permitidos = array_values(array_filter(IA_MARCADORES, fn($m) => !($m === '{{AGENDAMENTO}}' && $modo !== 'agendamento') && !($m === '{{ORCAMENTO}}' && $modo !== 'orcamento')));
+    $plano['marcadores'] = array_values(array_intersect($permitidos, array_unique(array_merge($plano['marcadores'] ?? [], ia_marcadores_do_modo($modo, $ctx)))));
+    $plano['obrigatorios'] = ia_marcadores_do_modo($modo, $ctx);
     $plano['direcao_chave'] = $direcaoChave;
     $plano['direcao_nome'] = $direcaoNome;
     $plano['direcao_desc'] = $direcaoDesc;
     return $plano;
+}
+
+// Estratégia de conversão que vai no prompt de geração, conforme a forma de atendimento
+function ia_estrategia_conversao($modo, $temWhats) {
+    $whats = $temWhats ? ' Use também {{LINK_WHATSAPP}} num botão secundário "Chamar no WhatsApp".' : '';
+    return [
+        'agendamento' => "O objetivo do site é o visitante AGENDAR. O botão principal (topo e final das páginas) leva a {{LINK_PRINCIPAL}} e o texto pode ser {{TEXTO_PRINCIPAL}}. Mostre serviços com preço — cada serviço já tem o botão \"Agendar\" que abre o agendamento com ele escolhido.$whats",
+        'orcamento'   => "O objetivo do site é o visitante PEDIR ORÇAMENTO (não existe agendamento de horário). O botão principal leva a {{LINK_PRINCIPAL}} (formulário de orçamento). Mostre os serviços/pacotes — cada um já tem o botão \"Pedir orçamento\". Prova social (eventos/obras/trabalhos já feitos, galeria, depoimentos) é essencial.$whats",
+        'contato'     => "O objetivo do site é o visitante ENTRAR EM CONTATO. O botão principal leva a {{LINK_PRINCIPAL}}" . ($temWhats ? ' (WhatsApp)' : ' (contato)') . '. Explique bem a proposta de valor, como funciona e por que escolher este negócio.',
+        'catalogo'    => "O objetivo do site é o visitante ESCOLHER E PEDIR. O botão principal leva a {{LINK_PRINCIPAL}} (cardápio/produtos). Cada item já tem o botão \"Pedir\" pelo WhatsApp. Destaque preços, entrega/retirada, formas de pagamento e horário.",
+    ][$modo] ?? '';
 }
 
 // ------------------------------------------------------------
@@ -174,19 +242,26 @@ CONTRATO TÉCNICO (obrigatório):
 4. Navegação por páginas (não scroll único): cada página é um <section data-page="chave">; só a primeira visível.
    Os links do menu têm data-page-link="chave". Defina no JS a função global window.gdsMostrarPagina(chave) que troca a
    página visível, marca o link ativo e rola pro topo. Ao carregar, abra a página do #hash da URL se existir.
-5. MARCADORES: cada marcador {{...}} fica sozinho em sua própria linha, dentro de um container seu, e NUNCA dentro de
-   atributo, <a>, <p>, <button> ou <form>. Na hora de exibir, cada um vira um COMPONENTE PRONTO, já com design
-   profissional próprio que herda a sua fonte e a cor do texto e usa a cor de destaque da paleta:
-   {{SERVICOS}} = cartões de serviço com preço, duração e botão "Agendar" | {{AGENDAMENTO}} = agendamento passo a passo
-   (serviço → profissional → calendário com horários livres → dados) | {{CONTATO}} = canais (WhatsApp, telefone,
-   e-mail, endereço) + formulário | {{EQUIPE}} = cartões da equipe | {{AVALIACOES}} = nota média + depoimentos +
-   formulário | {{GALERIA}} = grade com ampliação | {{CUPONS}} = cupons | {{MAPA}} = mapa com "Como chegar" |
-   {{HORARIOS}} = horário da semana | {{WHATSAPP_FLOAT}} = botão flutuante do WhatsApp.
+5. MARCADORES: cada marcador de componente {{...}} fica sozinho em sua própria linha, dentro de um container seu, e
+   NUNCA dentro de atributo, <a>, <p>, <button> ou <form>. Na hora de exibir, cada um vira um COMPONENTE PRONTO, já com
+   design profissional próprio que herda a sua fonte e a cor do texto e usa a cor de destaque da paleta:
+   {{SERVICOS}} = cartões de serviço com preço e o botão certo para a forma de atendimento ("Agendar", "Pedir
+   orçamento", "Pedir" ou WhatsApp) | {{AGENDAMENTO}} = agendamento passo a passo (serviço → profissional → calendário
+   com horários livres → dados) | {{ORCAMENTO}} = formulário de pedido de orçamento (serviço, data do evento, local,
+   detalhes, contato) | {{CONTATO}} = canais (WhatsApp, telefone, e-mail, endereço) + formulário | {{EQUIPE}} = cartões
+   da equipe | {{AVALIACOES}} = nota média + depoimentos + formulário | {{GALERIA}} = grade com ampliação |
+   {{CUPONS}} = cupons | {{MAPA}} = mapa com "Como chegar" | {{HORARIOS}} = horário da semana | {{WHATSAPP_FLOAT}} =
+   botão flutuante do WhatsApp.
    Por isso: NÃO estilize classes que começam com "gds-" e NÃO crie você mesmo listas de serviços, equipe, avaliações,
    formulários, calendário, mapa ou botão de WhatsApp — só dê a cada componente uma seção com título, um respiro
-   (padding) e largura máxima confortável (ex.: max-width 1100px; agendamento ~760px). O site deve ter a âncora/
-   página "agendar" para o {{AGENDAMENTO}}: os botões "Agendar" dos serviços levam até ele sozinhos.
-   Os seus botões de chamada (ex.: "Agendar horário" do topo) devem levar à página do {{AGENDAMENTO}} (ou {{CONTATO}}).
+   (padding) e largura máxima confortável (ex.: max-width 1100px; agendamento/orçamento ~760px).
+   Os botões "Agendar"/"Pedir orçamento" dos serviços levam sozinhos até o componente certo, em qualquer página.
+5b. LINKS PRONTOS (estes PODEM e DEVEM ir dentro de atributo/texto): {{LINK_PRINCIPAL}} = destino da ação principal
+   (agendamento, orçamento, WhatsApp ou contato, conforme o negócio); {{TEXTO_PRINCIPAL}} = texto certo desse botão;
+   {{LINK_WHATSAPP}} = conversa no WhatsApp do negócio já com mensagem pronta. Exemplos:
+   <a class="btn" href="{{LINK_PRINCIPAL}}">{{TEXTO_PRINCIPAL}}</a>   <a href="{{LINK_WHATSAPP}}">Chamar no WhatsApp</a>
+   NUNCA escreva você mesmo links wa.me, api.whatsapp.com, tel: ou mailto: com números inventados ou digitados —
+   use sempre {{LINK_WHATSAPP}} (o sistema monta com o número real, e abre em nova aba sozinho).
 6. MOBILE-FIRST: sem largura fixa que quebre abaixo de 400px; títulos com clamp(); toque mínimo 44x44px; inputs com
    font-size >= 16px; nada de rolagem horizontal em 360px; menu vira hambúrguer acessível no celular.
 7. Acessibilidade: contraste AA, foco visível (:focus-visible), botões de verdade (<button>) para ações, textos alternativos
@@ -212,6 +287,21 @@ function ia_gerar_html_site($ctx, $briefing, $plano) {
     $marcadores = implode(' ', $plano['marcadores']);
     $paginas = implode("\n", array_map(fn($pg) => "  - data-page=\"" . ($pg['chave'] ?? '') . "\" (" . ($pg['titulo'] ?? '') . "): " . ($pg['conteudo'] ?? ''), (array)($plano['paginas'] ?? [])));
     $regras = ia_regras_tecnicas();
+    $modo = $plano['modo'] ?? 'agendamento';
+    $estrategia = ia_estrategia_conversao($modo, !empty($ctx['whatsapp']));
+    $an = (array)($plano['analise'] ?? []);
+    $analise = '';
+    foreach (['tipo_negocio' => 'Tipo de negócio', 'publico' => 'Público', 'o_que_o_visitante_quer' => 'O que o visitante quer', 'tom_de_voz' => 'Tom de voz'] as $k => $rot) {
+        if (!empty($an[$k]) && is_string($an[$k])) $analise .= "- $rot: {$an[$k]}\n";
+    }
+    $faq = '';
+    foreach (array_slice((array)($an['perguntas_frequentes'] ?? []), 0, 6) as $f) {
+        if (!empty($f['pergunta']) && !empty($f['resposta'])) $faq .= "  P: {$f['pergunta']}\n  R: {$f['resposta']}\n";
+    }
+    $faqTxt = $faq !== ''
+        ? "PERGUNTAS FREQUENTES (crie uma seção de FAQ acessível — <details>/<summary> — com estas):\n$faq"
+        : '';
+    $semWhats = empty($ctx['whatsapp']) ? "\nATENÇÃO: o negócio NÃO tem WhatsApp cadastrado — não crie botões de WhatsApp; use {{LINK_PRINCIPAL}}." : '';
 
     $prompt = <<<PROMPT
 Construa o site completo deste negócio seguindo EXATAMENTE as decisões de design abaixo. Você não decide mais nada de
@@ -221,6 +311,13 @@ DADOS REAIS DO NEGÓCIO:
 $dados
 
 O QUE O DONO CONTOU: "$briefing"
+
+ESTUDO DO NEGÓCIO (escreva para este público, neste tom):
+$analise
+FORMA DE ATENDIMENTO: "$modo".
+ESTRATÉGIA DE CONVERSÃO: $estrategia$semWhats
+
+$faqTxt
 
 DECISÕES DE DESIGN (siga à risca):
 - Direção: {$plano['direcao_nome']} — {$plano['direcao_desc']}
@@ -232,13 +329,13 @@ DECISÕES DE DESIGN (siga à risca):
 - Páginas:
 $paginas
 
-MARCADORES A INCLUIR (só estes, cada um uma única vez): $marcadores
-O botão principal do topo deve levar à página que contém {{AGENDAMENTO}} (se existir) ou {{CONTATO}}.
+MARCADORES DE COMPONENTE A INCLUIR (só estes, cada um uma única vez): $marcadores
+Os botões de chamada (topo, fim de cada página) usam href="{{LINK_PRINCIPAL}}".
 
 $regras
 PROMPT;
 
-    return ia_executar_geracao_html($prompt, $plano['marcadores'], 1.0);
+    return ia_executar_geracao_html($prompt, $plano['obrigatorios'] ?? $plano['marcadores'], 1.0, $modo);
 }
 
 // ------------------------------------------------------------
@@ -249,6 +346,10 @@ function ia_refinar_html_site($ctx, $htmlAtual, $instrucao) {
     $regras = ia_regras_tecnicas();
     $marcadoresAtuais = array_values(array_filter(IA_MARCADORES, fn($m) => str_contains($htmlAtual, $m)));
     $lista = implode(' ', $marcadoresAtuais);
+    $modo = $ctx['atendimento']['modo'] ?? 'agendamento';
+    $obrigatorios = ia_marcadores_do_modo($modo, $ctx);
+    $estrategia = ia_estrategia_conversao($modo, !empty($ctx['whatsapp']));
+    $outroModo = $modo === 'agendamento' ? '{{ORCAMENTO}}' : ($modo === 'orcamento' ? '{{AGENDAMENTO}}' : '{{AGENDAMENTO}} e {{ORCAMENTO}}');
 
     $prompt = <<<PROMPT
 Você é o desenvolvedor front-end que criou o site abaixo. O dono pediu uma alteração. Aplique SOMENTE o que foi pedido,
@@ -261,7 +362,9 @@ DADOS REAIS DO NEGÓCIO (para consulta, se o pedido precisar):
 $dados
 
 Marcadores que existem hoje e DEVEM continuar no resultado (a menos que o pedido seja explicitamente removê-los): $lista
-Marcadores que podem ser adicionados se o pedido pedir: {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AGENDAMENTO}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}}
+Marcadores que podem ser adicionados se o pedido pedir: {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}}
+FORMA DE ATENDIMENTO DO NEGÓCIO: "$modo". $estrategia
+NÃO use $outroModo neste site (não combina com a forma de atendimento); se existir, troque pelo correto.
 
 $regras
 
@@ -269,11 +372,11 @@ HTML ATUAL:
 $htmlAtual
 PROMPT;
 
-    return ia_executar_geracao_html($prompt, array_intersect($marcadoresAtuais, IA_MARCADORES_OBRIGATORIOS), 0.7);
+    return ia_executar_geracao_html($prompt, array_values(array_intersect($obrigatorios, ['{{CONTATO}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}'])), 0.7, $modo);
 }
 
 // Chama a IA, emenda a resposta se vier cortada, e valida/conserta o HTML
-function ia_executar_geracao_html($prompt, $marcadoresEsperados, $temperatura) {
+function ia_executar_geracao_html($prompt, $marcadoresEsperados, $temperatura, $modo = null) {
     $sistema = 'Você é um designer e desenvolvedor front-end sênior especializado em sites para pequenos negócios brasileiros. '
              . 'Você entrega sempre um único documento HTML completo e funcional, sem nenhum texto fora do HTML.';
     $r = chamar_ia($prompt, 32000, 170, $temperatura, null, ['sistema' => $sistema, 'esforco' => 'medium']);
@@ -297,6 +400,8 @@ function ia_executar_geracao_html($prompt, $marcadoresEsperados, $temperatura) {
         return ['ok' => false, 'erro' => 'A IA não terminou de escrever o site (a resposta veio cortada). Tente novamente — às vezes uma segunda tentativa resolve, ou use um pedido mais curto.'];
     }
 
+    // Componente da forma de atendimento errada (ex.: agendamento num site de DJ) vira o certo, no mesmo lugar
+    if ($modo) $html = ia_trocar_componente_errado($html, $modo);
     return ['ok' => true, 'html' => ia_pos_processar_html($html, $marcadoresEsperados)];
 }
 
@@ -329,15 +434,30 @@ function ia_pos_processar_html($html, $marcadoresEsperados = IA_MARCADORES_OBRIG
 
     // Marcador obrigatório faltando: em vez de falhar, coloca ele de volta dentro da última
     // página/seção do site (assim ele segue a navegação que a IA criou)
+    $titulos = ['{{AGENDAMENTO}}' => 'Agende seu horário', '{{ORCAMENTO}}' => 'Peça seu orçamento', '{{SERVICOS}}' => 'Serviços', '{{CONTATO}}' => 'Fale com a gente'];
     foreach ($marcadoresEsperados as $m) {
         if (str_contains($html, $m)) continue;
-        $bloco = "\n<div class=\"gds-secao-auto\" style=\"padding:32px 0;\">\n<h2>Fale com a gente</h2>\n$m\n</div>\n";
+        if ($m === '{{WHATSAPP_FLOAT}}') { $html = preg_replace('/<\/body>/i', "$m\n</body>", $html, 1); continue; }
+        $titulo = $titulos[$m] ?? '';
+        $bloco = "\n<div class=\"gds-secao-auto\" style=\"padding:32px 16px;max-width:1100px;margin:0 auto;\">\n" . ($titulo ? "<h2>$titulo</h2>\n" : '') . "$m\n</div>\n";
         $pos = strripos($html, '</section>');
         $html = $pos !== false
             ? substr($html, 0, $pos) . $bloco . substr($html, $pos)
             : preg_replace('/<\/body>/i', str_replace('$', '\\$', $bloco) . '</body>', $html, 1);
     }
     return $html;
+}
+
+// Site gerado num modo e o dono trocou a forma de atendimento: o componente
+// errado vira o certo (agendamento <-> orçamento) sem precisar gerar de novo
+function ia_trocar_componente_errado($html, $modo) {
+    $certo = ['agendamento' => '{{AGENDAMENTO}}', 'orcamento' => '{{ORCAMENTO}}'][$modo] ?? null;
+    if (!$certo) return $html; // contato/catálogo: mantém o que o dono tiver pedido
+    $errado = $certo === '{{AGENDAMENTO}}' ? '{{ORCAMENTO}}' : '{{AGENDAMENTO}}';
+    if (!str_contains($html, $errado)) return $html;
+    if (str_contains($html, $certo)) return str_replace($errado, '', $html);
+    $html = preg_replace('/' . preg_quote($errado, '/') . '/', $certo, $html, 1);
+    return str_replace($errado, '', $html);
 }
 
 // ------------------------------------------------------------

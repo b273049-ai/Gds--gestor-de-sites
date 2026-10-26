@@ -12,6 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_dados'])) {
             ->execute([trim($_POST['instagram'] ?? '') ?: null, mb_substr(trim($_POST['whatsapp_mensagem'] ?? ''), 0, 255) ?: null,
                        isset($_POST['whatsapp_flutuante']) ? 'true' : 'false', isset($_POST['notificar_email']) ? 'true' : 'false', $empresaId]);
     } catch (PDOException $e) { /* banco ainda sem as colunas novas */ }
+    $modoAt = $_POST['modo_atendimento'] ?? '';
+    $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([atendimento_modo_valido($modoAt) ? $modoAt : null, $empresaId]);
     flash('sucesso', 'Dados atualizados!'); $voltar('dados'); exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['nova_folga'])) {
@@ -111,6 +113,14 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         <label>Endereço completo</label><input type="text" name="endereco" value="<?= e($empresa['endereco']) ?>" placeholder="Rua, número, bairro, cidade - UF">
         <label>Logo (URL da imagem)</label><input type="url" name="logo" value="<?= e($empresa['logo']) ?>" placeholder="https://...">
         <label>Instagram (opcional)</label><input type="text" name="instagram" value="<?= e($empresa['instagram'] ?? '') ?>" placeholder="@seunegocio">
+
+        <?php $atInfo = atendimento_info_empresa($empresaId); ?>
+        <h3 style="margin-top:22px">Como seus clientes contratam</h3>
+        <select name="modo_atendimento">
+            <option value="">Automático<?= !empty($atInfo['modo_segmento']) ? ' (' . e(atendimento_modos()[$atInfo['modo_segmento']]['nome'] ?? '') . ')' : '' ?></option>
+            <?php foreach (atendimento_modos() as $k => $m): ?><option value="<?= e($k) ?>" <?= $atInfo['modo_origem'] === 'empresa' && $atInfo['modo'] === $k ? 'selected' : '' ?>><?= e($m['nome']) ?> — <?= e($m['desc']) ?></option><?php endforeach; ?>
+        </select>
+        <p class="dica">Define o botão principal do site e o que aparece nos serviços: “Agendar” (horário marcado), “Pedir orçamento” (DJ, fotógrafo, obras…), conversa no WhatsApp ou pedido de produtos.</p>
 
         <h3 style="margin-top:22px">WhatsApp no site</h3>
         <label class="check"><input type="checkbox" name="whatsapp_flutuante" <?= ($empresa['whatsapp_flutuante'] ?? null) === null || pg_bool($empresa['whatsapp_flutuante']) ? 'checked' : '' ?>> Mostrar o botão flutuante do WhatsApp em todas as páginas</label>

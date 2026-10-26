@@ -16,6 +16,7 @@
    - `sql/adicional_9_dominio.sql`
    - `sql/adicional_10_estudio_ia.sql` ← **novo**: Estúdio IA (conversa + versões), avaliações pelo site, horário de atendimento e índices
    - `sql/adicional_12_conteudo_site.sql` ← **novo**: categorias/fotos de serviço, folgas, cupom e cancelamento pelo cliente (aplicado sozinho pelo sistema)
+   - `sql/adicional_13_segmentos.sql` ← **novo**: segmentos inteligentes, forma de atendimento e pedidos de orçamento pelo site (aplicado sozinho pelo sistema)
    - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
    O `adicional_10` também é aplicado sozinho pelo sistema no primeiro acesso ao painel, se tiver faltado.
@@ -87,6 +88,25 @@ Admin → Empresas → **Estúdio** (ou a própria empresa, se o plano tiver "Pe
 | o modelo "..." não existe | Clique em "Ver modelos disponíveis" e escolha um da lista |
 | a chave de API foi recusada | Copie a chave de novo, inteira, e confira se é do serviço certo |
 | A hospedagem encerrou a requisição por tempo | Sua hospedagem corta requisições longas; use uma IA mais rápida (Groq) ou peça mais tempo ao suporte |
+
+## Segmentos e forma de atendimento
+Cada negócio conquista cliente de um jeito, e o site segue isso:
+| Forma | Para quem | Botão principal / dos serviços | Componente |
+|---|---|---|---|
+| **Agendamento** | barbearia, salão, clínica, pet shop… | "Agendar" (abre o agendamento com o serviço escolhido) | `{{AGENDAMENTO}}` |
+| **Orçamento** | DJ, fotógrafo, eventos, obras, oficina, agência… | "Pedir orçamento" (abre o formulário com o serviço escolhido, data, local e detalhes) | `{{ORCAMENTO}}` |
+| **Contato** | imobiliária, software, cursos, hotel… | WhatsApp / formulário | `{{CONTATO}}` |
+| **Catálogo** | restaurante, loja, delivery | "Pedir" pelo WhatsApp com o item | `{{SERVICOS}}` |
+
+- **Admin → Segmentos**: cada segmento tem forma de atendimento, texto do botão, orientação para a IA e serviços típicos.
+  O botão **✨ Preencher com IA** preenche tudo a partir do nome. Já vêm 24 segmentos prontos (inclusive DJ e Agência/venda de sites)
+  e o "Outro" (a empresa descreve o tipo de negócio).
+- A forma vale nesta ordem: escolha da empresa (Configurações → "Como seus clientes contratam", ou no admin/Estúdio) > segmento > agendamento.
+- **No Estúdio IA a IA estuda o negócio antes de criar** (tipo, público, tom, forma de atendimento, serviços e perguntas frequentes).
+  Se a empresa não tem serviços, ela pode cadastrar os sugeridos. Se a forma mudar depois, o site troca o componente sozinho.
+- Os botões que a IA escreve usam `{{LINK_PRINCIPAL}}`, `{{TEXTO_PRINCIPAL}}` e `{{LINK_WHATSAPP}}` — o número real do WhatsApp
+  é sempre o cadastrado (links de WhatsApp com número inventado são corrigidos), e o WhatsApp abre em nova aba.
+- Pedidos de orçamento chegam em **Pedidos/Orçamentos** (com serviço, data do evento, local e "pelo site") e por e-mail.
 
 ## Componentes do site (agendamento, serviços, contato, WhatsApp…)
 Os blocos funcionais do site têm design próprio, que se adapta às cores de qualquer site (claro ou escuro) —

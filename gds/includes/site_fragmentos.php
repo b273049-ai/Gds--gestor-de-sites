@@ -103,11 +103,9 @@ function frag_sobre($sobre) {
 // ------------------------------------------------------------
 function frag_servicos($servicos, $opts = []) {
     if (empty($servicos)) return '<div class="gds-c"><p class="gds-vazio">Em breve, nossos serviços aparecerão aqui.</p></div>';
-    $temAgenda = !empty($opts['agendamento']);
-    $whats = $opts['whatsapp'] ?? '';
     $categorias = array_values(array_unique(array_filter(array_map(fn($s) => trim((string)($s['categoria'] ?? '')), $servicos))));
 
-    $html = '<div class="gds-c gds-servicos" data-gds-filtravel>';
+    $html = '<div class="gds-c gds-servicos" id="gds-servicos" data-gds-filtravel>';
     if (count($categorias) > 1) {
         $html .= '<div class="gds-filtros" role="group" aria-label="Filtrar serviços"><button type="button" class="gds-filtro" aria-pressed="true" data-gds-filtro="">Todos</button>';
         foreach ($categorias as $c) $html .= '<button type="button" class="gds-filtro" aria-pressed="false" data-gds-filtro="' . e($c) . '">' . e($c) . '</button>';
@@ -127,14 +125,34 @@ function frag_servicos($servicos, $opts = []) {
         if (!empty($s['categoria']) && count($categorias) <= 1) $meta .= '<span class="gds-chip">' . e($s['categoria']) . '</span>';
         if ($meta) $html .= '<div class="gds-svc-meta">' . $meta . '</div>';
         $html .= '</div><div class="gds-svc-rodape"><div class="gds-preco">' . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de</small>R$ ' . number_format((float)$s['preco'], 2, ',', '.') : frag_preco($s['preco'])) . '</div>';
-        if ($temAgenda) {
-            $html .= '<a class="gds-btn" href="#agendar" data-gds-agendar-servico="' . (int)$s['id'] . '">Agendar ' . frag_icone('seta') . '</a>';
-        } elseif ($whats) {
-            $html .= '<a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($whats, 'Olá! Vi no site o serviço "' . $s['nome'] . '" e gostaria de mais informações.')) . '">' . frag_icone('whats') . ' Pedir orçamento</a>';
-        }
-        $html .= '</div></article>';
+        $html .= frag_botao_servico($s, $opts) . '</div></article>';
     }
     return $html . '</div></div>';
+}
+
+// Botão de cada serviço, conforme a forma de atendimento do negócio:
+// agendamento → abre o agendamento já com o serviço | orçamento → abre o pedido de orçamento com o serviço
+// contato → WhatsApp falando do serviço | catálogo → "Pedir" pelo WhatsApp com item e preço
+function frag_botao_servico($s, $opts) {
+    $modo = $opts['modo'] ?? 'agendamento';
+    $whats = $opts['whatsapp'] ?? '';
+    $id = (int)$s['id'];
+    if ($modo === 'agendamento' && !empty($opts['tem_agendamento'])) {
+        return '<a class="gds-btn" href="#gds-agendamento" data-gds-agendar-servico="' . $id . '">Agendar ' . frag_icone('seta') . '</a>';
+    }
+    if (($modo === 'orcamento' || $modo === 'agendamento') && !empty($opts['tem_orcamento'])) {
+        return '<a class="gds-btn" href="#gds-orcamento" data-gds-orcar-servico="' . $id . '">Pedir orçamento ' . frag_icone('seta') . '</a>';
+    }
+    if ($whats) {
+        if ($modo === 'catalogo') {
+            $msg = 'Olá! Quero pedir: ' . $s['nome'] . ((float)$s['preco'] > 0 ? ' (R$ ' . number_format((float)$s['preco'], 2, ',', '.') . ')' : '') . '.';
+            return '<a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($whats, $msg)) . '">' . frag_icone('whats') . ' Pedir</a>';
+        }
+        $rotulo = $modo === 'orcamento' ? 'Pedir orçamento' : ($modo === 'agendamento' ? 'Agendar pelo WhatsApp' : 'Quero saber mais');
+        $msg = $modo === 'orcamento' ? 'Olá! Vi no site "' . $s['nome'] . '" e gostaria de um orçamento.' : 'Olá! Vi no site "' . $s['nome'] . '" e gostaria de mais informações.';
+        return '<a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($whats, $msg)) . '">' . frag_icone('whats') . ' ' . $rotulo . '</a>';
+    }
+    return !empty($opts['tem_contato']) ? '<a class="gds-btn-2" href="#gds-contato">Fale com a gente</a>' : '';
 }
 
 // ------------------------------------------------------------
@@ -149,7 +167,7 @@ function frag_equipe($profissionais, $temAgenda = false) {
             : '<div class="gds-avatar" aria-hidden="true">' . e(frag_iniciais($p['nome'])) . '</div>';
         $html .= '<div class="gds-pro">' . $foto . '<h4>' . e($p['nome']) . '</h4>'
                . ($p['especialidade'] ? '<p class="gds-mute">' . e($p['especialidade']) . '</p>' : '')
-               . ($temAgenda ? '<a class="gds-btn-2" href="#agendar" data-gds-agendar-profissional="' . (int)$p['id'] . '">Agendar com ' . e(explode(' ', trim($p['nome']))[0]) . '</a>' : '')
+               . ($temAgenda ? '<a class="gds-btn-2" href="#gds-agendamento" data-gds-agendar-profissional="' . (int)$p['id'] . '">Agendar com ' . e(explode(' ', trim($p['nome']))[0]) . '</a>' : '')
                . '</div>';
     }
     return $html . '</div></div>';
@@ -317,8 +335,8 @@ function frag_contato($estado = [], $empresa = [], $status = null) {
               . '<button type="submit" name="enviar_lead" value="1" class="gds-btn gds-btn-bloco">Enviar mensagem ' . frag_icone('seta') . '</button>'
               . '<p class="gds-nota-lgpd">Seus dados são usados só para responder o seu contato.</p></form>';
     }
-    if ($infos === '') return '<div class="gds-c" style="max-width:560px">' . $form . '</div>';
-    return '<div class="gds-c gds-contato"><div class="gds-infos">' . $infos . '</div>' . $form . '</div>';
+    if ($infos === '') return '<div class="gds-c" id="gds-contato" style="max-width:560px">' . $form . '</div>';
+    return '<div class="gds-c gds-contato" id="gds-contato"><div class="gds-infos">' . $infos . '</div>' . $form . '</div>';
 }
 
 function frag_formatar_telefone($t) {
@@ -327,6 +345,56 @@ function frag_formatar_telefone($t) {
     if (strlen($d) === 11) return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 5) . '-' . substr($d, 7);
     if (strlen($d) === 10) return '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 4) . '-' . substr($d, 6);
     return (string)$t;
+}
+
+// ------------------------------------------------------------
+// PEDIDO DE ORÇAMENTO — para quem não marca horário (DJ, fotógrafo,
+// obras, eventos, agência...): serviço de interesse + data/local + detalhes.
+// Vira um "Pedido/Orçamento" no painel e pode seguir também pelo WhatsApp.
+// $estado: ['ok','erro','post','resumo','msg_whatsapp']
+// ------------------------------------------------------------
+function frag_orcamento($servicos, $estado = [], $empresa = []) {
+    $whats = $empresa['whatsapp'] ?? '';
+    if (!empty($estado['ok'])) {
+        $html = '<div class="gds-c gds-orcamento" id="gds-orcamento"><div class="gds-sucesso" data-gds-sucesso><div class="gds-sucesso-ico">' . frag_icone('check') . '</div>'
+              . '<h3>Pedido de orçamento enviado!</h3><p class="gds-mute">' . (!empty($estado['nome']) ? e(explode(' ', $estado['nome'])[0]) . ', r' : 'R') . 'ecebemos tudo e vamos te responder com o orçamento o quanto antes.</p>';
+        if (!empty($estado['resumo'])) {
+            $html .= '<div class="gds-resumo">';
+            foreach ($estado['resumo'] as [$rot, $val]) $html .= '<div><span>' . e($rot) . '</span><span>' . e($val) . '</span></div>';
+            $html .= '</div>';
+        }
+        if (so_digitos_frag($whats)) {
+            $html .= '<div class="gds-acoes"><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($whats, $estado['msg_whatsapp'] ?? 'Olá! Acabei de pedir um orçamento pelo site.')) . '">' . frag_icone('whats') . ' Enviar também pelo WhatsApp (resposta mais rápida)</a></div>';
+        }
+        return $html . '</div></div>';
+    }
+    $p = $estado['post'] ?? [];
+    $html = '<div class="gds-c gds-orcamento" id="gds-orcamento" style="max-width:720px">' . frag_alerta_erro($estado['erro'] ?? '')
+          . '<form method="post" class="gds-card" novalidate data-gds-form-orcamento>' . frag_honeypot() . '<input type="hidden" name="pedir_orcamento" value="1">';
+    if ($servicos) {
+        $html .= '<div class="gds-campo"><span class="gds-rotulo">O que você precisa?</span><div class="gds-opcoes" role="radiogroup">';
+        foreach ($servicos as $s) {
+            $sel = (string)($p['orc_servico_id'] ?? '') === (string)$s['id'] ? ' checked' : '';
+            $aPartir = !empty($s['preco_a_partir']) && $s['preco_a_partir'] !== 'f';
+            $preco = (float)$s['preco'] > 0 ? ($aPartir ? 'a partir de ' : '') . 'R$ ' . number_format((float)$s['preco'], 2, ',', '.') : '';
+            $html .= '<label class="gds-op"><input type="radio" name="orc_servico_id" value="' . (int)$s['id'] . '"' . $sel . '><span class="gds-op-txt"><strong>' . e($s['nome']) . '</strong>'
+                   . ($s['descricao'] ? '<small>' . e(mb_strimwidth($s['descricao'], 0, 60, '…')) . '</small>' : '') . '</span>' . ($preco ? '<span class="gds-op-preco">' . e($preco) . '</span>' : '') . '</label>';
+        }
+        $outro = (string)($p['orc_servico_id'] ?? '') === 'outro' ? ' checked' : '';
+        $html .= '<label class="gds-op"><input type="radio" name="orc_servico_id" value="outro"' . $outro . '><span class="gds-op-txt"><strong>Outro / ainda não sei</strong><small>Conte nos detalhes abaixo</small></span></label></div></div>';
+    }
+    $html .= '<div class="gds-linha"><div class="gds-campo"><label for="orc_data">Data (se houver)</label><input type="text" id="orc_data" name="orc_data" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" data-gds-data value="' . e($p['orc_data'] ?? '') . '"></div>'
+           . '<div class="gds-campo"><label for="orc_local">Cidade / local</label><input type="text" id="orc_local" name="orc_local" maxlength="150" value="' . e($p['orc_local'] ?? '') . '"></div></div>'
+           . '<div class="gds-campo"><label for="orc_detalhes">Conte os detalhes</label><textarea id="orc_detalhes" name="orc_detalhes" rows="4" maxlength="2000" placeholder="Ex.: tipo de evento, quantidade de pessoas, horário, o que você imagina…">' . e($p['orc_detalhes'] ?? '') . '</textarea></div>'
+           . '<div class="gds-campo"><label for="orc_nome">Seu nome</label><input type="text" id="orc_nome" name="orc_nome" maxlength="120" required autocomplete="name" value="' . e($p['orc_nome'] ?? '') . '"></div>'
+           . '<div class="gds-linha"><div class="gds-campo"><label for="orc_tel">WhatsApp</label><input type="tel" id="orc_tel" name="orc_telefone" maxlength="20" required autocomplete="tel" inputmode="tel" placeholder="(11) 99999-9999" data-gds-tel value="' . e($p['orc_telefone'] ?? '') . '"></div>'
+           . '<div class="gds-campo"><label for="orc_email">E-mail (opcional)</label><input type="email" id="orc_email" name="orc_email" maxlength="150" autocomplete="email" value="' . e($p['orc_email'] ?? '') . '"></div></div>'
+           . '<button type="submit" class="gds-btn gds-btn-bloco">' . frag_icone('seta') . ' Pedir orçamento</button>'
+           . '<p class="gds-nota-lgpd">Sem compromisso. Usamos seus dados só para enviar o orçamento.</p></form>';
+    if (so_digitos_frag($whats)) {
+        $html .= '<p style="margin-top:12px;font-size:.9rem" class="gds-mute">Prefere conversar? <a href="' . e(frag_link_whatsapp($whats, 'Olá! Gostaria de um orçamento.')) . '" target="_blank" rel="noopener"><strong>Chame no WhatsApp</strong></a></p>';
+    }
+    return $html . '</div>';
 }
 
 // ------------------------------------------------------------

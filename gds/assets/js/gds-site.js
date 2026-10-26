@@ -325,6 +325,58 @@
         irPara(inicio, false);
     });
 
+    // ---------------- PEDIDO DE ORÇAMENTO ----------------
+    $$('[data-gds-data]').forEach(function (inp) {
+        inp.addEventListener('input', function () {
+            var d = inp.value.replace(/\D/g, '').slice(0, 8);
+            inp.value = d.length > 4 ? d.slice(0, 2) + '/' + d.slice(2, 4) + '/' + d.slice(4) : (d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d);
+        });
+    });
+    $$('[data-gds-form-orcamento]').forEach(function (form) {
+        form.addEventListener('submit', function (ev) {
+            var nome = $('#orc_nome', form), tel = $('#orc_tel', form);
+            if (!nome.value.trim()) { ev.preventDefault(); nome.focus(); nome.reportValidity && nome.reportValidity(); return; }
+            if (tel.value.replace(/\D/g, '').length < 10) { ev.preventDefault(); tel.setCustomValidity('Informe o WhatsApp com DDD'); tel.reportValidity(); tel.setCustomValidity(''); tel.focus(); return; }
+            var b = $('button[type=submit]', form); b.disabled = true; b.textContent = 'Enviando…';
+        });
+    });
+
+    // Botões "Pedir orçamento" dos serviços: abre o formulário já com o serviço escolhido
+    document.addEventListener('click', function (ev) {
+        var a = ev.target.closest('[data-gds-orcar-servico]');
+        if (!a) return;
+        var alvo = document.getElementById('gds-orcamento');
+        if (!alvo) return;
+        ev.preventDefault();
+        var r = $('input[name="orc_servico_id"][value="' + a.getAttribute('data-gds-orcar-servico') + '"]', alvo);
+        if (r) r.checked = true;
+        mostrarPaginaDe(alvo);
+        setTimeout(function () { var c = $('#orc_detalhes', alvo); if (c) c.focus({ preventScroll: true }); }, 500);
+    });
+
+    // Links para os componentes (#gds-agendamento, #gds-orcamento, #gds-contato, #gds-servicos):
+    // funcionam com qualquer navegação que a IA tenha criado (troca de "página" e rolagem)
+    document.addEventListener('click', function (ev) {
+        var a = ev.target.closest('a[href^="#gds-"]');
+        if (!a || a.hasAttribute('data-gds-agendar-servico') || a.hasAttribute('data-gds-agendar-profissional') || a.hasAttribute('data-gds-orcar-servico')) return;
+        var alvo = document.getElementById(a.getAttribute('href').slice(1));
+        if (!alvo) return;
+        ev.preventDefault();
+        mostrarPaginaDe(alvo);
+    });
+
+    // WhatsApp sempre abre fora do site (numa aba nova / no app). Dentro de iframes
+    // (pré-visualização, alguns construtores) o wa.me se recusa a carregar no mesmo quadro.
+    document.addEventListener('click', function (ev) {
+        var a = ev.target.closest && ev.target.closest('a[href*="wa.me/"], a[href*="api.whatsapp.com"]');
+        if (!a || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        var w = window.open(a.href, '_blank'); // (com 'noopener' o retorno é sempre null)
+        if (w) { try { w.opener = null; } catch (e) { } }
+        else { try { window.top.location.href = a.href; } catch (e) { window.location.href = a.href; } }
+    }, true);
+
     // Depois de enviar um formulário, abre a página onde está o resultado
     document.addEventListener('DOMContentLoaded', function () {
         var alvo = document.querySelector('.gds-c [data-gds-sucesso], .gds-c .gds-sucesso, .gds-c .gds-alerta');

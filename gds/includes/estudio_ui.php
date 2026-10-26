@@ -15,12 +15,18 @@ $urlPublica = '/' . $empresa['slug'];
 $direcoes = ia_direcoes_visuais();
 $corBotoes = (json_decode((string)($site['ia_tema'] ?? ''), true) ?: [])['accent'] ?? '';
 if (!preg_match('/^#[0-9a-fA-F]{6}$/', $corBotoes)) $corBotoes = preg_match('/^#[0-9a-fA-F]{6}$/', $site['cor_primaria'] ?? '') ? $site['cor_primaria'] : '#2563eb';
+$atInfo = atendimento_info_empresa($empresaIdEst);
+$modosAt = atendimento_modos();
+$semWhats = trim((string)($empresa['whatsapp'] ?? '')) === '';
+$qtdServicos = $pdo->prepare("SELECT COUNT(*) c FROM servicos WHERE empresa_id=?");
+$qtdServicos->execute([$empresaIdEst]);
+$qtdServicos = (int)$qtdServicos->fetch()['c'];
 $sugestoes = [
     'Deixe o topo mais impactante, com uma headline maior',
     'Troque a paleta para tons mais quentes',
     'Deixe o visual mais claro e minimalista',
     'Adicione uma seção de perguntas frequentes',
-    'Destaque melhor o botão de agendar',
+    $atInfo['modo'] === 'orcamento' ? 'Destaque melhor o botão de pedir orçamento' : ($atInfo['modo'] === 'agendamento' ? 'Destaque melhor o botão de agendar' : 'Destaque melhor o botão do WhatsApp'),
     'Melhore o menu no celular',
     'Adicione os depoimentos dos clientes',
     'Deixe os textos mais curtos e diretos',
@@ -60,6 +66,19 @@ $sugestoes = [
 <?php if (!$iaPronta): ?>
 <?= alerta('aviso', $ehAdmin ? 'A IA ainda não foi configurada. Vá em Configurações e cole uma chave (a do Google Gemini é gratuita).' : 'A IA ainda não foi configurada pelo administrador da plataforma.') ?>
 <?php endif; ?>
+
+<div class="estudio-negocio" id="painelNegocio">
+    <div><small>Segmento</small><strong id="negTipo"><?= e($atInfo['segmento_texto']) ?></strong></div>
+    <label><small>Como os clientes contratam</small>
+        <select id="selModo" onchange="Estudio.salvarAtendimento(this.value)">
+            <option value="" <?= $atInfo['modo_origem'] !== 'empresa' ? 'selected' : '' ?>>Automático (<?= e($modosAt[$atInfo['modo_segmento'] ?? '']['nome'] ?? 'pelo segmento') ?>)</option>
+            <?php foreach ($modosAt as $k => $m): ?>
+            <option value="<?= e($k) ?>" <?= $atInfo['modo_origem'] === 'empresa' && $atInfo['modo'] === $k ? 'selected' : '' ?> title="<?= e($m['desc']) ?>"><?= e($m['nome']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </label>
+    <?php if ($semWhats): ?><span class="pill pill-aviso" title="Os botões de WhatsApp só aparecem com o número cadastrado">⚠ Sem WhatsApp cadastrado</span><?php endif; ?>
+</div>
 
 <div class="estudio-grid">
     <!-- ===================== PAINEL ESQUERDO ===================== -->
@@ -105,8 +124,12 @@ $sugestoes = [
                 <label for="preferencias">Preferências (opcional)</label>
                 <input type="text" id="preferencias" placeholder="Ex: usar verde-escuro e dourado, fonte elegante, nada de fundo preto">
 
+                <?php if ($qtdServicos === 0): ?>
+                <label class="check"><input type="checkbox" id="criarServicos" checked> Criar os serviços/pacotes sugeridos pela IA (você ainda não cadastrou nenhum)</label>
+                <?php endif; ?>
+
                 <button type="submit" class="btn btn-grande" id="btnGerar" <?= $iaPronta ? '' : 'disabled' ?>><?= icone('brilho') ?> <?= $temSite ? 'Gerar um site novo' : 'Gerar meu site' ?></button>
-                <p class="dica">A IA usa os dados reais cadastrados (serviços, preços, equipe, fotos, endereço) e cria as páginas com agendamento e contato funcionando de verdade. Leva de 1 a 3 minutos.</p>
+                <p class="dica">A IA estuda o negócio, decide como o cliente contrata (agendamento, orçamento, WhatsApp ou pedido) e cria as páginas com tudo funcionando de verdade, usando os dados reais (serviços, preços, equipe, fotos, endereço). Leva de 1 a 3 minutos.</p>
                 <?php if ($temSite): ?><p class="dica">O site atual continua salvo na aba Versões.</p><?php endif; ?>
             </form>
         </div>
@@ -299,18 +322,20 @@ const Estudio = (() => {
         if (briefing.length < 10) { toast('Conte um pouco mais sobre o negócio.', 'erro'); $('briefing').focus(); return; }
         const direcao = document.querySelector('.estilo.ativo')?.dataset.direcao || '';
         carregando(['Estudando o negócio e os dados cadastrados', 'Decidindo estilo, cores e tipografia', 'Escrevendo as páginas e o código', 'Conectando agendamento, serviços e contato']);
-        const plano = await api('planejar', { briefing, direcao, preferencias: $('preferencias').value });
+        const plano = await api('planejar', { briefing, direcao, preferencias: $('preferencias').value, criar_servicos: $('criarServicos')?.checked ? '1' : '0' });
         if (!plano.ok) { pronto(); toast(plano.erro, 'erro'); return; }
         etapa(2);
         const pal = (plano.plano.paleta || []).map(c => `<span class="cor" style="background:${/^#[0-9a-f]{3,8}$/i.test(c) ? c : '#888'}"></span>`).join('');
         $('etapas').insertAdjacentHTML('beforebegin', `<div class="plano-resumo" id="planoResumo"><strong></strong><p></p><div class="cores">${pal}</div></div>`);
         $('planoResumo').querySelector('strong').textContent = plano.plano.direcao + ' · ' + plano.plano.fonte_titulo + ' + ' + plano.plano.fonte_corpo;
-        $('planoResumo').querySelector('p').textContent = plano.plano.conceito;
+        $('planoResumo').querySelector('p').textContent = (plano.plano.tipo_negocio ? plano.plano.tipo_negocio + ' — ' + plano.plano.modo_nome + '. ' : '') + plano.plano.conceito;
         const r = await api('gerar');
         $('planoResumo')?.remove();
         pronto();
         if (!r.ok) { toast(r.erro, 'erro'); return; }
-        toast('Site criado no estilo ' + r.direcao + '!', 'sucesso');
+        toast('Site criado no estilo ' + r.direcao + '!' + (r.servicos_criados ? ' ' + r.servicos_criados + ' serviços sugeridos foram cadastrados.' : ''), 'sucesso');
+        if (r.modo && $('selModo') && $('selModo').value === '') $('selModo').options[0].textContent = 'Automático (' + r.modo_nome + ')';
+        if ($('criarServicos')) $('criarServicos').closest('label').remove();
         recarregarPreview();
         liberarChat();
         abrirAba('chat');
@@ -409,7 +434,14 @@ const Estudio = (() => {
     window.addEventListener('beforeunload', (e) => { if (ocupado) { e.preventDefault(); e.returnValue = ''; } });
     carregarHistorico(true);
 
-    return { salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
+    async function salvarAtendimento(modo) {
+        const r = await api('atendimento', { modo_atendimento: modo });
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        toast('Forma de atendimento: ' + r.modo_nome + '. O site já usa o componente certo.', 'sucesso');
+        recarregarPreview();
+    }
+
+    return { salvarAtendimento, salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
 })();
 </script>
 </body>

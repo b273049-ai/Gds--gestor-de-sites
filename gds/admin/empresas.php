@@ -14,6 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['criar_empresa'])) {
     $segmento_id = (int)($_POST['segmento_id'] ?? 0) ?: null;
     $plano_id = (int)($_POST['plano_id'] ?? 0) ?: null;
     $whatsapp = so_digitos($_POST['whatsapp'] ?? '');
+    $modoAt = atendimento_modo_valido($_POST['modo_atendimento'] ?? '') ? $_POST['modo_atendimento'] : null;
+    $segDesc = mb_substr(trim($_POST['segmento_descricao'] ?? ''), 0, 150) ?: null;
 
     $jaExiste = $pdo->prepare("SELECT 1 FROM usuarios WHERE LOWER(email)=?");
     $jaExiste->execute([$email]);
@@ -31,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['criar_empresa'])) {
             $stmt = $pdo->prepare("INSERT INTO empresas (nome, slug, segmento_id, plano_id, email, whatsapp, status, vencimento) VALUES (?, ?, ?, ?, ?, ?, 'pendente', CURRENT_DATE + INTERVAL '30 days') RETURNING id");
             $stmt->execute([$nome, $slug, $segmento_id, $plano_id, $email, $whatsapp ?: null]);
             $empresaId = $stmt->fetch()['id'];
+            $pdo->prepare("UPDATE empresas SET modo_atendimento=?, segmento_descricao=? WHERE id=?")->execute([$modoAt, $segDesc, $empresaId]);
 
             $pdo->prepare("INSERT INTO usuarios (empresa_id, nome, email, senha_hash, role) VALUES (?, ?, ?, ?, 'empresa')")
                 ->execute([$empresaId, $nome, $email, password_hash($senha, PASSWORD_DEFAULT)]);
@@ -62,7 +65,7 @@ $where = []; $params = [];
 if ($busca !== '') { $where[] = "(e.nome ILIKE ? OR e.email ILIKE ? OR e.slug ILIKE ?)"; array_push($params, "%$busca%", "%$busca%", "%$busca%"); }
 if (in_array($filtroStatus, ['ativo', 'pendente', 'suspenso', 'cancelado'], true)) { $where[] = "e.status = ?"; $params[] = $filtroStatus; }
 
-$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true ORDER BY nome")->fetchAll();
+$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true ORDER BY (slug='outro'), nome")->fetchAll();
 $planos = $pdo->query("SELECT * FROM planos WHERE ativo=true ORDER BY valor")->fetchAll();
 $stmt = $pdo->prepare("
     SELECT e.*, sg.nome AS segmento_nome, p.nome AS plano_nome, s.publicado, s.ia_modo_total
@@ -96,11 +99,8 @@ $empresas = $stmt->fetchAll();
                 <div><label>Nome da empresa</label><input type="text" name="nome" required value="<?= e($form['nome'] ?? '') ?>" oninput="document.getElementById('slugPrev').textContent='/'+this.value.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')"></div>
                 <div><label>Endereço do site (opcional)</label><input type="text" name="slug" placeholder="gerado a partir do nome" value="<?= e($form['slug'] ?? '') ?>"><p class="dica">Ficará: <span id="slugPrev">/<?= e(slugify($form['nome'] ?? 'nome-da-empresa')) ?></span></p></div>
             </div>
+            <?= atendimento_campos_form($segmentos, $form['segmento_id'] ?? '', $form['segmento_descricao'] ?? '', $form['modo_atendimento'] ?? '') ?>
             <div class="form-row">
-                <div><label>Segmento</label>
-                    <select name="segmento_id" required>
-                        <?php foreach ($segmentos as $s): ?><option value="<?= $s['id'] ?>" <?= ($form['segmento_id'] ?? '') == $s['id'] ? 'selected' : '' ?>><?= e($s['nome']) ?></option><?php endforeach; ?>
-                    </select></div>
                 <div><label>Plano</label>
                     <select name="plano_id" required>
                         <?php foreach ($planos as $p): ?><option value="<?= $p['id'] ?>" <?= ($form['plano_id'] ?? '') == $p['id'] ? 'selected' : '' ?>><?= e($p['nome']) ?> — R$ <?= number_format($p['valor'], 2, ',', '.') ?><?= pg_bool($p['permite_ia']) ? ' · IA' : '' ?></option><?php endforeach; ?>
