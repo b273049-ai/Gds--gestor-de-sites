@@ -195,6 +195,7 @@ function empresa_pode_usar_estudio($empresaId) {
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/ia_helper.php';
 require_once __DIR__ . '/migracoes.php';
+require_once __DIR__ . '/atendimento.php';
 
 // Link wa.me a partir de um telefone brasileiro (acrescenta o 55 quando vier só DDD + número)
 function link_whatsapp($telefone, $mensagem = '') {

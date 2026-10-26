@@ -27,6 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
     elseif ($slugUsado->fetch()) $erro = 'Esse endereço de site já está em uso por outra empresa.';
     elseif ($domUsado) $erro = 'Esse domínio já está ligado a outra empresa.';
     else {
+        $pdo->prepare("UPDATE empresas SET segmento_id=?, segmento_descricao=?, modo_atendimento=? WHERE id=?")->execute([
+            (int)($_POST['segmento_id'] ?? 0) ?: null, mb_substr(trim($_POST['segmento_descricao'] ?? ''), 0, 150) ?: null,
+            atendimento_modo_valido($_POST['modo_atendimento'] ?? '') ? $_POST['modo_atendimento'] : null, $id]);
         $pdo->prepare("UPDATE empresas SET nome=?, slug=?, email=?, telefone=?, whatsapp=?, endereco=?, plano_id=?, status=?, vencimento=?, dominio_personalizado=? WHERE id=?")
             ->execute([$nome, $slug, $email, trim($_POST['telefone'] ?? ''), so_digitos($_POST['whatsapp'] ?? ''), trim($_POST['endereco'] ?? ''),
                        (int)$_POST['plano_id'] ?: null, $_POST['status'], $_POST['vencimento'] ?: null, $dom, $id]);
@@ -44,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
 }
 
 $planos = $pdo->query("SELECT * FROM planos ORDER BY valor")->fetchAll();
+$segmentos = $pdo->query("SELECT * FROM segmentos WHERE ativo=true OR id=" . (int)($empresa['segmento_id'] ?? 0) . " ORDER BY (slug='outro'), nome")->fetchAll();
 $statusOpcoes = ['ativo' => 'Ativo', 'pendente' => 'Pendente', 'suspenso' => 'Suspenso (site sai do ar e login bloqueado)', 'cancelado' => 'Cancelado (site sai do ar e login bloqueado)'];
 ?>
 <!DOCTYPE html>
@@ -81,6 +85,9 @@ $statusOpcoes = ['ativo' => 'Ativo', 'pendente' => 'Pendente', 'suspenso' => 'Su
             <div><label>Endereço na plataforma</label><input type="text" name="slug" value="<?= e($empresa['slug']) ?>"><p class="dica">Mudar quebra links antigos já divulgados.</p></div>
             <div><label>Domínio próprio (opcional)</label><input type="text" name="dominio_personalizado" value="<?= e($empresa['dominio_personalizado']) ?>" placeholder="barbeariadoze.com.br"><p class="dica">Aponte o DNS do domínio para este servidor.</p></div>
         </div>
+
+        <h3 style="margin-top:22px">Tipo de negócio</h3>
+        <?= atendimento_campos_form($segmentos, $empresa['segmento_id'] ?? '', $empresa['segmento_descricao'] ?? '', $empresa['modo_atendimento'] ?? '') ?>
 
         <h3 style="margin-top:22px">Plano e situação</h3>
         <div class="form-row">

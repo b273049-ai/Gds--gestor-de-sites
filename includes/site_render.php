@@ -6,12 +6,14 @@
 // ============================================================
 require_once __DIR__ . '/site_fragmentos.php';
 require_once __DIR__ . '/agenda_helper.php';
+require_once __DIR__ . '/atendimento.php';
 
 const SITE_SQL_BASE = "
     SELECT e.*, s.titulo, s.subtitulo, s.sobre, s.publicado, s.cor_primaria, s.cor_secundaria,
            s.galeria_imagens, s.seo_titulo, s.seo_descricao, s.layout, s.secoes, s.banner_imagem,
            s.html_gerado, s.ia_modo_total, s.ia_tema,
-           seg.nome AS segmento_nome, pl.permite_pix
+           seg.nome AS segmento_nome, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta,
+           pl.permite_pix
     FROM empresas e
     JOIN sites s ON s.empresa_id = e.id
     LEFT JOIN segmentos seg ON seg.id = e.segmento_id
@@ -26,7 +28,8 @@ function site_buscar_empresa($where, $param) {
         $st->execute([$param]);
         return $st->fetch();
     } catch (PDOException $e) {
-        $st = $pdo->prepare(str_replace(', s.ia_tema', ', NULL AS ia_tema', SITE_SQL_BASE) . " WHERE $where LIMIT 1");
+        $legado = str_replace([', s.ia_tema', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta'], [', NULL AS ia_tema', 'NULL AS modo_segmento, NULL AS segmento_cta'], SITE_SQL_BASE);
+        $st = $pdo->prepare($legado . " WHERE $where LIMIT 1");
         $st->execute([$param]);
         return $st->fetch();
     }
@@ -62,6 +65,7 @@ function site_carregar_dados($empresa) {
     $d['agenda'] = agenda_config($empresa) + ['tem_cupons' => !empty($d['cupons'])];
     $d['status'] = agenda_status_agora($empresa);
     $d['tema'] = site_tema($empresa);
+    $d['modo'] = atendimento_modo_da_linha($empresa);
     return $d;
 }
 
@@ -79,7 +83,7 @@ function site_tema($empresa) {
 }
 
 function site_estado_vazio() {
-    return ['lead' => [], 'agendamento' => [], 'avaliacao' => [], 'pagina_forcada' => null];
+    return ['lead' => [], 'agendamento' => [], 'avaliacao' => [], 'orcamento' => [], 'pagina_forcada' => null];
 }
 
 // ------------------------------------------------------------
@@ -171,6 +175,61 @@ function site_processar_post($empresa, $dados) {
                 $estado['avaliacao'] = ['erro' => 'Não foi possível enviar sua avaliação agora.'];
             }
         }
+        return $estado;
+    }
+
+    // ---------- PEDIDO DE ORÇAMENTO (vira um Pedido/Orçamento no painel) ----------
+    if (isset($_POST['pedir_orcamento'])) {
+        $estado['pagina_forcada'] = 'orcamento';
+        $nome = site_limpar('orc_nome', 120); $tel = site_limpar('orc_telefone', 20); $email = site_limpar('orc_email', 150);
+        $detalhes = site_limpar('orc_detalhes', 2000); $local = site_limpar('orc_local', 150); $dataTxt = site_limpar('orc_data', 10);
+        $servico = null;
+        foreach ($dados['servicos'] as $sv) if ((string)$sv['id'] === (string)($_POST['orc_servico_id'] ?? '')) $servico = $sv;
+        $dataEvento = null;
+        if ($dataTxt !== '') {
+            $dt = DateTime::createFromFormat('d/m/Y', $dataTxt);
+            if ($dt && $dt->format('d/m/Y') === $dataTxt) $dataEvento = $dt->format('Y-m-d');
+        }
+        $erro = '';
+        if (site_eh_spam()) { $estado['orcamento'] = ['ok' => true, 'nome' => $nome]; return $estado; }
+        if ($nome === '' || strlen(preg_replace('/\D/', '', $tel)) < 10) $erro = 'Informe seu nome e WhatsApp (com DDD).';
+        elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) $erro = 'E-mail inválido.';
+        elseif ($dataTxt !== '' && !$dataEvento) $erro = 'Data inválida — use dd/mm/aaaa.';
+        elseif ($dataEvento && $dataEvento < date('Y-m-d')) $erro = 'Essa data já passou.';
+        elseif (!$servico && $detalhes === '') $erro = 'Escolha o serviço ou conte os detalhes do que você precisa.';
+        if ($erro !== '') { $estado['orcamento'] = ['erro' => $erro, 'post' => $_POST]; return $estado; }
+
+        $resumo = [];
+        if ($servico) $resumo[] = ['Serviço', $servico['nome']];
+        if ($dataEvento) $resumo[] = ['Data', date('d/m/Y', strtotime($dataEvento))];
+        if ($local !== '') $resumo[] = ['Local', $local];
+        $descricao = trim(($servico ? $servico['nome'] : 'Pedido de orçamento') . ($dataEvento ? ' — ' . date('d/m/Y', strtotime($dataEvento)) : '') . ($local ? ' — ' . $local : '') . ($detalhes ? "\n" . $detalhes : ''));
+        try {
+            $telDig = preg_replace('/\D/', '', $tel);
+            $busca = $pdo->prepare("SELECT id FROM clientes WHERE empresa_id=? AND ((? <> '' AND LOWER(email)=LOWER(?)) OR right(regexp_replace(COALESCE(telefone,''), '\D', '', 'g'), 11) = right(?, 11)) LIMIT 1");
+            $busca->execute([$empresa['id'], $email, $email, $telDig]);
+            $clienteId = ($b = $busca->fetch()) ? $b['id'] : null;
+            if (!$clienteId) {
+                $n = $pdo->prepare("INSERT INTO clientes (empresa_id, nome, email, telefone) VALUES (?,?,?,?) RETURNING id");
+                $n->execute([$empresa['id'], $nome, $email ?: null, $tel]);
+                $clienteId = $n->fetch()['id'];
+            }
+            try {
+                $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status, origem, servico_id, data_evento, local_evento) VALUES (?,?,?,?, 'novo', 'site', ?,?,?)")
+                    ->execute([$empresa['id'], $clienteId, $descricao, $servico ? (float)$servico['preco'] : 0, $servico['id'] ?? null, $dataEvento, $local ?: null]);
+            } catch (PDOException $e) {
+                $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status) VALUES (?,?,?,?, 'novo')")
+                    ->execute([$empresa['id'], $clienteId, '[site] ' . $descricao, $servico ? (float)$servico['preco'] : 0]);
+            }
+        } catch (PDOException $e) {
+            error_log('GDS orçamento: ' . $e->getMessage());
+            $estado['orcamento'] = ['erro' => 'Não foi possível enviar agora. Tente de novo ou chame no WhatsApp.', 'post' => $_POST];
+            return $estado;
+        }
+        $msgWa = "Olá! Acabei de pedir um orçamento pelo site.\n" . implode("\n", array_map(fn($r) => $r[0] . ': ' . $r[1], $resumo)) . ($detalhes ? "\nDetalhes: " . mb_strimwidth($detalhes, 0, 400, '…') : '') . "\nNome: $nome";
+        site_notificar_empresa($empresa, "Novo pedido de orçamento: $nome", array_merge(['Novo pedido de orçamento pelo site!', '', 'Cliente: ' . $nome, 'WhatsApp: ' . $tel . ($email ? ' · ' . $email : '')],
+            array_map(fn($r) => $r[0] . ': ' . $r[1], $resumo), $detalhes ? ['', 'Detalhes:', $detalhes] : []));
+        $estado['orcamento'] = ['ok' => true, 'nome' => $nome, 'resumo' => $resumo, 'msg_whatsapp' => $msgWa];
         return $estado;
     }
 
@@ -290,20 +349,57 @@ function site_processar_post($empresa, $dados) {
 }
 
 function site_fragmentos_marcadores($empresa, $dados, $estado) {
-    $temAgenda = str_contains((string)($empresa['html_gerado'] ?? ''), '{{AGENDAMENTO}}') || !pg_bool($empresa['ia_modo_total'] ?? false);
+    $html = (string)($empresa['html_gerado'] ?? '');
+    $modoTemplate = !pg_bool($empresa['ia_modo_total'] ?? false) || $html === '';
+    $modo = $dados['modo'];
+    $temAgenda = $modoTemplate ? $modo === 'agendamento' : str_contains($html, '{{AGENDAMENTO}}');
+    $temOrcamento = $modoTemplate ? $modo === 'orcamento' : str_contains($html, '{{ORCAMENTO}}');
+    $optsServicos = ['modo' => $modo, 'tem_agendamento' => $temAgenda, 'tem_orcamento' => $temOrcamento, 'tem_contato' => true, 'whatsapp' => $empresa['whatsapp']];
+    $info = atendimento_modos()[$modo];
+    $linkWhats = so_digitos_frag($empresa['whatsapp'] ?? '') ? frag_link_whatsapp($empresa['whatsapp'], trim((string)($empresa['whatsapp_mensagem'] ?? '')) ?: 'Olá! Vim pelo site e gostaria de mais informações.') : '#gds-contato';
+    $linkPrincipal = ['agendamento' => $temAgenda ? '#gds-agendamento' : $linkWhats, 'orcamento' => $temOrcamento ? '#gds-orcamento' : $linkWhats,
+                      'contato' => $linkWhats, 'catalogo' => '#gds-servicos'][$modo];
     return [
         '{{SOBRE}}' => frag_sobre($empresa['sobre']),
-        '{{SERVICOS}}' => frag_servicos($dados['servicos'], ['agendamento' => $temAgenda, 'whatsapp' => $empresa['whatsapp']]),
+        '{{SERVICOS}}' => frag_servicos($dados['servicos'], $optsServicos),
         '{{EQUIPE}}' => frag_equipe($dados['profissionais'], $temAgenda),
         '{{GALERIA}}' => frag_galeria($dados['galeria'], $empresa['nome']),
         '{{AGENDAMENTO}}' => frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $dados['agenda'], $empresa),
+        '{{ORCAMENTO}}' => frag_orcamento($dados['servicos'], $estado['orcamento'] ?? [], $empresa),
         '{{AVALIACOES}}' => frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao'], true, $dados['avaliacoes_resumo']),
         '{{CONTATO}}' => frag_contato($estado['lead'], $empresa, $dados['status']),
         '{{MAPA}}' => frag_mapa($empresa['endereco'], $dados['maps_key']),
         '{{CUPONS}}' => frag_cupons($dados['cupons']),
         '{{HORARIOS}}' => frag_horarios($dados['agenda'], $dados['status']),
         '{{WHATSAPP_FLOAT}}' => site_mostrar_whatsapp_float($empresa) ? frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $empresa['nome']) : '',
+        // Links prontos para os botões que a própria IA escreve (href="{{LINK_WHATSAPP}}" etc.)
+        '{{LINK_WHATSAPP}}' => e($linkWhats),
+        '{{LINK_PRINCIPAL}}' => e($linkPrincipal),
+        '{{TEXTO_PRINCIPAL}}' => e(site_texto_cta($empresa, $modo)),
     ];
+}
+
+// O componente principal da forma de atendimento precisa existir no site.
+// Se o design (feito antes, ou pela IA esquecendo) não tiver, ele entra numa seção própria.
+// Texto do botão principal: o do segmento só vale se a forma de atendimento for a mesma dele
+function site_texto_cta($empresa, $modo) {
+    $doSegmento = trim((string)($empresa['segmento_cta'] ?? ''));
+    $mesmoModo = ($empresa['modo_segmento'] ?? null) === $modo || (empty($empresa['modo_segmento']) && $modo === 'agendamento');
+    return $doSegmento !== '' && $mesmoModo ? $doSegmento : atendimento_modos()[$modo]['cta'];
+}
+
+function site_garantir_componente_principal($html, $modo) {
+    $marcador = ['agendamento' => '{{AGENDAMENTO}}', 'orcamento' => '{{ORCAMENTO}}'][$modo] ?? null;
+    if (!$marcador || str_contains($html, $marcador)) return $html;
+    // Site feito num modo e a forma de atendimento mudou depois: troca o componente no mesmo lugar
+    $errado = $modo === 'agendamento' ? '{{ORCAMENTO}}' : '{{AGENDAMENTO}}';
+    if (str_contains($html, $errado)) return preg_replace('/' . preg_quote($errado, '/') . '/', $marcador, $html, 1);
+    $titulo = $modo === 'agendamento' ? 'Agende seu horário' : 'Peça seu orçamento';
+    $usaPaginas = str_contains($html, 'data-page=');
+    $secao = "\n<section class=\"gds-secao-auto\"" . ($usaPaginas ? ' data-page="' . ($modo === 'agendamento' ? 'agendar' : 'orcamento') . '" style="display:none;' : ' style="') . "padding:56px 20px;max-width:820px;margin:0 auto;\">\n<h2 style=\"margin:0 0 20px\">$titulo</h2>\n$marcador\n</section>\n";
+    $pos = stripos($html, '<footer');
+    if ($pos === false) $pos = strripos($html, '</body>');
+    return $pos === false ? $html . $secao : substr($html, 0, $pos) . $secao . substr($html, $pos);
 }
 
 function site_mostrar_whatsapp_float($empresa) {
@@ -351,6 +447,9 @@ function site_script_preview() {
 // MODO IA: HTML gerado + marcadores trocados por conteúdo real
 // ------------------------------------------------------------
 function site_render_ia($empresa, $dados, $estado, $preview = false) {
+    $empresa['html_gerado'] = site_garantir_componente_principal($empresa['html_gerado'], $dados['modo']);
+    // Links de WhatsApp que a IA escreveu "na mão" (número inventado, errado ou vazio) passam a usar o número real
+    $empresa['html_gerado'] = preg_replace('#href\s*=\s*(["\'])\s*(?:https?://)?(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whatsapp://)[^"\']*\1#i', 'href="{{LINK_WHATSAPP}}"', $empresa['html_gerado']);
     $html = strtr($empresa['html_gerado'], site_fragmentos_marcadores($empresa, $dados, $estado));
     // Site antigo sem o marcador do WhatsApp: o botão entra mesmo assim
     if (!str_contains($empresa['html_gerado'], '{{WHATSAPP_FLOAT}}') && site_mostrar_whatsapp_float($empresa)) {
@@ -404,7 +503,11 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
         $secao('blocos', '', $h, 'Destaques');
     }
     if ($dados['cupons']) $secao('cupons', 'Cupons ativos', $f['{{CUPONS}}']);
-    $secao('agendar', 'Agendar horário', '<p class="lead" style="margin-bottom:22px">Escolha o serviço, o profissional e o melhor horário — leva menos de um minuto.</p>' . $f['{{AGENDAMENTO}}'], 'Agendar');
+    if ($dados['modo'] === 'agendamento') {
+        $secao('agendar', 'Agendar horário', '<p class="lead" style="margin-bottom:22px">Escolha o serviço, o profissional e o melhor horário — leva menos de um minuto.</p>' . $f['{{AGENDAMENTO}}'], 'Agendar');
+    } elseif ($dados['modo'] === 'orcamento') {
+        $secao('agendar', 'Peça seu orçamento', '<p class="lead" style="margin-bottom:22px">Conte o que você precisa — respondemos com o orçamento rapidinho.</p>' . $f['{{ORCAMENTO}}'], 'Orçamento');
+    }
     $secao('avaliacoes', 'Avaliações', $f['{{AVALIACOES}}']);
     $secao('contato', 'Contato', $f['{{CONTATO}}']
         . ($empresa['endereco'] ? '<div style="margin-top:28px">' . $f['{{MAPA}}'] . '</div>' : '')
@@ -421,7 +524,8 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     // O template tem fundo escuro: cor de destaque escura demais (como o antigo padrão #1a1a2e) deixaria os botões invisíveis
     if (frag_luminancia($corP) < 0.05) $corP = '#4f7cff';
     $corS = cor_hex_valida_site($empresa['cor_secundaria'], '#16213e');
-    $ctaAlvo = isset($sec['agendar']) && in_array('agendar', $ordem, true) ? 'agendar' : 'contato';
+    $ctaAlvo = isset($sec['agendar']) && in_array('agendar', $ordem, true) ? 'agendar' : ($dados['modo'] === 'catalogo' && isset($sec['servicos']) ? 'servicos' : 'contato');
+    $ctaTexto = site_texto_cta($empresa, $dados['modo']);
 
     ob_start(); ?>
 <!DOCTYPE html>
@@ -462,7 +566,7 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
         <div class="psite-tag"><span class="dot"></span><?= e($empresa['segmento_nome'] ?: 'Negócio local') ?></div>
         <h1><?= e($empresa['titulo'] ?: $nome) ?></h1>
         <p><?= e($empresa['subtitulo'] ?: 'Conheça nosso trabalho e agende com a gente.') ?></p>
-        <a href="#<?= $ctaAlvo ?>" onclick="mostrarPagina('<?= $ctaAlvo ?>');return false;" class="psite-btn"><?= $ctaAlvo === 'agendar' ? 'Agendar horário' : 'Fale com a gente' ?></a>
+        <a href="#<?= $ctaAlvo ?>" onclick="mostrarPagina('<?= $ctaAlvo ?>');return false;" class="psite-btn"><?= e($ctaTexto) ?></a>
     </div>
     <?php if ($empresa['banner_imagem']): ?><div class="psite-hero-banner-wrap"><img src="<?= e($empresa['banner_imagem']) ?>" alt="<?= e($nome) ?>"></div>
     <?php else: ?><div class="psite-hero-banner-wrap" style="background:linear-gradient(135deg,var(--accent),var(--accent-2));"></div><?php endif; ?>
@@ -472,11 +576,11 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     <div class="psite-tag"><span class="dot"></span><?= e($empresa['segmento_nome'] ?: 'Negócio local') ?></div>
     <h1><?= e($empresa['titulo'] ?: $nome) ?></h1>
     <p><?= e($empresa['subtitulo'] ?: 'Conheça nosso trabalho e agende com a gente.') ?></p>
-    <a href="#<?= $ctaAlvo ?>" onclick="mostrarPagina('<?= $ctaAlvo ?>');return false;" class="psite-btn"><?= $ctaAlvo === 'agendar' ? 'Agendar horário' : 'Fale com a gente' ?></a>
+    <a href="#<?= $ctaAlvo ?>" onclick="mostrarPagina('<?= $ctaAlvo ?>');return false;" class="psite-btn"><?= e($ctaTexto) ?></a>
 </div></header>
 <?php endif; ?>
 <div class="psite-features container">
-    <div class="psite-feature"><?= psite_icon('calendario') ?> Agende online</div>
+    <div class="psite-feature"><?= psite_icon('calendario') ?> <?= ['agendamento' => 'Agende online', 'orcamento' => 'Orçamento sem compromisso', 'contato' => 'Atendimento rápido', 'catalogo' => 'Peça pelo WhatsApp'][$dados['modo']] ?></div>
     <?php if ($dados['profissionais']): ?><div class="psite-feature"><?= psite_icon('usuarios') ?> Equipe especializada</div><?php endif; ?>
     <?php if ($empresa['whatsapp']): ?><div class="psite-feature"><?= psite_icon('chat') ?> Atendimento via WhatsApp</div><?php endif; ?>
     <?php if (pg_bool($empresa['pix_ativo'] ?? false)): ?><div class="psite-feature"><?= psite_icon('cartao') ?> Pagamento via PIX</div><?php endif; ?>

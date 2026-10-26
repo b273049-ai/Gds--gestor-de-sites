@@ -151,6 +151,8 @@ table select { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--bor
 .badge-pendente, .badge-agendado, .badge-novo, .badge-em_andamento { background: var(--warn-bg); color: var(--warn); }
 .badge-suspenso, .badge-cancelado, .badge-atrasado, .badge-inativo { background: var(--danger-bg); color: var(--danger); }
 .pill-neutro { background: var(--surface-3); color: var(--text-dim); }
+.pill-aviso, .badge-orcamento { background: var(--warn-bg); color: var(--warn); }
+.badge-site { background: var(--surface-3); color: var(--text-dim); }
 
 /* ---------- FORMULÁRIOS ---------- */
 .form-box { background: var(--surface); border: 1px solid var(--border); padding: 22px 24px; border-radius: var(--radius); max-width: 640px; margin-bottom: 20px; }
@@ -219,6 +221,11 @@ details.form-box[open] > summary { margin-bottom: 6px; }
    ESTÚDIO IA (chat à esquerda, pré-visualização à direita)
    ============================================================ */
 .estudio-body .content.estudio { padding: 18px 22px; display: flex; flex-direction: column; height: 100vh; }
+.estudio-negocio { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 14px; }
+.estudio-negocio small { display: block; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.estudio-negocio strong { font-size: 14px; }
+.estudio-negocio label { margin: 0; }
+.estudio-negocio select { min-width: 230px; padding: 6px 10px; }
 .estudio-topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .estudio-titulo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .estudio-titulo .link-voltar { margin: 0 6px 0 0; }

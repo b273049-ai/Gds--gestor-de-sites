@@ -69,6 +69,44 @@ function estudio_log($empresaId, $usuarioId, $resumo, $resposta) {
         ->execute([$empresaId, $usuarioId, 'Estúdio IA — ' . mb_substr($resumo, 0, 1000), $resposta]);
 }
 
+// Depois que o site é gerado, o que a IA aprendeu do negócio vira cadastro:
+// forma de atendimento (se o dono não escolheu uma), descrição do segmento
+// (quando é "Outro") e serviços sugeridos (só se ainda não houver nenhum).
+function estudio_aplicar_analise($empresaId, $plano, $criarServicos) {
+    global $pdo;
+    $an = (array)($plano['analise'] ?? []);
+    $info = atendimento_info_empresa($empresaId);
+    $feito = ['servicos_criados' => 0];
+    try {
+        if ($info['modo_origem'] !== 'empresa' && atendimento_modo_valido($plano['modo'] ?? null) && $plano['modo'] !== $info['modo']) {
+            $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([$plano['modo'], $empresaId]);
+        }
+        $tipo = trim((string)($an['tipo_negocio'] ?? ''));
+        if ($tipo !== '' && (empty($info['segmento_slug']) || $info['segmento_slug'] === 'outro') && empty($info['segmento_descricao'])) {
+            $pdo->prepare("UPDATE empresas SET segmento_descricao=? WHERE id=?")->execute([mb_substr($tipo, 0, 150), $empresaId]);
+        }
+    } catch (PDOException $e) {
+        error_log('GDS Estúdio IA — salvar análise: ' . $e->getMessage());
+    }
+    if ($criarServicos && !empty($an['servicos_sugeridos'])) {
+        $st = $pdo->prepare("SELECT COUNT(*) c FROM servicos WHERE empresa_id=?");
+        $st->execute([$empresaId]);
+        if ((int)$st->fetch()['c'] === 0) {
+            $intervalo = 60;
+            $ins = $pdo->prepare("INSERT INTO servicos (empresa_id, nome, descricao, preco, duracao_minutos, ativo) VALUES (?,?,?,?,?,true)");
+            foreach (array_slice((array)$an['servicos_sugeridos'], 0, 8) as $sv) {
+                $nome = trim((string)($sv['nome'] ?? ''));
+                if ($nome === '') continue;
+                $preco = is_numeric($sv['preco'] ?? null) ? max(0, (float)$sv['preco']) : 0;
+                $dur = is_numeric($sv['duracao_minutos'] ?? null) && (int)$sv['duracao_minutos'] > 0 ? min(720, (int)$sv['duracao_minutos']) : $intervalo;
+                $ins->execute([$empresaId, mb_substr($nome, 0, 150), mb_substr(trim((string)($sv['descricao'] ?? '')), 0, 500), $preco, $dur]);
+                $feito['servicos_criados']++;
+            }
+        }
+    }
+    return $feito;
+}
+
 switch ($acao) {
 
     case 'melhorar_briefing':
@@ -95,9 +133,13 @@ switch ($acao) {
         $plano = ia_planejar_site($ctx, $briefing, $direcao, $preferencias);
         // Guarda o plano na sessão pro passo 2 (sem confiar no que o navegador mandar de volta)
         session_start();
-        $_SESSION['ia_plano'][$empresaId] = ['plano' => $plano, 'briefing' => $briefing];
+        $_SESSION['ia_plano'][$empresaId] = ['plano' => $plano, 'briefing' => $briefing, 'criar_servicos' => ($_POST['criar_servicos'] ?? '') === '1'];
         session_write_close();
+        $an = (array)($plano['analise'] ?? []);
         responder_json(['ok' => true, 'plano' => [
+            'tipo_negocio' => (string)($an['tipo_negocio'] ?? ''), 'publico' => (string)($an['publico'] ?? ''),
+            'modo' => $plano['modo'], 'modo_nome' => atendimento_modos()[$plano['modo']]['nome'],
+            'motivo_modo' => (string)($an['motivo_modo'] ?? ''),
             'direcao' => $plano['direcao_nome'], 'conceito' => $plano['conceito'] ?? '',
             'fonte_titulo' => $plano['fonte_titulo'], 'fonte_corpo' => $plano['fonte_corpo'],
             'paleta' => array_values((array)($plano['paleta'] ?? [])),
@@ -110,18 +152,24 @@ switch ($acao) {
         if (!$guardado) responder_json(['ok' => false, 'erro' => 'Planejamento não encontrado. Clique em gerar de novo.']);
         estudio_checar_limite($empresaId, $ehAdmin);
         session_write_close();
-        $ctx = ia_contexto_empresa($empresaId);
-        $r = ia_gerar_html_site($ctx, $guardado['briefing'], $guardado['plano']);
-        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
         $plano = $guardado['plano'];
+        // Serviços sugeridos entram ANTES de escrever o site, para aparecerem nele
+        $aplicado = estudio_aplicar_analise($empresaId, $plano, !empty($guardado['criar_servicos']));
+        $ctx = ia_contexto_empresa($empresaId);
+        $r = ia_gerar_html_site($ctx, $guardado['briefing'], $plano);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
         $versaoId = ia_salvar_versao($empresaId, $r['html'], 'geracao', 'Site gerado — estilo ' . $plano['direcao_nome'], $usuarioId,
             ['direcao' => $plano['direcao_chave'], 'conceito' => $plano['conceito'] ?? '']);
         ia_aplicar_html_no_site($empresaId, $r['html'], $guardado['briefing']);
         ia_salvar_tema($empresaId, $plano);
         ia_registrar_mensagem($empresaId, 'usuario', $guardado['briefing']);
-        ia_registrar_mensagem($empresaId, 'ia', 'Criei um site novo no estilo "' . $plano['direcao_nome'] . '". Conceito: ' . ($plano['conceito'] ?? '') . ' — Peça qualquer ajuste aqui no chat.', $versaoId);
+        ia_registrar_mensagem($empresaId, 'ia', 'Criei um site novo no estilo "' . $plano['direcao_nome'] . '". Conceito: ' . ($plano['conceito'] ?? '')
+            . ' Forma de atendimento: ' . atendimento_modos()[$plano['modo']]['nome'] . '.'
+            . ($aplicado['servicos_criados'] ? ' Cadastrei ' . $aplicado['servicos_criados'] . ' serviços sugeridos (confira preços e descrições em Serviços).' : '')
+            . ' — Peça qualquer ajuste aqui no chat.', $versaoId);
         estudio_log($empresaId, $usuarioId, 'geração — ' . $plano['direcao_nome'], 'HTML com ' . strlen($r['html']) . ' caracteres');
-        responder_json(['ok' => true, 'versao_id' => $versaoId, 'direcao' => $plano['direcao_nome']]);
+        responder_json(['ok' => true, 'versao_id' => $versaoId, 'direcao' => $plano['direcao_nome'], 'servicos_criados' => $aplicado['servicos_criados'],
+            'modo' => $plano['modo'], 'modo_nome' => atendimento_modos()[$plano['modo']]['nome']]);
 
     case 'refinar':
         $instrucao = trim($_POST['instrucao'] ?? '');
@@ -179,6 +227,14 @@ switch ($acao) {
         if ($ativar && empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Ainda não existe site gerado por IA.']);
         $pdo->prepare("UPDATE sites SET ia_modo_total=? WHERE empresa_id=?")->execute([$ativar ? 'true' : 'false', $empresaId]);
         responder_json(['ok' => true, 'ativo' => $ativar]);
+
+    case 'atendimento':
+        // Forma de atendimento escolhida pelo dono ('' = seguir o segmento)
+        $modo = $_POST['modo_atendimento'] ?? '';
+        if ($modo !== '' && !atendimento_modo_valido($modo)) responder_json(['ok' => false, 'erro' => 'Forma de atendimento inválida.']);
+        $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([$modo !== '' ? $modo : null, $empresaId]);
+        $info = atendimento_info_empresa($empresaId);
+        responder_json(['ok' => true, 'modo' => $info['modo'], 'modo_nome' => atendimento_modos()[$info['modo']]['nome']]);
 
     case 'publicar':
         $publicar = ($_POST['publicado'] ?? '') === '1';
