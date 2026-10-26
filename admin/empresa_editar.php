@@ -14,8 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
     $nome = trim($_POST['nome'] ?? '');
     $email = mb_strtolower(trim($_POST['email'] ?? ''));
     $slug = slugify($_POST['slug'] ?? $empresa['slug']);
-    $dom = trim($_POST['dominio_personalizado'] ?? '');
-    $dom = $dom !== '' ? preg_replace('#^https?://|^www\.|/.*$#i', '', strtolower($dom)) : null;
+    $dom = dominio_normalizar($_POST['dominio_personalizado'] ?? '') ?: null;
     $statusOk = in_array($_POST['status'] ?? '', ['ativo', 'pendente', 'suspenso', 'cancelado'], true);
 
     $slugUsado = $pdo->prepare("SELECT 1 FROM empresas WHERE slug=? AND id<>?"); $slugUsado->execute([$slug, $id]);
@@ -26,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
     elseif (!$statusOk) $erro = 'Status inválido.';
     elseif ($slugUsado->fetch()) $erro = 'Esse endereço de site já está em uso por outra empresa.';
     elseif ($domUsado) $erro = 'Esse domínio já está ligado a outra empresa.';
+    elseif ($dom && !dominio_valido($dom)) $erro = 'Domínio inválido. Exemplo: minhaempresa.com.br';
     else {
         $pdo->prepare("UPDATE empresas SET segmento_id=?, segmento_descricao=?, modo_atendimento=? WHERE id=?")->execute([
             (int)($_POST['segmento_id'] ?? 0) ?: null, mb_substr(trim($_POST['segmento_descricao'] ?? ''), 0, 150) ?: null,
@@ -33,6 +33,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
         $pdo->prepare("UPDATE empresas SET nome=?, slug=?, email=?, telefone=?, whatsapp=?, endereco=?, plano_id=?, status=?, vencimento=?, dominio_personalizado=? WHERE id=?")
             ->execute([$nome, $slug, $email, trim($_POST['telefone'] ?? ''), so_digitos($_POST['whatsapp'] ?? ''), trim($_POST['endereco'] ?? ''),
                        (int)$_POST['plano_id'] ?: null, $_POST['status'], $_POST['vencimento'] ?: null, $dom, $id]);
+        if ($dom !== ($empresa['dominio_personalizado'] ?: null)) {
+            $pdo->prepare("UPDATE empresas SET dominio_status=?, dominio_detalhe=NULL, dominio_verificado_em=NULL WHERE id=?")->execute([$dom ? 'pendente' : null, $id]);
+        }
         if ($usuario) {
             $pdo->prepare("UPDATE usuarios SET email=?, ativo=? WHERE id=?")->execute([$email, in_array($_POST['status'], ['ativo', 'pendente'], true) ? 'true' : 'false', $usuario['id']]);
             if (($nova = $_POST['nova_senha'] ?? '') !== '') {
@@ -83,7 +86,7 @@ $statusOpcoes = ['ativo' => 'Ativo', 'pendente' => 'Pendente', 'suspenso' => 'Su
         <h3 style="margin-top:22px">Endereço do site</h3>
         <div class="form-row">
             <div><label>Endereço na plataforma</label><input type="text" name="slug" value="<?= e($empresa['slug']) ?>"><p class="dica">Mudar quebra links antigos já divulgados.</p></div>
-            <div><label>Domínio próprio (opcional)</label><input type="text" name="dominio_personalizado" value="<?= e($empresa['dominio_personalizado']) ?>" placeholder="barbeariadoze.com.br"><p class="dica">Aponte o DNS do domínio para este servidor.</p></div>
+            <div><label>Domínio próprio (opcional)</label><input type="text" name="dominio_personalizado" value="<?= e($empresa['dominio_personalizado']) ?>" placeholder="barbeariadoze.com.br"><p class="dica">Passo a passo e verificação em <a class="link" href="dominios.php">Domínios</a>.</p></div>
         </div>
 
         <h3 style="margin-top:22px">Tipo de negócio</h3>

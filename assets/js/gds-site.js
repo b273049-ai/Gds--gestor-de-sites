@@ -379,7 +379,106 @@
 
     // Depois de enviar um formulário, abre a página onde está o resultado
     document.addEventListener('DOMContentLoaded', function () {
-        var alvo = document.querySelector('.gds-c [data-gds-sucesso], .gds-c .gds-sucesso, .gds-c .gds-alerta');
+        var alvo = $$('.gds-c [data-gds-sucesso], .gds-c .gds-sucesso, .gds-c .gds-alerta').filter(function (el) { return !el.closest('[data-gds-carrinho]'); })[0];
         if (alvo) mostrarPaginaDe(alvo.closest('.gds-c'));
     });
+
+    // ---------- CARRINHO (pedido pelo site) ----------
+    (function () {
+        var raiz = $('[data-gds-carrinho]');
+        if (!raiz) return;
+        var chave = 'gds-carrinho-' + raiz.getAttribute('data-empresa');
+        var taxa = parseFloat(raiz.getAttribute('data-taxa')) || 0;
+        var minimo = parseFloat(raiz.getAttribute('data-minimo')) || 0;
+        var painel = $('.gds-carrinho', raiz), fundo = $('.gds-carrinho-fundo', raiz), barra = $('[data-gds-carrinho-abrir]', raiz);
+        var form = $('[data-gds-carrinho-form]', raiz);
+        var itens = [];
+        var ler = function () { try { itens = JSON.parse(localStorage.getItem(chave) || '[]') || []; } catch (e) { itens = []; } };
+        var gravar = function () { try { localStorage.setItem(chave, JSON.stringify(itens)); } catch (e) { } };
+        if (raiz.getAttribute('data-limpar') === '1') { itens = []; gravar(); } else { ler(); }
+        if (form) {
+            // Volta de um erro: o servidor devolve os itens que estavam no formulário
+            var doForm = $('[data-gds-itens]', form).value;
+            if (doForm) { try { var lista = JSON.parse(doForm); if (lista && lista.length) { itens = lista; gravar(); } } catch (e) { } }
+        }
+        var subtotal = function () { return itens.reduce(function (t, i) { return t + i.preco * i.qtd; }, 0); };
+        var qtdTotal = function () { return itens.reduce(function (t, i) { return t + i.qtd; }, 0); };
+        var ehEntrega = function () { var r = form && $('input[name=pd_tipo_entrega]:checked', form); return r ? r.value === 'entrega' : false; };
+
+        function abrir() { painel.hidden = false; fundo.hidden = false; document.documentElement.classList.add('gds-sem-rolagem'); var f = $('button, input', painel); if (f) setTimeout(function () { f.focus(); }, 50); }
+        function fechar() { painel.hidden = true; fundo.hidden = true; document.documentElement.classList.remove('gds-sem-rolagem'); }
+
+        function render() {
+            var sub = subtotal(), qtd = qtdTotal();
+            barra.hidden = qtd === 0 || !painel.hidden;
+            $$('[data-gds-qtd]', raiz).forEach(function (el) { el.textContent = qtd; });
+            $$('[data-gds-subtotal]', raiz).forEach(function (el) { el.textContent = dinheiro(sub); });
+            if (!form) return;
+            var lista = $('[data-gds-lista]', form);
+            lista.innerHTML = '';
+            itens.forEach(function (i, idx) {
+                var li = document.createElement('li');
+                li.innerHTML = '<span class="gds-ci-nome"></span><span class="gds-ci-qtd"><button type="button" aria-label="Menos">−</button><b></b><button type="button" aria-label="Mais">+</button></span><span class="gds-ci-preco"></span>';
+                $('.gds-ci-nome', li).textContent = i.nome;
+                $('b', li).textContent = i.qtd;
+                $('.gds-ci-preco', li).textContent = dinheiro(i.preco * i.qtd);
+                var bts = $$('button', li);
+                bts[0].addEventListener('click', function () { i.qtd--; if (i.qtd <= 0) itens.splice(idx, 1); gravar(); render(); });
+                bts[1].addEventListener('click', function () { if (i.qtd < 99) i.qtd++; gravar(); render(); });
+                lista.appendChild(li);
+            });
+            $('[data-gds-vazio]', form).hidden = itens.length > 0;
+            $('[data-gds-dados]', form).hidden = itens.length === 0;
+            var t = ehEntrega() ? taxa : 0;
+            var linhaTaxa = $('[data-gds-linha-taxa]', form);
+            linhaTaxa.hidden = !ehEntrega();
+            $('[data-gds-taxa]', form).textContent = t > 0 ? dinheiro(t) : 'Grátis';
+            $('[data-gds-total]', form).textContent = dinheiro(sub + t);
+            var end = $('[data-gds-endereco]', form);
+            if (end) { end.hidden = !ehEntrega(); $('input', end).required = ehEntrega(); }
+            var abaixo = minimo > 0 && sub < minimo;
+            var aviso = $('[data-gds-minimo-aviso]', form);
+            if (aviso) aviso.hidden = !abaixo;
+            $('[data-gds-finalizar]', form).disabled = itens.length === 0 || abaixo;
+            $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco }; }));
+        }
+
+        document.addEventListener('click', function (ev) {
+            var b = ev.target.closest('[data-gds-add]');
+            if (!b) return;
+            ev.preventDefault();
+            var id = parseInt(b.getAttribute('data-gds-add'), 10);
+            var it = itens.filter(function (i) { return i.id === id; })[0];
+            if (it) it.qtd = Math.min(99, it.qtd + 1);
+            else itens.push({ id: id, nome: b.getAttribute('data-nome'), preco: parseFloat(b.getAttribute('data-preco')) || 0, qtd: 1 });
+            gravar(); render();
+            b.classList.add('gds-adicionado');
+            var txt = b.innerHTML; b.innerHTML = '✓ Adicionado';
+            setTimeout(function () { b.innerHTML = txt; b.classList.remove('gds-adicionado'); }, 1100);
+            barra.classList.remove('gds-pulo'); void barra.offsetWidth; barra.classList.add('gds-pulo');
+        });
+        barra.addEventListener('click', function () { abrir(); render(); });
+        $$('[data-gds-carrinho-fechar]', raiz).forEach(function (el) { el.addEventListener('click', function () { fechar(); render(); }); });
+        document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !painel.hidden) { fechar(); render(); } });
+        if (form) {
+            form.addEventListener('change', render);
+            var pag = $('[data-gds-pagamento]', form), troco = $('[data-gds-troco]', form);
+            var atTroco = function () { troco.hidden = !/dinheiro/i.test(pag.value); };
+            if (pag && troco) { pag.addEventListener('change', atTroco); atTroco(); }
+            form.addEventListener('submit', function (ev) {
+                render();
+                var falta = $$('input[required]', form).filter(function (i) { return !i.closest('[hidden]') && !i.value.trim(); })[0];
+                if (falta) { ev.preventDefault(); falta.focus(); falta.classList.add('gds-invalido'); return; }
+                var bt = $('[data-gds-finalizar]', form);
+                bt.disabled = true; bt.textContent = 'Enviando…';
+            });
+        }
+        // Link "#gds-carrinho" (ex.: botão principal da IA) abre o painel
+        document.addEventListener('click', function (ev) {
+            var a = ev.target.closest('a[href="#gds-carrinho"]');
+            if (a) { ev.preventDefault(); abrir(); render(); }
+        });
+        render();
+        if (raiz.getAttribute('data-aberto') === '1') { abrir(); render(); }
+    })();
 })();

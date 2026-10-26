@@ -48,8 +48,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['criar_agendamento']))
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar_status']) && isset($statusAg[$_POST['status'] ?? ''])) {
-    $pdo->prepare("UPDATE agendamentos SET status=? WHERE id=? AND empresa_id=?")->execute([$_POST['status'], (int)$_POST['agendamento_id'], $empresaId]);
-    flash('sucesso', 'Status atualizado.');
+    $agId = (int)$_POST['agendamento_id'];
+    $antes = $pdo->prepare("SELECT status FROM agendamentos WHERE id=? AND empresa_id=?");
+    $antes->execute([$agId, $empresaId]);
+    $antes = $antes->fetchColumn();
+    $pdo->prepare("UPDATE agendamentos SET status=? WHERE id=? AND empresa_id=?")->execute([$_POST['status'], $agId, $empresaId]);
+    $aviso = '';
+    if ($antes !== false && $antes !== $_POST['status']) {
+        wa_adiar();
+        $aviso = wa_resultado_para_tela(wa_avisar_status_agendamento($empresa, $agId, $_POST['status']));
+    }
+    flash('sucesso', 'Status atualizado.' . $aviso);
     header('Location: agenda.php?' . http_build_query(array_intersect_key($_GET, ['ver' => 1, 'data' => 1, 'profissional' => 1]))); exit;
 }
 

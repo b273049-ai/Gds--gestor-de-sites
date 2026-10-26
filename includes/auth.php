@@ -32,6 +32,7 @@ function exigir_login($role = null) {
     }
 
     gds_garantir_schema();
+    wa_rotina_em_segundo_plano();
 
     $ehPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
     $temAcaoGet = !$ehPost && count(array_intersect(array_keys($_GET), GDS_ACOES_GET)) > 0;
@@ -111,6 +112,12 @@ function flash($tipo, $mensagem) {
 
 function flash_render() {
     $html = '';
+    if (!empty($_SESSION['wa_manual']['link'])) {
+        $html .= '<div class="alert alert-info alerta-wa"><span>Mensagem pronta para o cliente:</span> <em>' . e(mb_strimwidth($_SESSION['wa_manual']['texto'], 0, 140, '…')) . '</em>'
+               . ' <a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="' . e($_SESSION['wa_manual']['link']) . '">' . icone('chat', 14) . ' Enviar pelo WhatsApp</a>'
+               . '<small>Quer que isso seja enviado sozinho? Ative em <a href="/empresa/whatsapp.php">WhatsApp automático</a>.</small></div>';
+        unset($_SESSION['wa_manual']);
+    }
     foreach ($_SESSION['flash'] ?? [] as $f) {
         $html .= alerta($f['tipo'], $f['msg']);
     }
@@ -196,6 +203,8 @@ require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/ia_helper.php';
 require_once __DIR__ . '/migracoes.php';
 require_once __DIR__ . '/atendimento.php';
+require_once __DIR__ . '/whatsapp.php';
+require_once __DIR__ . '/dominio.php';
 
 // Link wa.me a partir de um telefone brasileiro (acrescenta o 55 quando vier só DDD + número)
 function link_whatsapp($telefone, $mensagem = '') {

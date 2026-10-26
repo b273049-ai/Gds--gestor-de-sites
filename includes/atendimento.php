@@ -15,7 +15,7 @@ function atendimento_modos() {
         'agendamento' => ['nome' => 'Agendamento online', 'desc' => 'O cliente escolhe o serviço, o profissional, o dia e o horário.', 'botao' => 'Agendar', 'cta' => 'Agendar horário', 'componente' => '{{AGENDAMENTO}}', 'ancora' => 'agendar'],
         'orcamento'   => ['nome' => 'Pedido de orçamento', 'desc' => 'O cliente escolhe o serviço, informa data/local/detalhes e pede orçamento.', 'botao' => 'Pedir orçamento', 'cta' => 'Pedir orçamento', 'componente' => '{{ORCAMENTO}}', 'ancora' => 'orcamento'],
         'contato'     => ['nome' => 'Contato / WhatsApp', 'desc' => 'O cliente fala com a empresa pelo WhatsApp ou formulário.', 'botao' => 'Quero saber mais', 'cta' => 'Fale com a gente', 'componente' => '{{CONTATO}}', 'ancora' => 'contato'],
-        'catalogo'    => ['nome' => 'Catálogo com pedido pelo WhatsApp', 'desc' => 'O cliente vê produtos/cardápio com preço e pede pelo WhatsApp.', 'botao' => 'Pedir', 'cta' => 'Ver cardápio / produtos', 'componente' => '{{SERVICOS}}', 'ancora' => 'servicos'],
+        'catalogo'    => ['nome' => 'Catálogo / delivery com pedido', 'desc' => 'O cliente monta o pedido no site (carrinho com entrega/retirada) ou pede pelo WhatsApp.', 'botao' => 'Pedir', 'cta' => 'Ver cardápio / produtos', 'componente' => '{{SERVICOS}}', 'ancora' => 'servicos'],
     ];
 }
 

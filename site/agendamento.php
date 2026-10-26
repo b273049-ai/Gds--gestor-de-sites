@@ -11,7 +11,7 @@ $token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['t'] ?? $_POST['t'] ?? '
 $ag = false;
 if (strlen($token) === 32) {
     try {
-        $st = $pdo->prepare("SELECT a.*, c.nome AS cliente_nome, s.nome AS servico_nome, s.duracao_minutos, p.nome AS profissional_nome,
+        $st = $pdo->prepare("SELECT a.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, s.nome AS servico_nome, s.duracao_minutos, p.nome AS profissional_nome,
                 e.nome AS empresa_nome, e.slug, e.whatsapp, e.endereco, e.email AS empresa_email, e.notificar_email, si.cor_primaria, si.ia_tema, si.html_gerado, si.ia_modo_total
             FROM agendamentos a JOIN empresas e ON e.id = a.empresa_id JOIN sites si ON si.empresa_id = e.id
             LEFT JOIN clientes c ON c.id = a.cliente_id LEFT JOIN servicos s ON s.id = a.servico_id LEFT JOIN profissionais p ON p.id = a.profissional_id
@@ -33,6 +33,12 @@ if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['cancel
         site_notificar_empresa(['nome' => $ag['empresa_nome'], 'email' => $ag['empresa_email'], 'notificar_email' => $ag['notificar_email']],
             'Agendamento cancelado: ' . $ag['cliente_nome'] . ' — ' . date('d/m H:i', strtotime($ag['data_hora'])),
             [$ag['cliente_nome'] . ' cancelou o agendamento de ' . date('d/m/Y \à\s H:i', strtotime($ag['data_hora'])) . ($ag['servico_nome'] ? ' (' . $ag['servico_nome'] . ')' : '') . '.', $motivo ? 'Motivo: ' . $motivo : '']);
+        if ($empresaWa = wa_carregar_empresa($ag['empresa_id'])) {
+            wa_adiar();
+            $varsCanc = wa_vars_agendamento($ag + ['telefone' => $ag['cliente_telefone'] ?? ''], $empresaWa);
+            wa_notificar_empresa($empresaWa, 'cancelamento', ['nome' => $ag['cliente_nome']] + $varsCanc, 'agendamento', $ag['id']);
+            if (!empty($ag['cliente_telefone'])) wa_notificar_cliente($empresaWa, 'agendamento_cancelado', $ag['cliente_telefone'], $varsCanc, 'agendamento', $ag['id']);
+        }
         $ag['status'] = 'cancelado';
         $msg = 'ok';
     }

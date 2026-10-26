@@ -14,6 +14,8 @@
         <?= menu_item('/admin/segmentos.php', 'segmentos.php', 'tag', 'Segmentos') ?>
         <?= menu_item('/admin/templates.php', 'templates.php', 'layout', 'Templates') ?>
         <div class="sidebar-grupo">Sistema</div>
+        <?= menu_item('/admin/whatsapp.php', 'whatsapp.php', 'chat', 'WhatsApp') ?>
+        <?= menu_item('/admin/dominios.php', 'dominios.php', 'globo', 'Domínios') ?>
         <?= menu_item('/admin/configuracoes.php', 'configuracoes.php', 'engrenagem', 'Configurações') ?>
     </nav>
     <div class="sidebar-rodape">
