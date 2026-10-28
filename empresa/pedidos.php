@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
+exigir_modulo('orcamentos', 'delivery');
 $empresaId = (int)empresa_id_atual();
 $empresa = $pdo->prepare("SELECT * FROM empresas WHERE id=?");
 $empresa->execute([$empresaId]); $empresa = $empresa->fetch();
@@ -96,25 +97,25 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
-<head><?= painel_head(($novos ? "($novos) " : '') . 'Pedidos / Orçamentos - Meu Negócio') ?></head>
+<head><?= painel_head(($novos ? "($novos) " : '') . modulos_rotulo_pedidos() . ' - Meu Negócio') ?></head>
 <body>
 <div class="layout">
 <?php include '_sidebar.php'; ?>
 <main class="content">
-    <div class="page-header"><div><h1>Pedidos e orçamentos</h1>
+    <div class="page-header"><div><h1><?= e(modulos_rotulo_pedidos()) ?></h1>
         <p class="subtitulo">Em aberto nesta lista: R$ <?= number_format($totAberto, 2, ',', '.') ?><?= $novos ? ' · <strong>' . $novos . ' novo(s) esperando você</strong>' : '' ?>
         · <a class="link" href="whatsapp.php">o cliente é avisado no WhatsApp a cada passo</a></p></div></div>
     <?= flash_render() ?>
     <details class="form-box">
-        <summary><?= icone('mais') ?> Registrar pedido/orçamento manualmente</summary>
+        <summary><?= icone('mais') ?> Registrar <?= modulo_ativo('delivery') && !modulo_ativo('orcamentos') ? 'pedido' : 'orçamento' ?> manualmente</summary>
         <form method="post">
             <?= csrf_campo() ?>
             <div class="form-row">
                 <div><label>Cliente</label><select name="cliente_id"><option value="">—</option><?php foreach ($clientes as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['nome']) ?></option><?php endforeach; ?></select></div>
                 <div><label>Valor (R$)</label><input type="text" inputmode="decimal" name="valor" value="0,00"></div>
             </div>
-            <label>Descrição / itens</label><textarea name="descricao" rows="3" required placeholder="Ex: troca de óleo + revisão de freios"></textarea>
-            <label>Veículo (marca/modelo/ano) — se aplicável</label><input type="text" name="veiculo_info" placeholder="Ex: Honda Civic 2019">
+            <label>Descrição / itens</label><textarea name="descricao" rows="3" required placeholder="<?= modulo_ativo('delivery') && !modulo_ativo('orcamentos') ? 'Ex: 2 smash burger + 1 batata (pedido por telefone)' : 'Ex: som e iluminação para casamento, 5h' ?>"></textarea>
+            <?php if ((modulos_atuais()['empresa']['segmento_slug'] ?? '') === 'mecanica'): ?><label>Veículo (marca/modelo/ano)</label><input type="text" name="veiculo_info" placeholder="Ex: Honda Civic 2019"><?php endif; ?>
             <button type="submit" name="criar_pedido" value="1">Salvar</button>
         </form>
     </details>
@@ -122,8 +123,10 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
         <a class="btn btn-sm <?= $filtro === '' && $filtroTipo === '' ? '' : 'btn-ghost' ?>" href="pedidos.php">Todos</a>
         <a class="btn btn-sm <?= $filtro === 'abertos' ? '' : 'btn-ghost' ?>" href="?status=abertos">Em aberto</a>
         <a class="btn btn-sm <?= $filtro === 'novo' ? '' : 'btn-ghost' ?>" href="?status=novo">Novos</a>
+        <?php if (modulo_ativo('delivery') && modulo_ativo('orcamentos')): ?>
         <a class="btn btn-sm <?= $filtroTipo === 'delivery' ? '' : 'btn-ghost' ?>" href="?tipo=delivery">Delivery</a>
         <a class="btn btn-sm <?= $filtroTipo === 'orcamento' ? '' : 'btn-ghost' ?>" href="?tipo=orcamento">Orçamentos</a>
+        <?php endif; ?>
         <a class="btn btn-sm <?= $filtro === 'concluido' ? '' : 'btn-ghost' ?>" href="?status=concluido">Concluídos</a>
         <a class="btn btn-sm <?= $filtro === 'cancelado' ? '' : 'btn-ghost' ?>" href="?status=cancelado">Cancelados</a>
     </div>

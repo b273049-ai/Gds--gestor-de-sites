@@ -14,9 +14,11 @@
         <?= menu_item('/admin/segmentos.php', 'segmentos.php', 'tag', 'Segmentos') ?>
         <?= menu_item('/admin/templates.php', 'templates.php', 'layout', 'Templates') ?>
         <div class="sidebar-grupo">Sistema</div>
+        <?= menu_item('/admin/marketing.php', 'marketing.php', 'brilho', 'Marketing com IA') ?>
         <?= menu_item('/admin/whatsapp.php', 'whatsapp.php', 'chat', 'WhatsApp') ?>
         <?= menu_item('/admin/dominios.php', 'dominios.php', 'globo', 'Domínios') ?>
         <?= menu_item('/admin/configuracoes.php', 'configuracoes.php', 'engrenagem', 'Configurações') ?>
+        <?= menu_item('/admin/diagnostico.php', 'diagnostico.php', 'olho', 'Diagnóstico') ?>
     </nav>
     <div class="sidebar-rodape">
         <div class="sidebar-usuario"><span class="avatar"><?= e(mb_strtoupper(mb_substr($_SESSION['nome'] ?? 'A', 0, 1))) ?></span><span><?= e($_SESSION['nome'] ?? '') ?></span></div>

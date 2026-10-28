@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
+exigir_modulo('equipe');
 $empresaId = (int)empresa_id_atual();
 
 // Limite do plano (antes não era verificado em lugar nenhum)

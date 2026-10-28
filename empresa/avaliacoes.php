@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
+exigir_modulo('avaliacoes');
 $empresaId = (int)empresa_id_atual();
 
 if (isset($_GET['aprovar']) || isset($_GET['reprovar'])) {

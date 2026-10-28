@@ -136,13 +136,17 @@ $chaveSalva = $a['chave'] !== '';
         <code style="display:block;word-break:break-all;padding:10px;background:var(--surface-3);border-radius:8px">curl -s "<?= e($cronUrl) ?>" &gt;/dev/null</code>
         <button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="rotina(this)">Rodar agora</button>
 
-        <details style="margin-top:18px"><summary class="link" style="cursor:pointer">Como ter a Evolution API (grátis)</summary>
+        <details style="margin-top:18px" open><summary class="link" style="cursor:pointer">Passo a passo: Evolution API na Hostinger (recomendado)</summary>
             <ol class="dica" style="line-height:1.8">
-                <li>Ela roda num servidor à parte (VPS de ~R$ 25/mês, ex.: Hostinger VPS com o modelo "Evolution API", ou Railway/Render).</li>
-                <li>Na instalação você define a <strong>AUTHENTICATION_API_KEY</strong> — é a "Chave" acima.</li>
-                <li>Cole a URL do servidor e a chave aqui, salve e gere o QR code.</li>
-                <li>Dica: use um número dedicado (chip só para isso). Envios em massa para quem não espera a mensagem podem levar a bloqueio pelo WhatsApp — aqui só vão mensagens que o cliente pediu (confirmações).</li>
-            </ol></details>
+                <li>No hPanel, contrate um <strong>VPS</strong> (o mais simples serve) e escolha o aplicativo <strong>Evolution API</strong> (instalação em 1 clique).</li>
+                <li>Anote o <strong>IP do VPS</strong> e a <strong>AUTHENTICATION_API_KEY</strong> (no Docker Manager, nas variáveis do projeto da Evolution API).</li>
+                <li>Teste <code>http://IP:8080</code> no navegador (aparece a mensagem de boas-vindas). Se puder, crie um subdomínio com HTTPS apontando para o VPS.</li>
+                <li>Aqui: Serviço <strong>Evolution API</strong>, URL do servidor, chave e instância <code>gds-plataforma</code>. Marque as duas opções e salve.</li>
+                <li>Clique em <strong>Gerar QR code</strong> e leia com o WhatsApp do chip da plataforma (Aparelhos conectados → Conectar um aparelho).</li>
+                <li>Use <strong>Enviar teste</strong> e crie o Cron Job dos lembretes (item 4).</li>
+            </ol>
+            <p class="dica"><strong>Z-API:</strong> crie a instância em z-api.io e cole aqui o ID e o Token da instância (e o Client-Token, se ativou). <strong>Webhook:</strong> a GDS envia um POST JSON com <code>numero</code>, <code>texto</code>, <code>empresa_id</code> e <code>evento</code>.</p>
+            <p class="dica">Use um número dedicado (chip só para isso). A GDS só envia mensagens que o cliente pediu; nunca use o número para disparo em massa.</p></details>
     </section>
     </div>
 

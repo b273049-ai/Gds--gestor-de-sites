@@ -13,12 +13,9 @@ $secaoLabels = [
     'agendar' => 'Agendar', 'avaliacoes' => 'Avaliações', 'contato' => 'Contato',
 ];
 $ordemPadrao = array_keys($secaoLabels);
-$estilos = [
-    'classico'  => ['Clássico', 'Hero à esquerda, tom tech discreto. Seguro e versátil.'],
-    'bold'      => ['Bold', 'Centralizado, tipografia enorme, alto impacto visual.'],
-    'editorial' => ['Editorial', 'Tipografia serifada, estilo revista, mais sofisticado.'],
-    'grid'      => ['Grid Visual', 'Banner de foto em destaque, ótimo se você tem boas fotos.'],
-];
+require_once __DIR__ . '/../includes/site_render.php';
+$estilos = ['' => ['Automático', 'Escolhe o estilo que combina com o tipo de negócio.']];
+foreach (site_estilos() as $k => $est) $estilos[$k] = [$est['nome'], $est['desc']];
 
 $site = $pdo->prepare("SELECT * FROM sites WHERE empresa_id=?");
 $site->execute([$empresaId]); $site = $site->fetch();
@@ -29,9 +26,10 @@ $salvarOrdem = function ($ordem) use ($pdo, $empresaId) {
 };
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_estilo'])) {
-    $layout = isset($estilos[$_POST['layout'] ?? '']) ? $_POST['layout'] : 'classico';
-    $pdo->prepare("UPDATE sites SET layout=?, banner_imagem=?, cor_primaria=?, cor_secundaria=? WHERE empresa_id=?")
-        ->execute([$layout, url_valida_ou_vazia($_POST['banner_imagem'] ?? ''), cor_hex_valida($_POST['cor_primaria'] ?? '', '#4f7cff'), cor_hex_valida($_POST['cor_secundaria'] ?? '', '#16213e'), $empresaId]);
+    $estilo = isset($estilos[$_POST['layout'] ?? '']) ? $_POST['layout'] : '';
+    $pdo->prepare("UPDATE sites SET estilo=?, banner_imagem=?, cor_primaria=?, cor_secundaria=? WHERE empresa_id=?")
+        ->execute([$estilo ?: null, url_valida_ou_vazia($_POST['banner_imagem'] ?? ''), cor_hex_valida($_POST['cor_primaria'] ?? '', '#4f7cff'), cor_hex_valida($_POST['cor_secundaria'] ?? '', '#16213e'), $empresaId]);
+    if (isset($_POST['novas_fotos'])) { $pdo->prepare("UPDATE sites SET fotos_banco=NULL WHERE empresa_id=?")->execute([$empresaId]); }
     flash('sucesso', 'Estilo atualizado!');
     header("Location: site_layout.php?empresa_id=$empresaId"); exit;
 }
@@ -72,14 +70,16 @@ $q = '?empresa_id=' . $empresaId . csrf_qs();
         <?= csrf_campo() ?>
         <h3>Estilo visual</h3>
         <?php foreach ($estilos as $val => [$nome, $desc]): ?>
-        <label class="estilo-opcao"><input type="radio" name="layout" value="<?= $val ?>" <?= ($site['layout'] ?: 'classico') == $val ? 'checked' : '' ?>><span><strong><?= $nome ?></strong><small><?= $desc ?></small></span></label>
+        <label class="estilo-opcao"><input type="radio" name="layout" value="<?= $val ?>" <?= (string)($site['estilo'] ?? '') === (string)$val ? 'checked' : '' ?>><span><strong><?= $nome ?></strong><small><?= $desc ?></small></span></label>
         <?php endforeach; ?>
         <div class="form-row">
             <div><label>Cor primária</label><input type="color" name="cor_primaria" value="<?= e(cor_hex_valida($site['cor_primaria'] ?? '', '#4f7cff')) ?>"></div>
             <div><label>Cor secundária</label><input type="color" name="cor_secundaria" value="<?= e(cor_hex_valida($site['cor_secundaria'] ?? '', '#16213e')) ?>"></div>
         </div>
-        <label>Banner (imagem de destaque, usada no estilo "Grid Visual")</label>
+        <p class="dica">Cor primária azul padrão (#4f7cff) = usa a cor do estilo.</p>
+        <label>Foto do topo do site (opcional — sem ela, usa a galeria ou fotos profissionais do Pexels)</label>
         <input type="url" name="banner_imagem" value="<?= e($site['banner_imagem']) ?>" placeholder="https://exemplo.com/banner.jpg">
+        <label class="check" style="margin-top:10px"><input type="checkbox" name="novas_fotos"> Buscar novas fotos profissionais</label>
         <button type="submit" name="salvar_estilo" value="1">Salvar estilo</button>
     </form>
 

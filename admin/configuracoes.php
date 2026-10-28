@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key'];
+$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key'];
 $provedores = ['gemini', 'anthropic', 'openai'];
 
 // Testa a IA com uma chamada curtinha (o botão "Testar" chama via fetch)
@@ -161,6 +161,10 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
         <h3 style="margin-top:24px">Pagamentos e comunicação</h3>
         <?= campo_segredo('mercadopago_access_token', 'Mercado Pago — Access Token (cobrança das assinaturas)', $cfg['mercadopago_access_token'], 'APP_USR-...') ?>
         <p class="dica">WhatsApp automático e domínios próprios têm telas próprias: <a class="link" href="whatsapp.php">WhatsApp</a> · <a class="link" href="dominios.php">Domínios</a>.</p>
+
+        <h3 style="margin-top:24px">Fotos profissionais para os sites</h3>
+        <?= campo_segredo('pexels_api_key', 'Pexels — API Key (grátis)', $cfg['pexels_api_key'], 'Cole a chave do pexels.com/api') ?>
+        <p class="dica">Sites sem fotos próprias ganham fotos reais do tipo de negócio (topo do site e no Estúdio IA). Crie a chave grátis em <a class="link" href="https://www.pexels.com/api/" target="_blank" rel="noopener">pexels.com/api</a> → "Your API Key".</p>
 
         <h3 style="margin-top:24px">Mapas e Analytics</h3>
         <?= campo_segredo('google_maps_key', 'Google Maps — API Key', $cfg['google_maps_key'], 'Opcional (sem chave usa o mapa simples)') ?>

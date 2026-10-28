@@ -12,6 +12,7 @@
 // ============================================================
 
 require_once __DIR__ . '/ia_helper.php';
+require_once __DIR__ . '/fotos.php';
 
 const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}'];
 const IA_MARCADORES_OBRIGATORIOS = ['{{CONTATO}}'];
@@ -62,6 +63,17 @@ function ia_contexto_empresa($empresaId) {
     $emp['avaliacoes_media'] = round((float)($aval[0]['media'] ?? 0), 1);
     $emp['galeria'] = array_values(array_filter(array_map('trim', explode(',', $emp['galeria_imagens'] ?? ''))));
     $emp['atendimento'] = atendimento_info_empresa($empresaId);
+    // Fotos profissionais do tipo de negócio (Pexels) quando o negócio tem poucas fotos próprias
+    $emp['fotos_banco'] = [];
+    if (count($emp['galeria']) < 4 && function_exists('fotos_do_site')) {
+        try {
+            $s2 = $pdo->prepare("SELECT s.fotos_banco, seg.slug AS segmento_slug FROM sites s JOIN empresas e ON e.id = s.empresa_id LEFT JOIN segmentos seg ON seg.id = e.segmento_id WHERE s.empresa_id=?");
+            $s2->execute([$empresaId]);
+            $extra = $s2->fetch() ?: [];
+            $emp['fotos_banco'] = fotos_do_site(['id' => $empresaId, 'fotos_banco' => $extra['fotos_banco'] ?? null, 'segmento_slug' => $extra['segmento_slug'] ?? '',
+                'segmento_nome' => $emp['segmento_nome'] ?? '', 'segmento_descricao' => $emp['segmento_descricao'] ?? '']);
+        } catch (PDOException $e) { $emp['fotos_banco'] = []; }
+    }
     return $emp;
 }
 
@@ -102,6 +114,7 @@ function ia_contexto_texto($ctx) {
     if ($ctx['logo']) $imagens[] = "logo: {$ctx['logo']}";
     if ($ctx['banner_imagem']) $imagens[] = "foto de destaque/banner: {$ctx['banner_imagem']}";
     foreach (array_slice($ctx['galeria'], 0, 8) as $i => $g) $imagens[] = 'foto ' . ($i + 1) . ": $g";
+    foreach (array_slice($ctx['fotos_banco'] ?? [], 0, 6) as $i => $f) $imagens[] = 'foto profissional ' . ($i + 1) . ' (banco de imagens, ' . ($f['alt'] ?: 'tema do negócio') . "): {$f['url']}";
     $l[] = $imagens
         ? "Imagens REAIS do negócio (use estas URLs exatas onde fizer sentido):\n  - " . implode("\n  - ", $imagens)
         : 'Imagens: o negócio ainda não tem fotos cadastradas — crie a identidade visual com CSS, gradientes, formas e SVG inline. NÃO use URLs de imagens externas inventadas (ficariam quebradas).';
@@ -266,9 +279,19 @@ CONTRATO TÉCNICO (obrigatório):
    font-size >= 16px; nada de rolagem horizontal em 360px; menu vira hambúrguer acessível no celular.
 7. Acessibilidade: contraste AA, foco visível (:focus-visible), botões de verdade (<button>) para ações, textos alternativos
    nas imagens, e @media (prefers-reduced-motion: reduce) desligando animações.
-8. Animações sutis e com propósito: entrada escalonada com IntersectionObserver (opacity + translateY, cubic-bezier(.16,1,.3,1)),
-   hover em botões com leve scale e sombra. Sem exagero que atrapalhe a leitura.
-9. Use somente as imagens reais informadas (URLs exatas). Sem imagens: crie visuais com CSS/SVG inline.
+8. ANIMAÇÕES — o site já carrega o KIT GDS MOTION (não escreva IntersectionObserver nem bibliotecas de animação).
+   Basta usar atributos no HTML:
+   data-anim="fade-up|fade-down|fade-in|zoom-in|slide-left|slide-right|blur-in|clip-up" (+ data-delay="150" em ms)
+   data-stagger no pai = filhos entram em sequência · data-split no título = entra palavra por palavra
+   data-counter="12" = número sobe animado (só números reais!) · data-parallax="0.15" em imagens de fundo
+   data-tilt em cartões (inclinação 3D) · data-magnetic no botão principal · data-marquee numa faixa de palavras
+   rolando (ex.: nomes dos serviços) · <div data-progress></div> = barra de leitura · data-header-scroll no
+   cabeçalho fixo (ganha a classe .rolou ao rolar — estilize .rolou com fundo e blur).
+   Use com intenção: título do topo com data-split, seções com data-anim, listas com data-stagger, uma faixa
+   data-marquee, hover caprichado nos botões. Respeita "reduzir movimento" sozinho.
+9. Use somente as imagens informadas (URLs exatas: fotos do negócio e fotos profissionais do banco de imagens).
+   Topo com foto grande + sobreposição em gradiente para o texto ficar legível; object-fit: cover; loading="lazy"
+   (exceto a primeira). Sem nenhuma imagem: crie visuais com CSS (gradientes em malha, formas, ruído) e SVG inline.
 10. Textos em português do Brasil, específicos deste negócio (nada genérico que serviria pra qualquer concorrente).
     Não invente preços, prêmios, números ou depoimentos que não foram informados.
 11. Evite clichês: hero centralizado com gradiente roxo-azul genérico, cards idênticos com a mesma sombra, grade de 3

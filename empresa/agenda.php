@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/agenda_helper.php';
 exigir_login('empresa');
+exigir_modulo('agenda');
 $empresaId = (int)empresa_id_atual();
 $statusAg = ['agendado' => 'Agendado', 'confirmado' => 'Confirmado', 'concluido' => 'Concluído', 'cancelado' => 'Cancelado'];
 
