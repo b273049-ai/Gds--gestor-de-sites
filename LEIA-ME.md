@@ -93,6 +93,19 @@ Admin → Empresas → **Estúdio** (ou a própria empresa, se o plano tiver "Pe
 | a chave de API foi recusada | Copie a chave de novo, inteira, e confira se é do serviço certo |
 | A hospedagem encerrou a requisição por tempo | Sua hospedagem corta requisições longas; use uma IA mais rápida (Groq) ou peça mais tempo ao suporte |
 
+### Conversa no estilo Lovable (ajustes do site)
+- **Primeiro entende, depois mexe**: a cada pedido a IA mostra no chat o que entendeu e o plano (o que muda e o que
+  fica) e só então aplica. Referências como "modelo de SaaS", "estilo Apple", "igual ao Nubank" ou "igual a este site"
+  mudam o **visual**, nunca o negócio; se o nome do negócio sumir sem você pedir, o sistema refaz sozinho.
+- **Edição cirúrgica**: pedidos localizados (um texto, uma cor, um botão, uma seção) trocam só o trecho certo do código,
+  sem reescrever o site; mudanças de visual do site inteiro redesenham mantendo textos, serviços e componentes.
+- **Memória da conversa**: entende "volta como estava", "a cor de antes", "isso aí".
+- **Pergunta quando é ambíguo**, com opções clicáveis, e responde perguntas ("o que você acha?") sem mexer no site.
+- **🎯 Selecionar elemento**: clique em qualquer parte do preview e peça a mudança só para ela.
+- **📎 Site de referência**: cole o código de um site (HTML ou React/Tailwind, como o que a Lovable entrega) no chat ou na
+  aba Novo site; a IA copia o estilo (cores, fontes, espaçamentos, layout) com o conteúdo do seu negócio.
+- Depois de cada ajuste aparecem sugestões do que pedir em seguida, e toda versão pode ser restaurada.
+
 ## Segmentos e forma de atendimento
 Cada negócio conquista cliente de um jeito, e o site segue isso:
 | Forma | Para quem | Botão principal / dos serviços | Componente |

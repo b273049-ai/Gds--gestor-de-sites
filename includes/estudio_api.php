@@ -128,9 +128,12 @@ switch ($acao) {
         estudio_checar_limite($empresaId, $ehAdmin);
         $direcao = $_POST['direcao'] ?? '';
         $preferencias = trim($_POST['preferencias'] ?? '');
+        $referencia = ia_extrair_referencia(base64_decode((string)($_POST['referencia_b64'] ?? ''), true) ?: '');
+        if ($referencia !== '') $preferencias = trim($preferencias . "\nO dono mandou um SITE DE REFERÊNCIA: tire dele as fontes, a paleta e o tipo de layout (o conteúdo continua sendo deste negócio):\n" . mb_substr($referencia, 0, 3500));
         session_write_close(); // não trava as outras telas enquanto a IA pensa
         $ctx = ia_contexto_empresa($empresaId);
         $plano = ia_planejar_site($ctx, $briefing, $direcao, $preferencias);
+        if ($referencia !== '') $plano['referencia'] = $referencia;
         // Guarda o plano na sessão pro passo 2 (sem confiar no que o navegador mandar de volta)
         session_start();
         $_SESSION['ia_plano'][$empresaId] = ['plano' => $plano, 'briefing' => $briefing, 'criar_servicos' => ($_POST['criar_servicos'] ?? '') === '1'];
@@ -171,6 +174,57 @@ switch ($acao) {
         responder_json(['ok' => true, 'versao_id' => $versaoId, 'direcao' => $plano['direcao_nome'], 'servicos_criados' => $aplicado['servicos_criados'],
             'modo' => $plano['modo'], 'modo_nome' => atendimento_modos()[$plano['modo']]['nome']]);
 
+    // ---------- Chat no estilo Lovable: 1) entender  2) aplicar ----------
+    case 'entender':
+        $instrucao = trim($_POST['instrucao'] ?? '');
+        if ($instrucao === '') responder_json(['ok' => false, 'erro' => 'Escreva o que você quer mudar.']);
+        if (empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Gere o site primeiro, depois peça ajustes.']);
+        estudio_checar_limite($empresaId, $ehAdmin);
+        $elemento = json_decode((string)($_POST['elemento'] ?? ''), true) ?: null;
+        // Código/site colado no chat vira referência de estilo
+        $refBruta = base64_decode((string)($_POST['referencia_b64'] ?? ''), true) ?: '';
+        if ($refBruta === '' && mb_strlen($instrucao) > 600 && preg_match('/<(div|section|html|body|style)\b|className=/i', $instrucao)) {
+            $refBruta = $instrucao;
+            $instrucao = 'Deixe o meu site com o mesmo estilo deste site de referência que eu colei (cores, fontes, espaçamentos, componentes e layout), mantendo o meu negócio e os meus textos.';
+        }
+        $referencia = ia_extrair_referencia($refBruta);
+        session_write_close();
+        $ctx = ia_contexto_empresa($empresaId);
+        $historico = ia_historico_texto($empresaId);
+        $r = ia_entender_pedido($ctx, $site['html_gerado'], $instrucao, $historico, $elemento, $referencia);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $ent = $r['entendimento'];
+        ia_registrar_mensagem($empresaId, 'usuario', $instrucao . ($elemento ? ' [elemento: ' . mb_substr((string)($elemento['texto'] ?? $elemento['tag'] ?? ''), 0, 60) . ']' : '') . ($referencia !== '' ? ' [com site de referência]' : ''));
+        if (in_array($ent['tipo'], ['pergunta', 'conversa'], true)) {
+            $texto = $ent['tipo'] === 'pergunta' ? $ent['pergunta'] : ($ent['resposta'] ?: $ent['entendi']);
+            ia_registrar_mensagem($empresaId, 'ia', $texto);
+            responder_json(['ok' => true, 'tipo' => $ent['tipo'], 'texto' => $texto, 'opcoes' => $ent['opcoes'], 'proximos' => $ent['proximos']]);
+        }
+        session_start();
+        $_SESSION['ia_edicao'][$empresaId] = ['instrucao' => $instrucao, 'ent' => $ent, 'elemento' => $elemento, 'referencia' => $referencia, 'em' => time()];
+        session_write_close();
+        responder_json(['ok' => true, 'tipo' => $ent['tipo'], 'entendi' => $ent['entendi'], 'alteracoes' => $ent['alteracoes'], 'preservar' => $ent['preservar'],
+            'estrategia' => $ent['estrategia'], 'proximos' => $ent['proximos']]);
+
+    case 'aplicar':
+        $pend = $_SESSION['ia_edicao'][$empresaId] ?? null;
+        if (!$pend || time() - $pend['em'] > 1800) responder_json(['ok' => false, 'erro' => 'O pedido expirou. Envie de novo.']);
+        if (empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Gere o site primeiro, depois peça ajustes.']);
+        session_write_close();
+        $ctx = ia_contexto_empresa($empresaId);
+        $ent = $pend['ent'];
+        $r = ia_editar_site($ctx, $site['html_gerado'], $pend['instrucao'], $ent, $pend['elemento'], $pend['referencia']);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $versaoId = ia_salvar_versao($empresaId, $r['html'], 'ajuste', mb_substr($ent['entendi'] ?: $pend['instrucao'], 0, 250), $usuarioId);
+        ia_aplicar_html_no_site($empresaId, $r['html']);
+        $feito = ($r['resumo'] ?? '') ?: $ent['entendi'];
+        $linhas = array_merge([$feito], array_map(fn($a) => '• ' . $a, $ent['alteracoes']));
+        if ($ent['preservar']) $linhas[] = 'Mantive: ' . implode(', ', $ent['preservar']) . '.';
+        ia_registrar_mensagem($empresaId, 'ia', implode("\n", $linhas), $versaoId);
+        estudio_log($empresaId, $usuarioId, 'ajuste (' . ($r['metodo'] ?? '') . ') — ' . $pend['instrucao'], 'HTML com ' . strlen($r['html']) . ' caracteres');
+        session_start(); unset($_SESSION['ia_edicao'][$empresaId]); session_write_close();
+        responder_json(['ok' => true, 'versao_id' => $versaoId, 'texto' => implode("\n", $linhas), 'metodo' => $r['metodo'] ?? '', 'proximos' => $ent['proximos']]);
+
     case 'refinar':
         $instrucao = trim($_POST['instrucao'] ?? '');
         if ($instrucao === '') responder_json(['ok' => false, 'erro' => 'Escreva o que você quer mudar.']);
@@ -178,7 +232,10 @@ switch ($acao) {
         estudio_checar_limite($empresaId, $ehAdmin);
         session_write_close();
         $ctx = ia_contexto_empresa($empresaId);
-        $r = ia_refinar_html_site($ctx, $site['html_gerado'], $instrucao);
+        // Caminho de uma chamada só (compatibilidade): entende e já aplica
+        $e = ia_entender_pedido($ctx, $site['html_gerado'], $instrucao, ia_historico_texto($empresaId));
+        $ent = $e['ok'] && !in_array($e['entendimento']['tipo'], ['pergunta', 'conversa'], true) ? $e['entendimento'] : null;
+        $r = $ent ? ia_editar_site($ctx, $site['html_gerado'], $instrucao, $ent) : ia_refinar_html_site($ctx, $site['html_gerado'], $instrucao);
         if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
         $versaoId = ia_salvar_versao($empresaId, $r['html'], 'ajuste', $instrucao, $usuarioId);
         ia_aplicar_html_no_site($empresaId, $r['html']);

@@ -22,6 +22,7 @@ $qtdServicos = $pdo->prepare("SELECT COUNT(*) c FROM servicos WHERE empresa_id=?
 $qtdServicos->execute([$empresaIdEst]);
 $qtdServicos = (int)$qtdServicos->fetch()['c'];
 $sugestoes = [
+    'Deixe com cara de landing page moderna, estilo SaaS',
     'Deixe o topo mais impactante, com uma headline maior',
     'Troque a paleta para tons mais quentes',
     'Deixe o visual mais claro e minimalista',
@@ -100,6 +101,16 @@ $sugestoes = [
             <div class="chips" id="chipsSugestao">
                 <?php foreach ($sugestoes as $s): ?><button type="button" class="chip" data-sugestao="<?= e($s) ?>"><?= e($s) ?></button><?php endforeach; ?>
             </div>
+            <div class="chat-anexos" id="chatAnexos" hidden></div>
+            <div class="chat-ferramentas">
+                <button type="button" class="chip" id="btnSelecionar" onclick="Estudio.modoSelecao()" title="Clique num elemento do site para editar só ele" <?= $temSite ? '' : 'disabled' ?>>🎯 Selecionar elemento</button>
+                <button type="button" class="chip" onclick="Estudio.abrirReferencia()" title="Cole o código de um site para copiar o estilo" <?= $temSite ? '' : 'disabled' ?>>📎 Site de referência</button>
+            </div>
+            <div class="chat-referencia" id="chatReferencia" hidden>
+                <label for="refCodigo">Cole o código do site que você quer como referência (HTML, React/Lovable) ou descreva o estilo</label>
+                <textarea id="refCodigo" rows="5" placeholder="Cole aqui o código… A IA copia o estilo (cores, fontes, espaçamentos, layout), não o conteúdo."></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn btn-sm" onclick="Estudio.anexarReferencia()">Anexar</button><button type="button" class="btn btn-ghost btn-sm" onclick="Estudio.abrirReferencia(false)">Cancelar</button></div>
+            </div>
             <form class="chat-composer" id="formRefinar" onsubmit="Estudio.refinar(event)">
                 <textarea id="inputInstrucao" rows="2" placeholder="<?= $temSite ? 'Ex: troque a cor de destaque para verde e deixe o rodapé mais escuro' : 'Gere o site primeiro…' ?>" <?= $temSite ? '' : 'disabled' ?>></textarea>
                 <button type="submit" class="btn btn-icone" id="btnEnviar" title="Enviar (Ctrl+Enter)" <?= $temSite ? '' : 'disabled' ?>><?= icone('enviar') ?></button>
@@ -131,6 +142,9 @@ $sugestoes = [
                 <button type="button" class="btn btn-ghost btn-sm" id="btnFotos" onclick="Estudio.gerarFotos()"><?= icone('brilho', 14) ?> Gerar 3 fotos exclusivas do meu negócio</button>
                 <p class="dica" id="fotosStatus">A IA cria fotos no clima do seu negócio (topo do site, ambiente, detalhe). Leva cerca de 1 minuto.</p>
                 <?php else: ?><p class="dica">A geração de fotos com IA ainda não foi configurada pelo administrador.</p><?php endif; ?>
+
+                <label for="referenciaNovo">Site de referência (opcional)</label>
+                <textarea id="referenciaNovo" rows="3" placeholder="Cole o código de um site que você gosta (ex.: o que a Lovable gerou) ou descreva. A IA segue o estilo dele com o conteúdo do seu negócio."></textarea>
 
                 <label for="preferencias">Preferências (opcional)</label>
                 <input type="text" id="preferencias" placeholder="Ex: usar verde-escuro e dourado, fonte elegante, nada de fundo preto">
@@ -260,11 +274,18 @@ const Estudio = (() => {
         f.src = PREVIEW + '&t=' + Date.now();
     }
 
-    function addMsg(papel, texto, versaoId) {
+    function b64(t) { try { return t ? btoa(unescape(encodeURIComponent(t))) : ''; } catch (e) { return ''; } }
+    function addMsg(papel, texto, versaoId, extra = {}) {
         $('chatVazio')?.remove();
         const div = document.createElement('div');
-        div.className = 'msg msg-' + papel;
+        div.className = 'msg msg-' + papel + (extra.classe ? ' ' + extra.classe : '');
         div.textContent = texto;
+        if (extra.opcoes && extra.opcoes.length) {
+            const box = document.createElement('div'); box.className = 'msg-opcoes';
+            extra.opcoes.forEach(o => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = o;
+                b.onclick = () => { box.remove(); enviar((extra.original ? extra.original + ' — ' : '') + o); }; box.appendChild(b); });
+            div.appendChild(box);
+        }
         if (versaoId) {
             const b = document.createElement('button');
             b.type = 'button'; b.className = 'msg-versao';
@@ -280,6 +301,7 @@ const Estudio = (() => {
         $('inputInstrucao').disabled = false;
         $('btnEnviar').disabled = false;
         $('btnCodigo').disabled = false;
+        document.querySelectorAll('.chat-ferramentas .chip').forEach(b => b.disabled = false);
         $('inputInstrucao').placeholder = 'Ex: troque a cor de destaque para verde e deixe o rodapé mais escuro';
         marcarModo(true);
     }
@@ -333,7 +355,7 @@ const Estudio = (() => {
         if (briefing.length < 10) { toast('Conte um pouco mais sobre o negócio.', 'erro'); $('briefing').focus(); return; }
         const direcao = document.querySelector('.estilo.ativo')?.dataset.direcao || '';
         carregando(['Estudando o negócio e os dados cadastrados', 'Decidindo estilo, cores e tipografia', 'Escrevendo as páginas e o código', 'Conectando agendamento, serviços e contato']);
-        const plano = await api('planejar', { briefing, direcao, preferencias: $('preferencias').value, criar_servicos: $('criarServicos')?.checked ? '1' : '0' });
+        const plano = await api('planejar', { briefing, direcao, preferencias: $('preferencias').value, criar_servicos: $('criarServicos')?.checked ? '1' : '0', referencia_b64: b64($('referenciaNovo')?.value || '') });
         if (!plano.ok) { pronto(); toast(plano.erro, 'erro'); return; }
         etapa(2);
         const pal = (plano.plano.paleta || []).map(c => `<span class="cor" style="background:${/^#[0-9a-f]{3,8}$/i.test(c) ? c : '#888'}"></span>`).join('');
@@ -353,20 +375,89 @@ const Estudio = (() => {
         carregarHistorico(true);
     }
 
+    // ---------- Chat no estilo Lovable ----------
+    let elemento = null, referencia = '', selecionando = false;
+    function mostrarAnexos() {
+        const box = $('chatAnexos'); box.innerHTML = '';
+        const add = (txt, limpar) => { const c = document.createElement('span'); c.className = 'anexo'; c.textContent = txt;
+            const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.title = 'Remover'; x.onclick = limpar; c.appendChild(x); box.appendChild(c); };
+        if (elemento) add('🎯 ' + elemento.tag + (elemento.texto ? ' · "' + elemento.texto.slice(0, 40) + (elemento.texto.length > 40 ? '…' : '') + '"' : ''), () => { elemento = null; marcarSelecionado(null); mostrarAnexos(); });
+        if (referencia) add('📎 Site de referência (' + Math.round(referencia.length / 1000) + ' mil caracteres)', () => { referencia = ''; mostrarAnexos(); });
+        box.hidden = !elemento && !referencia;
+    }
+    function abrirReferencia(abrir = true) { $('chatReferencia').hidden = !abrir; if (abrir) $('refCodigo').focus(); }
+    function anexarReferencia() { referencia = $('refCodigo').value.trim(); $('refCodigo').value = ''; abrirReferencia(false); mostrarAnexos();
+        if (referencia && !$('inputInstrucao').value) $('inputInstrucao').value = 'Deixe o meu site com o estilo deste site de referência, mantendo o meu negócio'; }
+    function atualizarChips(lista) {
+        if (!lista || !lista.length) return;
+        const box = $('chipsSugestao'); box.innerHTML = '';
+        lista.slice(0, 4).forEach(t => { const c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = t;
+            c.onclick = () => { const i = $('inputInstrucao'); i.value = t; i.focus(); }; box.appendChild(c); });
+    }
+    // Modo "selecionar elemento": clique no preview para editar só aquele pedaço
+    function docPreview() { try { return $('previewFrame').contentDocument; } catch (e) { return null; } }
+    function marcarSelecionado(el) { const d = docPreview(); if (!d) return; d.querySelectorAll('[data-gds-sel]').forEach(x => x.removeAttribute('data-gds-sel')); if (el) el.setAttribute('data-gds-sel', '1'); }
+    function prepararSelecao() {
+        const d = docPreview(); if (!d || !d.body || d.__gdsSel) return;
+        d.__gdsSel = true;
+        const st = d.createElement('style');
+        st.textContent = 'html.gds-selecionando *{cursor:crosshair!important}html.gds-selecionando [data-gds-hover]{outline:2px dashed #8b5cf6!important;outline-offset:2px}[data-gds-sel]{outline:3px solid #8b5cf6!important;outline-offset:2px}';
+        d.head.appendChild(st);
+        d.addEventListener('mouseover', e => { if (!selecionando) return; d.querySelectorAll('[data-gds-hover]').forEach(x => x.removeAttribute('data-gds-hover')); e.target.setAttribute('data-gds-hover', '1'); }, true);
+        d.addEventListener('click', e => {
+            if (!selecionando) return;
+            e.preventDefault(); e.stopPropagation();
+            const el = e.target; el.removeAttribute('data-gds-hover');
+            const sec = el.closest('section,header,footer,[data-page]');
+            const comp = el.closest('.gds-c');
+            const h = sec && sec.querySelector('h1,h2,h3');
+            elemento = { tag: el.tagName.toLowerCase(), id: el.id || '', classes: (el.getAttribute('class') || '').replace('gds-selecionando', ''), texto: (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 200),
+                html: el.outerHTML.replace(/ data-gds-(hover|sel)="1"/g, '').slice(0, 1500), secao: sec ? ((sec.id || sec.dataset.page || '') + (h ? ' "' + h.innerText.trim().slice(0, 60) + '"' : '')) : '',
+                componente: comp ? (comp.id || comp.className).slice(0, 60) : '' };
+            marcarSelecionado(el); modoSelecao(false); mostrarAnexos();
+            $('inputInstrucao').placeholder = 'O que mudar neste elemento? Ex: deixe maior e em negrito';
+            $('inputInstrucao').focus();
+        }, true);
+    }
+    function modoSelecao(ligar) {
+        selecionando = ligar === undefined ? !selecionando : ligar;
+        prepararSelecao();
+        const d = docPreview(); if (d) d.documentElement.classList.toggle('gds-selecionando', selecionando);
+        $('btnSelecionar').classList.toggle('ativo', selecionando);
+        $('btnSelecionar').textContent = selecionando ? '🎯 Clique no elemento do site…' : '🎯 Selecionar elemento';
+    }
+    $('previewFrame').addEventListener('load', () => { const d = docPreview(); if (d) d.__gdsSel = false; if (selecionando) modoSelecao(true); });
+
+    async function enviar(instrucao) {
+        if (ocupado || !instrucao) return;
+        addMsg('usuario', instrucao + (elemento ? '\n🎯 ' + elemento.tag + (elemento.texto ? ' "' + elemento.texto.slice(0, 50) + '"' : '') : '') + (referencia ? '\n📎 com site de referência' : ''));
+        $('inputInstrucao').value = '';
+        const pensando = document.createElement('div'); pensando.className = 'msg msg-ia msg-pensando'; pensando.textContent = 'Entendendo o pedido…';
+        $('chatLista').appendChild(pensando); $('chatLista').scrollTop = $('chatLista').scrollHeight;
+        ocupado = true; document.querySelectorAll('#formRefinar button, #formRefinar textarea').forEach(b => b.disabled = true);
+        const r = await api('entender', { instrucao, elemento: elemento ? JSON.stringify(elemento) : '', referencia_b64: b64(referencia) });
+        pensando.remove(); ocupado = false; document.querySelectorAll('#formRefinar button, #formRefinar textarea').forEach(b => b.disabled = false);
+        if (!r.ok) { addMsg('ia', '⚠ ' + r.erro); return; }
+        if (r.tipo === 'pergunta') { addMsg('ia', r.texto, null, { opcoes: r.opcoes, original: instrucao }); return; }
+        if (r.tipo === 'conversa') { addMsg('ia', r.texto); atualizarChips(r.proximos); return; }
+        // Mostra o plano antes de aplicar (como a Lovable)
+        const plano = [r.entendi].concat((r.alteracoes || []).map(a => '• ' + a)).join('\n');
+        addMsg('ia', plano, null, { classe: 'msg-plano' });
+        const global = r.estrategia === 'reescrever';
+        carregando(['Entendi o pedido', global ? 'Redesenhando o site (mantendo o seu negócio)' : 'Editando só o que precisa', 'Conferindo e salvando a nova versão']);
+        etapa(1);
+        const a = await api('aplicar');
+        pronto();
+        if (!a.ok) { addMsg('ia', '⚠ ' + a.erro); return; }
+        addMsg('ia', '✓ ' + a.texto, a.versao_id);
+        elemento = null; referencia = ''; mostrarAnexos();
+        $('inputInstrucao').placeholder = 'Peça outra mudança…';
+        atualizarChips(a.proximos);
+        recarregarPreview();
+    }
     async function refinar(ev) {
         ev?.preventDefault();
-        if (ocupado) return;
-        const instrucao = $('inputInstrucao').value.trim();
-        if (!instrucao) return;
-        addMsg('usuario', instrucao);
-        $('inputInstrucao').value = '';
-        carregando(['Lendo o site atual', 'Aplicando: ' + instrucao.slice(0, 60) + (instrucao.length > 60 ? '…' : ''), 'Conferindo e salvando a nova versão']);
-        setTimeout(() => ocupado && etapa(1), 2500);
-        const r = await api('refinar', { instrucao });
-        pronto();
-        if (!r.ok) { addMsg('ia', '⚠ ' + r.erro); return; }
-        addMsg('ia', 'Pronto! Apliquei o ajuste.', r.versao_id);
-        recarregarPreview();
+        enviar($('inputInstrucao').value.trim());
     }
 
     async function restaurar(id) {
@@ -473,7 +564,7 @@ const Estudio = (() => {
         if (r.ok) btn.closest('figure').remove();
     }
 
-    return { gerarFotos, removerFoto, salvarAtendimento, salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
+    return { modoSelecao, abrirReferencia, anexarReferencia, gerarFotos, removerFoto, salvarAtendimento, salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
 })();
 </script>
 </body>
