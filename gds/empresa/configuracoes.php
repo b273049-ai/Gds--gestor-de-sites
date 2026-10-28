@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_delivery'])) {
         ->execute([isset($_POST['pedido_online']) ? 'true' : 'false', $entrega ? 'true' : 'false', $retirada ? 'true' : 'false',
                    max(0, valor_decimal($_POST['taxa_entrega'] ?? '0')), max(0, valor_decimal($_POST['pedido_minimo'] ?? '0')),
                    $formas ?: 'Pix, Cartão na entrega, Dinheiro', mb_substr(trim($_POST['tempo_entrega'] ?? ''), 0, 60) ?: null, $empresaId]);
+    try { $pdo->prepare("UPDATE empresas SET bairros_entrega=? WHERE id=?")->execute([delivery_bairros_de_texto($_POST['bairros_entrega'] ?? ''), $empresaId]); } catch (PDOException $e) {}
     flash(!$entrega && !$retirada && isset($_POST['pedido_online']) ? 'aviso' : 'sucesso', !$entrega && !$retirada && isset($_POST['pedido_online']) ? 'Salvo — mas marque entrega ou retirada para o carrinho aparecer no site.' : 'Pedidos pelo site salvos!');
     $voltar('delivery'); exit;
 }
@@ -82,6 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cor'])) {
     require_once __DIR__ . '/../includes/site_template.php';
     $est = $_POST['estilo'] ?? '';
     $pdo->prepare("UPDATE sites SET estilo=? WHERE empresa_id=?")->execute([isset(site_estilos()[$est]) ? $est : null, $empresaId]);
+    $anim = $_POST['animacoes'] ?? '';
+    try { $pdo->prepare("UPDATE sites SET animacoes=? WHERE empresa_id=?")->execute([in_array($anim, ['cinema', 'suave', 'leve'], true) ? $anim : null, $empresaId]); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
     flash('sucesso', 'Visual salvo!'); $voltar('cor'); exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_pagamento'])) {
@@ -241,6 +244,8 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
             <div><label>Taxa de entrega (R$)</label><input type="text" inputmode="decimal" name="taxa_entrega" value="<?= number_format((float)($empresa['taxa_entrega'] ?? 0), 2, ',', '') ?>"></div>
             <div><label>Pedido mínimo (R$, 0 = sem mínimo)</label><input type="text" inputmode="decimal" name="pedido_minimo" value="<?= number_format((float)($empresa['pedido_minimo'] ?? 0), 2, ',', '') ?>"></div>
         </div>
+        <label>Taxa por bairro (opcional — uma linha por bairro; se preencher, o cliente escolhe o bairro no carrinho)</label>
+        <textarea name="bairros_entrega" rows="4" placeholder="Centro = 5,00&#10;Jardim América = 7,00&#10;Vila Nova = 9,50"><?= e(delivery_bairros_texto($empresa)) ?></textarea>
         <label>Formas de pagamento (separadas por vírgula)</label>
         <input type="text" name="formas_pagamento" value="<?= e($empresa['formas_pagamento'] ?? 'Pix, Cartão na entrega, Dinheiro') ?>">
         <p class="dica">Se tiver "Dinheiro", o cliente pode informar o troco.</p>
@@ -256,8 +261,14 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         <h3>Visual do meu site</h3>
         <p class="dica">Vale para o site padrão. Se o site foi desenhado pela IA (Estúdio IA), o visual vem do design dela.</p>
         <label>Estilo</label>
-        <select name="estilo"><option value="">Automático (combina com o meu tipo de negócio)</option>
+        <select name="estilo"><option value="">Identidade do meu tipo de negócio (recomendado) — cores, fontes e textura feitas para o seu ramo</option>
             <?php foreach (site_estilos() as $k => $est): ?><option value="<?= $k ?>" <?= ($site['estilo'] ?? '') === $k ? 'selected' : '' ?>><?= e($est['nome']) ?> — <?= e($est['desc']) ?></option><?php endforeach; ?></select>
+        <label>Animações</label>
+        <select name="animacoes">
+            <option value="cinema" <?= in_array($site['animacoes'] ?? '', ['', null, 'cinema'], true) ? 'selected' : '' ?>>Cinema (recomendado) — rolagem suave, cenas e efeitos que prendem a atenção</option>
+            <option value="suave" <?= ($site['animacoes'] ?? '') === 'suave' ? 'selected' : '' ?>>Suave — elementos entrando com delicadeza</option>
+            <option value="leve" <?= ($site['animacoes'] ?? '') === 'leve' ? 'selected' : '' ?>>Leve — o mínimo de movimento (celulares mais simples)</option>
+        </select>
         <div class="form-row">
             <div><label>Cor principal</label><input type="color" name="cor_primaria" value="<?= e(cor_hex_valida($site['cor_primaria'] ?? '', '#4f7cff')) ?>"></div>
             <div><label>Cor secundária</label><input type="color" name="cor_secundaria" value="<?= e(cor_hex_valida($site['cor_secundaria'] ?? '', '#16213e')) ?>"></div>

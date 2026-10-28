@@ -12,6 +12,21 @@ $statusDelivery = ['em_andamento' => 'Em preparo', 'concluido' => 'Entregue'];
 $nomeStatus = fn($p) => (($p['tipo'] ?? '') === 'delivery' ? ($statusDelivery[$p['status']] ?? null) : null) ?? ($statusNomes[$p['status']] ?? $p['status']);
 $voltar = fn() => 'pedidos.php' . (($q = http_build_query(array_intersect_key($_GET, ['status' => 1, 'tipo' => 1]))) ? '?' . $q : '');
 
+// Contador para o alerta sonoro (a tela pergunta a cada 15s se chegou pedido novo)
+if (isset($_GET['contar'])) {
+    $st = $pdo->prepare("SELECT COUNT(*) FILTER (WHERE status='novo') novos, COALESCE(MAX(id), 0) ultimo FROM pedidos WHERE empresa_id=?");
+    $st->execute([$empresaId]);
+    responder_json(['ok' => true] + array_map('intval', $st->fetch()));
+}
+// Abrir / pausar a loja (pedidos pelo site)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loja_pausada'])) {
+    try {
+        $pdo->prepare("UPDATE empresas SET loja_pausada=? WHERE id=?")->execute([$_POST['loja_pausada'] === '1' ? 'true' : 'false', $empresaId]);
+        flash('sucesso', $_POST['loja_pausada'] === '1' ? 'Loja pausada: o site parou de receber pedidos (os clientes veem "Pedir no WhatsApp").' : 'Loja aberta: o site voltou a receber pedidos.');
+    } catch (PDOException $e) { flash('erro', 'Atualize o banco (Admin → Diagnóstico) para usar esta função.'); }
+    header('Location: ' . $voltar()); exit;
+}
+
 function pedido_da_empresa($id, $empresaId) {
     global $pdo;
     $st = $pdo->prepare("SELECT * FROM pedidos WHERE id=? AND empresa_id=?");
@@ -104,7 +119,15 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
 <main class="content">
     <div class="page-header"><div><h1><?= e(modulos_rotulo_pedidos()) ?></h1>
         <p class="subtitulo">Em aberto nesta lista: R$ <?= number_format($totAberto, 2, ',', '.') ?><?= $novos ? ' · <strong>' . $novos . ' novo(s) esperando você</strong>' : '' ?>
-        · <a class="link" href="whatsapp.php">o cliente é avisado no WhatsApp a cada passo</a></p></div></div>
+        · <a class="link" href="whatsapp.php">o cliente é avisado no WhatsApp a cada passo</a></p></div>
+        <div class="acoes">
+            <button type="button" class="btn btn-ghost btn-sm" id="alerta-som" title="Toca um aviso quando chegar pedido novo">🔔 Ativar alerta sonoro</button>
+            <?php if (modulo_ativo('delivery')): $pausada = pg_bool($empresa['loja_pausada'] ?? false); ?>
+            <form method="post" class="inline"><?= csrf_campo() ?><input type="hidden" name="loja_pausada" value="<?= $pausada ? '0' : '1' ?>">
+                <button type="submit" class="btn btn-sm loja-status <?= $pausada ? 'fechada' : 'aberta' ?>" title="<?= $pausada ? 'Voltar a receber pedidos pelo site' : 'Parar de receber pedidos pelo site por enquanto' ?>"><span></span><?= $pausada ? 'Loja pausada — abrir' : 'Loja aberta — pausar' ?></button></form>
+            <?php endif; ?>
+        </div></div>
+    <?php if (modulo_ativo('delivery') && pg_bool($empresa['loja_pausada'] ?? false)): ?><?= alerta('aviso', 'Sua loja está pausada: o carrinho do site está desligado e os clientes só conseguem pedir pelo WhatsApp.') ?><?php endif; ?>
     <?= flash_render() ?>
     <details class="form-box">
         <summary><?= icone('mais') ?> Registrar <?= modulo_ativo('delivery') && !modulo_ativo('orcamentos') ? 'pedido' : 'orçamento' ?> manualmente</summary>
@@ -195,6 +218,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                         <button type="submit" name="mudar_status" value="1" class="btn btn-ghost btn-sm">Salvar</button>
                     </form>
                 </details>
+                <a class="btn btn-ghost btn-sm" target="_blank" href="pedido_imprimir.php?id=<?= (int)$p['id'] ?>">🖨 Imprimir</a>
                 <?php if (!empty($p['token'])): ?><a class="btn btn-ghost btn-sm" target="_blank" href="/site/pedido.php?t=<?= e($p['token']) ?>"><?= icone('olho', 14) ?> Ver como o cliente</a><?php endif; ?>
             </footer>
             <?php endif; ?>
@@ -204,14 +228,41 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
     </div>
 </main>
 </div>
-<?php if ($temDelivery || $novos): ?>
 <script>
-// Atualiza sozinho a cada 45s para mostrar pedidos novos (sem atrapalhar quem está digitando)
-setInterval(() => {
-    if (document.querySelector('details[open]') || document.activeElement?.matches('input, textarea, select')) return;
-    location.reload();
-}, 45000);
+// Pedido novo: toca um aviso (se ativado), pisca o título e recarrega a lista
+(function () {
+    var ultimo = <?= (int)max(array_merge([0], array_map(fn($p) => (int)$p['id'], $pedidos))) ?>, ctx = null;
+    var btn = document.getElementById('alerta-som');
+    var ligado = function () { try { return localStorage.getItem('gds-alerta-som') === '1'; } catch (e) { return false; } };
+    function bip() {
+        try {
+            ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+            [0, 0.25, 0.5].forEach(function (t) {
+                var o = ctx.createOscillator(), g = ctx.createGain();
+                o.frequency.value = 880; o.type = 'sine'; o.connect(g); g.connect(ctx.destination);
+                g.gain.setValueAtTime(0.0001, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + t + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.2); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.22);
+            });
+        } catch (e) { }
+    }
+    function marcar() { btn.textContent = ligado() ? '🔔 Alerta sonoro ligado' : '🔕 Ativar alerta sonoro'; btn.classList.toggle('btn-ghost', !ligado()); }
+    btn.addEventListener('click', function () { try { localStorage.setItem('gds-alerta-som', ligado() ? '0' : '1'); } catch (e) { } if (ligado()) bip(); marcar(); });
+    marcar();
+    if (ligado()) document.addEventListener('click', function () { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); }, { once: true });
+    setInterval(function () {
+        fetch('pedidos.php?contar=1', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+            if (!d.ok || d.ultimo <= ultimo) return;
+            ultimo = d.ultimo;
+            if (ligado()) bip();
+            var t = document.title, n = 0, pisca = setInterval(function () { document.title = (n++ % 2 ? '🔔 Pedido novo! ' : '') + t.replace(/^🔔 Pedido novo! /, ''); if (n > 8) clearInterval(pisca); }, 700);
+            // Recarrega quando ninguém está digitando
+            var tenta = setInterval(function () {
+                if (document.querySelector('details[open]') || (document.activeElement && document.activeElement.matches('input, textarea, select'))) return;
+                clearInterval(tenta); location.reload();
+            }, 1500);
+        }).catch(function () { });
+    }, 15000);
+})();
 </script>
-<?php endif; ?>
 </body>
 </html>

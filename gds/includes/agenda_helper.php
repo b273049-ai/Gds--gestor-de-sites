@@ -171,3 +171,23 @@ function agenda_status_agora($empresa) {
     if ($abertoHoje && $agora < agenda_hm_para_min($cfg['abertura'])) return ['aberto' => false, 'texto' => 'Fechado · abre hoje às ' . $cfg['abertura']];
     return ['aberto' => false, 'texto' => 'Fechado agora'];
 }
+
+// Próximo horário livre (hoje ou nos próximos dias) para mostrar no site: "hoje às 15:30"
+function agenda_proximo_livre($empresa, $duracao = null) {
+    $cfg = agenda_config($empresa);
+    $duracao = $duracao ?: $cfg['intervalo'];
+    $dias = array_map('intval', explode(',', $cfg['dias']));
+    $semana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+    for ($i = 0; $i <= 6; $i++) {
+        $ts = strtotime("+$i day");
+        if (!in_array((int)date('w', $ts), $dias, true)) continue;
+        $data = date('Y-m-d', $ts);
+        try { $h = agenda_horarios_do_dia($empresa, $data, $duracao); } catch (Throwable $e) { return null; }
+        foreach ($h['livres'] as $hora) {
+            if ($i === 0 && strtotime("$data $hora") < time() + 30 * 60) continue; // hoje: só daqui a 30 min
+            $quando = $i === 0 ? 'hoje' : ($i === 1 ? 'amanhã' : $semana[(int)date('w', $ts)] . ', ' . date('d/m', $ts));
+            return ['data' => $data, 'hora' => $hora, 'texto' => "$quando às $hora"];
+        }
+    }
+    return null;
+}

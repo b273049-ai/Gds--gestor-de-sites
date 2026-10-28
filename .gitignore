@@ -25,3 +25,4 @@ dist-ssr
 
 # Credenciais locais da plataforma PHP (nunca versionar)
 gds/config/local.php
+gds/uploads/

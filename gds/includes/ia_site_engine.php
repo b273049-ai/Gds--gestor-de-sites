@@ -42,7 +42,7 @@ function ia_direcoes_visuais() {
 function ia_contexto_empresa($empresaId) {
     global $pdo;
     $st = $pdo->prepare("
-        SELECT e.*, seg.nome AS segmento_nome, s.titulo, s.subtitulo, s.sobre, s.diferenciais, s.objetivo,
+        SELECT e.*, seg.nome AS segmento_nome, seg.slug AS segmento_slug, seg.grupo AS segmento_grupo, s.titulo, s.subtitulo, s.sobre, s.diferenciais, s.objetivo,
                s.cor_primaria, s.cor_secundaria, s.banner_imagem, s.galeria_imagens, s.ia_briefing
         FROM empresas e
         LEFT JOIN segmentos seg ON seg.id = e.segmento_id
@@ -165,6 +165,13 @@ function ia_planejar_site($ctx, $briefing, $direcaoChave = null, $preferencias =
             ? "O segmento cadastrado sugere \"{$at['modo']}\", mas o cadastro pode estar errado: decida pela DESCRIÇÃO DO DONO e pelos dados reais."
             : 'Decida a forma de atendimento pela descrição do dono e pelos dados reais.');
 
+    // Identidade de referência do ramo (a mesma do site padrão), para a primeira impressão "parecer" o negócio
+    require_once __DIR__ . '/site_nichos.php';
+    $N = site_nichos()[site_nicho_da_empresa($ctx)];
+    $dados .= "\nREFERÊNCIA DE IDENTIDADE DO RAMO ({$N['nome']}) — ponto de partida para a primeira impressão, pode refinar: fundo {$N['cores']['bg']}, "
+            . "destaque {$N['cores']['accent']}, fontes " . trim($N['titulo'], "'") . ' + ' . trim($N['corpo'], "'") . ", textura \"{$N['motivo']}\""
+            . ($N['headline'] ? ", frase de impacto no tom de: \"{$N['headline']}\"" : '') . '.';
+
     $prompt = <<<PROMPT
 Você é um estrategista de marketing digital e diretor de arte sênior. Primeiro ESTUDE este negócio (o que ele vende,
 para quem, e o que o visitante do site precisa fazer para virar cliente). Depois tome DECISÕES CONCRETAS de design
@@ -248,8 +255,13 @@ function ia_regras_tecnicas() {
     return <<<REGRAS
 CONTRATO TÉCNICO (obrigatório):
 1. Responda APENAS o documento HTML completo, de <!DOCTYPE html> até </html>. Sem explicação, sem markdown.
-2. HTML/CSS/JS puro, tudo num arquivo só. Proibido: React, Vue, Bootstrap, Tailwind, jQuery, GSAP, AOS ou qualquer script externo.
-   Fontes: pode usar <link> do Google Fonts.
+2. HTML/CSS/JS puro, tudo num arquivo só. Proibido: React, Vue, Bootstrap, Tailwind, jQuery, AOS ou outro script externo.
+   Fontes: pode usar <link> do Google Fonts. ÚNICOS scripts externos liberados (opcionais, para cenas de rolagem de
+   cinema), exatamente estas URLs com defer:
+   https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js
+   https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js
+   https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js
+   Se usar, o site tem que funcionar igual sem eles (confira if (window.gsap) antes de usar).
 3. <head> com <meta charset="UTF-8">, <meta name="viewport" content="width=device-width, initial-scale=1">, <title> e
    <meta name="description"> escritos pra SEO local do negócio, e <html lang="pt-BR">.
 4. Navegação por páginas (não scroll único): cada página é um <section data-page="chave">; só a primeira visível.
@@ -294,7 +306,11 @@ CONTRATO TÉCNICO (obrigatório):
    (exceto a primeira). Sem nenhuma imagem: crie visuais com CSS (gradientes em malha, formas, ruído) e SVG inline.
 10. Textos em português do Brasil, específicos deste negócio (nada genérico que serviria pra qualquer concorrente).
     Não invente preços, prêmios, números ou depoimentos que não foram informados.
-11. Evite clichês: hero centralizado com gradiente roxo-azul genérico, cards idênticos com a mesma sombra, grade de 3
+11. CONFIANÇA E ATENÇÃO (o visitante decide em 3 segundos): logo no topo mostre o que o negócio é (o ramo tem que ser
+    óbvio pela foto, cor, fonte e frase), o status "aberto agora" e a nota das avaliações quando houver, e a ação
+    principal sempre visível. No celular, uma barra fixa embaixo com a ação principal + WhatsApp. Prova (nota,
+    depoimento real) perto do topo, preços claros, perguntas frequentes com dados reais e endereço com "Como chegar".
+12. Evite clichês: hero centralizado com gradiente roxo-azul genérico, cards idênticos com a mesma sombra, grade de 3
     ícones genéricos, emoji no lugar de ícone.
 REGRAS;
 }
@@ -453,7 +469,11 @@ function ia_pos_processar_html($html, $marcadoresEsperados = IA_MARCADORES_OBRIG
         $html = preg_replace('/<head([^>]*)>/i', '<head$1><meta charset="UTF-8">', $html, 1);
     }
     // Scripts externos não são permitidos (podem quebrar o site ou vazar dados dos visitantes)
-    $html = preg_replace('#<script\b[^>]*\bsrc\s*=\s*["\']?https?://[^>]*>\s*</script>#i', '', $html);
+    // (exceto as bibliotecas de animação liberadas, com versão fixa)
+    $html = preg_replace_callback('#<script\b[^>]*\bsrc\s*=\s*["\']?(https?://[^"\'\s>]+)[^>]*>\s*</script>#i', function ($m) {
+        $liberados = ['https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js', 'https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js'];
+        return in_array($m[1], $liberados, true) ? '<script src="' . $m[1] . '" defer></script>' : '';
+    }, $html);
 
     // Marcador obrigatório faltando: em vez de falhar, coloca ele de volta dentro da última
     // página/seção do site (assim ele segue a navegação que a IA criou)

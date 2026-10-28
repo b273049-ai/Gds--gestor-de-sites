@@ -20,8 +20,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             $r = wa_enviar_agora(['canal' => 'plataforma', 'tipo' => $a['tipo'], 'instancia' => $a['plat_instancia'], 'token' => $a['plat_token']], $num, "✅ Teste do WhatsApp da plataforma GDS. Está funcionando!");
             responder_json($r['ok'] ? ['ok' => true, 'msg' => 'Mensagem enviada para ' . wa_numero($num) . '!'] : ['ok' => false, 'erro' => $r['erro']]);
         case 'conectar':
-            if ($a['tipo'] !== 'evolution' || !wa_api_configurada()) responder_json(['ok' => false, 'erro' => 'Disponível só com a Evolution API configurada.']);
+            if (!in_array($a['tipo'], ['evolution', 'wppconnect'], true) || !wa_api_configurada()) responder_json(['ok' => false, 'erro' => 'Disponível com Evolution API ou WPPConnect configurados.']);
             $nome = adm_wa_instancia();
+            if ($a['tipo'] === 'wppconnect') {
+                $q = wa_wpp('POST', $nome, 'start-session', ['waitQrCode' => true]);
+                if (!$q['ok']) responder_json(['ok' => false, 'erro' => $q['erro']]);
+                $qr = $q['dados']['qrcode'] ?? null;
+                responder_json(['ok' => true, 'qr' => $qr ? (str_starts_with($qr, 'data:') ? $qr : 'data:image/png;base64,' . $qr) : null, 'conectado' => in_array(strtoupper((string)($q['dados']['status'] ?? '')), ['CONNECTED', 'ISLOGGED'], true)]);
+            }
             $r = wa_http('POST', $a['url'] . '/instance/create', ['instanceName' => $nome, 'qrcode' => true, 'integration' => 'WHATSAPP-BAILEYS'], ['apikey: ' . $a['chave']], 20);
             if ($r['ok'] && !empty($r['dados']['qrcode']['base64'])) responder_json(['ok' => true, 'qr' => $r['dados']['qrcode']['base64']]);
             $q = wa_http('GET', $a['url'] . '/instance/connect/' . rawurlencode($nome), null, ['apikey: ' . $a['chave']]);
@@ -33,6 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
                 $r = wa_http('GET', wa_zapi_base($a['plat_instancia'], $a['plat_token']) . '/status', null, $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
                 responder_json(['ok' => $r['ok'], 'conectado' => !empty($r['dados']['connected']), 'erro' => $r['erro']]);
             }
+            if ($a['tipo'] === 'wppconnect') {
+                $r = wa_wpp('GET', $nome, 'status-session');
+                responder_json(['ok' => $r['ok'], 'conectado' => in_array(strtoupper((string)($r['dados']['status'] ?? '')), ['CONNECTED', 'ISLOGGED'], true), 'erro' => $r['erro']]);
+            }
             $r = wa_http('GET', $a['url'] . '/instance/connectionState/' . rawurlencode($nome), null, ['apikey: ' . $a['chave']]);
             responder_json(['ok' => $r['ok'], 'conectado' => ($r['dados']['instance']['state'] ?? '') === 'open', 'erro' => $r['erro']]);
         case 'rotina':
@@ -42,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
-    $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'evolution', 'zapi', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
+    $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'evolution', 'wppconnect', 'zapi', 'ultramsg', 'cloud', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
     set_config('wa_api_tipo', $tipo);
     set_config('wa_api_url', url_valida_ou_vazia($_POST['wa_api_url'] ?? ''));
     if (trim($_POST['wa_api_chave'] ?? '') !== '') set_config('wa_api_chave', trim($_POST['wa_api_chave']));
@@ -51,6 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
     if (trim($_POST['wa_plataforma_token'] ?? '') !== '') set_config('wa_plataforma_token', trim($_POST['wa_plataforma_token']));
     set_config('wa_plataforma_ativo', isset($_POST['wa_plataforma_ativo']) ? '1' : '0');
     set_config('wa_empresas_conectar', isset($_POST['wa_empresas_conectar']) ? '1' : '0');
+    set_config('wa_cloud_modelo', preg_replace('/[^a-z0-9_]/', '', strtolower(trim($_POST['wa_cloud_modelo'] ?? ''))));
+    set_config('wa_cloud_idioma', preg_replace('/[^A-Za-z_]/', '', trim($_POST['wa_cloud_idioma'] ?? '')) ?: 'pt_BR');
     flash('sucesso', 'Integração do WhatsApp salva.');
     header('Location: whatsapp.php'); exit;
 }
@@ -93,14 +105,17 @@ $chaveSalva = $a['chave'] !== '';
         <select name="wa_api_tipo" id="tipo" onchange="mostrarTipo()">
             <option value="" <?= $a['tipo'] === '' ? 'selected' : '' ?>>Nenhum (só envio manual pelo painel)</option>
             <option value="evolution" <?= $a['tipo'] === 'evolution' ? 'selected' : '' ?>>Evolution API — gratuita, conecta por QR code (recomendado)</option>
+            <option value="wppconnect" <?= $a['tipo'] === 'wppconnect' ? 'selected' : '' ?>>WPPConnect — gratuita, código aberto, conecta por QR code</option>
+            <option value="cloud" <?= $a['tipo'] === 'cloud' ? 'selected' : '' ?>>WhatsApp Cloud API OFICIAL (Meta) — sem risco de bloqueio</option>
             <option value="zapi" <?= $a['tipo'] === 'zapi' ? 'selected' : '' ?>>Z-API — paga, brasileira</option>
+            <option value="ultramsg" <?= $a['tipo'] === 'ultramsg' ? 'selected' : '' ?>>UltraMsg — paga, simples</option>
             <option value="webhook" <?= $a['tipo'] === 'webhook' ? 'selected' : '' ?>>Webhook (n8n, Make ou outro gateway)</option>
         </select>
-        <div data-tipo="evolution webhook">
+        <div data-tipo="evolution wppconnect webhook">
             <label id="rotUrl">URL do servidor</label>
             <input type="url" name="wa_api_url" value="<?= e($a['url']) ?>" placeholder="https://evolution.seudominio.com.br">
         </div>
-        <div data-tipo="evolution zapi webhook">
+        <div data-tipo="evolution wppconnect zapi webhook">
             <label id="rotChave">Chave</label>
             <input type="password" name="wa_api_chave" autocomplete="off" placeholder="<?= $chaveSalva ? 'Salva — cole outra para trocar' : '' ?>">
             <?php if ($chaveSalva): ?><label class="check" style="font-size:12px"><input type="checkbox" name="limpar_chave"> remover a chave salva</label><?php endif; ?>
@@ -108,19 +123,24 @@ $chaveSalva = $a['chave'] !== '';
 
         <h3 style="margin-top:22px">2. Número da plataforma</h3>
         <p class="dica">Um número que envia para os clientes das empresas que não conectaram o próprio. A mensagem vai assinada com o nome da empresa.</p>
-        <div data-tipo="evolution zapi webhook">
+        <div data-tipo="evolution wppconnect zapi ultramsg cloud webhook">
             <label id="rotInst">Nome da instância</label>
             <input type="text" name="wa_plataforma_instancia" value="<?= e($a['plat_instancia']) ?>" placeholder="gds-plataforma">
         </div>
-        <div data-tipo="zapi"><label>Token da instância (Z-API)</label><input type="password" name="wa_plataforma_token" autocomplete="off" placeholder="<?= $a['plat_token'] !== '' ? 'Salvo — cole outro para trocar' : '' ?>"></div>
+        <div data-tipo="cloud" class="form-row">
+            <div><label>Nome do modelo aprovado (opcional, recomendado)</label><input type="text" name="wa_cloud_modelo" value="<?= e($a['cloud_modelo']) ?>" placeholder="aviso_cliente"></div>
+            <div><label>Idioma do modelo</label><input type="text" name="wa_cloud_idioma" value="<?= e($a['cloud_idioma']) ?>" placeholder="pt_BR"></div>
+        </div>
+        <p class="dica" data-tipo="cloud">Na Meta, crie um modelo da categoria <strong>Utilidade</strong> com o corpo: <code>Olá! Mensagem de {{1}}: {{2}}</code>. Ele é usado quando o cliente não falou com o número nas últimas 24h (regra da Meta).</p>
+        <div data-tipo="zapi ultramsg cloud"><label id="rotToken">Token da instância</label><input type="password" name="wa_plataforma_token" autocomplete="off" placeholder="<?= $a['plat_token'] !== '' ? 'Salvo — cole outro para trocar' : '' ?>"></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" name="wa_plataforma_ativo" <?= $a['plat_ativo'] ? 'checked' : '' ?>> Usar o número da plataforma para as empresas</label>
-        <label class="check" data-tipo="evolution zapi"><input type="checkbox" name="wa_empresas_conectar" <?= $a['empresas_conectar'] ? 'checked' : '' ?>> Deixar cada empresa conectar o próprio WhatsApp (QR code no painel dela)</label>
+        <label class="check" data-tipo="evolution wppconnect zapi ultramsg"><input type="checkbox" name="wa_empresas_conectar" <?= $a['empresas_conectar'] ? 'checked' : '' ?>> Deixar cada empresa conectar o próprio WhatsApp (QR code no painel dela)</label>
         <button type="submit" name="salvar" value="1">Salvar</button>
     </form>
 
     <section class="form-box largo">
         <h3>3. Conectar e testar</h3>
-        <div data-tipo="evolution">
+        <div data-tipo="evolution wppconnect">
             <p class="dica">Conecte o número da plataforma lendo o QR code com o WhatsApp do celular (Aparelhos conectados → Conectar um aparelho).</p>
             <button type="button" class="btn" onclick="conectar(this)"><?= icone('celular', 16) ?> Gerar QR code</button>
             <div id="qrArea" hidden style="margin-top:14px"><div class="wa-qr"><img id="qrImg" alt="QR code"><span id="qrInfo">Aguardando leitura…</span></div></div>
@@ -170,11 +190,15 @@ const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 const ROT = {
     evolution: ['URL do servidor da Evolution API', 'Chave global (AUTHENTICATION_API_KEY)', 'Nome da instância'],
     zapi: ['', 'Client-Token da conta (Segurança, opcional)', 'ID da instância'],
+    wppconnect: ['URL do servidor WPPConnect', 'SECRET_KEY do servidor (config)', 'Nome da sessão'],
+    ultramsg: ['', '', 'ID da instância (ex.: instance12345)'],
+    cloud: ['', '', 'Phone Number ID (Meta → WhatsApp → Configuração da API)'],
     webhook: ['URL que recebe o POST (JSON com numero e texto)', 'Token enviado no cabeçalho X-GDS-Token (opcional)', 'Identificador (opcional)'],
 };
 function mostrarTipo() {
     const t = document.getElementById('tipo').value;
     document.querySelectorAll('[data-tipo]').forEach(el => el.hidden = !t || !el.dataset.tipo.split(' ').includes(t));
+    const rt = document.getElementById('rotToken'); if (rt) rt.textContent = t === 'cloud' ? 'Token de acesso permanente (usuário do sistema)' : 'Token da instância';
     if (ROT[t]) { document.getElementById('rotUrl').textContent = ROT[t][0]; document.getElementById('rotChave').textContent = ROT[t][1]; document.getElementById('rotInst').textContent = ROT[t][2]; }
 }
 mostrarTipo();

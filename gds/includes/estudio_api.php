@@ -228,6 +228,30 @@ switch ($acao) {
         $pdo->prepare("UPDATE sites SET ia_modo_total=? WHERE empresa_id=?")->execute([$ativar ? 'true' : 'false', $empresaId]);
         responder_json(['ok' => true, 'ativo' => $ativar]);
 
+    case 'gerar_foto':
+        // Uma foto por chamada (cada uma leva de 5 a 40s) — o navegador chama 3 vezes e mostra o progresso
+        session_write_close();
+        @set_time_limit(150);
+        $st = $pdo->prepare("SELECT e.nome, e.segmento_descricao, seg.slug, seg.nome AS segmento_nome FROM empresas e LEFT JOIN segmentos seg ON seg.id = e.segmento_id WHERE e.id=?");
+        $st->execute([$empresaId]);
+        $emp = $st->fetch() ?: [];
+        $cenas = img_ia_cenas($emp['slug'] ?? '', $emp['segmento_nome'] ?? '', $emp['segmento_descricao'] ?? '');
+        $i = max(0, min(count($cenas) - 1, (int)($_POST['indice'] ?? 0)));
+        $extra = trim($_POST['estilo'] ?? '');
+        $r = img_ia_gerar(img_ia_prompt_foto($cenas[$i], mb_substr($extra, 0, 200)), $i === 0 ? '16:9' : '4:5', 'ia/empresa-' . $empresaId);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $lista = fotos_ia_adicionar($empresaId, $r['url']);
+        responder_json(['ok' => true, 'url' => $r['url'], 'total' => count($lista)]);
+
+    case 'remover_foto':
+        $url = (string)($_POST['url'] ?? '');
+        $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?"); $st->execute([$empresaId]);
+        $salvo = json_decode((string)$st->fetchColumn(), true) ?: [];
+        $salvo['ia'] = array_values(array_filter((array)($salvo['ia'] ?? []), fn($u) => $u !== $url));
+        $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES), $empresaId]);
+        if (str_starts_with($url, '/uploads/ia/empresa-' . $empresaId . '/')) @unlink(__DIR__ . '/..' . $url);
+        responder_json(['ok' => true]);
+
     case 'atendimento':
         // Forma de atendimento escolhida pelo dono ('' = seguir o segmento)
         $modo = $_POST['modo_atendimento'] ?? '';

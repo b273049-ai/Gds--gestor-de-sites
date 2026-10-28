@@ -104,6 +104,7 @@ function frag_sobre($sobre) {
 // SERVIÇOS — cartões com duração, preço e botão de agendar
 // ------------------------------------------------------------
 function frag_servicos($servicos, $opts = []) {
+    if (!empty($servicos) && ($opts['variante'] ?? '') === 'menu') return frag_servicos_menu($servicos, $opts);
     if (empty($servicos)) return '<div class="gds-c"><p class="gds-vazio">Em breve, ' . (($opts['modo'] ?? '') === 'catalogo' ? 'nosso cardápio/produtos' : 'nossos serviços') . ' aparecerão aqui.</p></div>';
     $categorias = array_values(array_unique(array_filter(array_map(fn($s) => trim((string)($s['categoria'] ?? '')), $servicos))));
 
@@ -132,11 +133,33 @@ function frag_servicos($servicos, $opts = []) {
     return $html . '</div></div>';
 }
 
+// Variante "tabela de preços" (barbearia, salão, estética): nome · · · · preço, agrupado por categoria
+function frag_servicos_menu($servicos, $opts) {
+    $grupos = [];
+    foreach ($servicos as $s) $grupos[trim((string)($s['categoria'] ?? '')) ?: ''][] = $s;
+    $html = '<div class="gds-c gds-servicos gds-menu" id="gds-servicos">';
+    foreach ($grupos as $cat => $lista) {
+        $html .= '<div class="gds-menu-grupo">' . ($cat !== '' && count($grupos) > 1 ? '<h3 class="gds-menu-cat">' . e($cat) . '</h3>' : '') . '<ul class="gds-menu-lista">';
+        foreach ($lista as $s) {
+            $aPartir = !empty($s['preco_a_partir']) && $s['preco_a_partir'] !== 'f' && $s['preco_a_partir'] !== false;
+            $dur = ($opts['modo'] ?? '') === 'agendamento' ? frag_duracao($s['duracao_minutos'] ?? 0) : '';
+            $html .= '<li class="gds-menu-item"><div class="gds-menu-linha"><span class="gds-menu-nome">' . e($s['nome'])
+                   . (!empty($s['destaque']) && $s['destaque'] !== 'f' ? ' <span class="gds-menu-selo">★</span>' : '') . '</span><span class="gds-menu-pontos" aria-hidden="true"></span>'
+                   . '<span class="gds-menu-preco">' . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de </small>' : '') . e(frag_preco($s['preco'])) . '</span></div>'
+                   . '<div class="gds-menu-rodape"><span class="gds-mute">' . e(trim(($s['descricao'] ?? '') . ($dur ? ' · ' . $dur : ''), ' ·')) . '</span>'
+                   . str_replace('class="gds-btn', 'class="gds-btn gds-btn-mini', frag_botao_servico($s, $opts)) . '</div></li>';
+        }
+        $html .= '</ul></div>';
+    }
+    return $html . '</div>';
+}
+
 // Botão de cada serviço, conforme a forma de atendimento do negócio:
 // agendamento → abre o agendamento já com o serviço | orçamento → abre o pedido de orçamento com o serviço
 // contato → WhatsApp falando do serviço | catálogo → "Pedir" pelo WhatsApp com item e preço
 function frag_botao_servico($s, $opts) {
     $modo = $opts['modo'] ?? 'agendamento';
+    if ($modo === 'catalogo' && pg_bool($s['esgotado'] ?? false)) return '<span class="gds-esgotado">Esgotado hoje</span>';
     $whats = $opts['whatsapp'] ?? '';
     $id = (int)$s['id'];
     if ($modo === 'agendamento' && !empty($opts['tem_agendamento'])) {
@@ -572,6 +595,7 @@ function frag_luminancia($hex) {
 // ------------------------------------------------------------
 function frag_carrinho($empresa, $estado = []) {
     $taxa = (float)($empresa['taxa_entrega'] ?? 0);
+    $bairros = delivery_bairros($empresa);
     $minimo = (float)($empresa['pedido_minimo'] ?? 0);
     $entrega = !isset($empresa['aceita_entrega']) || $empresa['aceita_entrega'] === null || pg_bool($empresa['aceita_entrega']);
     $retirada = !isset($empresa['aceita_retirada']) || $empresa['aceita_retirada'] === null || pg_bool($empresa['aceita_retirada']);
@@ -610,8 +634,11 @@ function frag_carrinho($empresa, $estado = []) {
            . '<input type="hidden" name="fazer_pedido" value="1"><input type="hidden" name="pd_itens" data-gds-itens value="' . e($p['pd_itens'] ?? '') . '">'
            . '<ul class="gds-carrinho-itens" data-gds-lista></ul><p class="gds-mute gds-carrinho-vazio" data-gds-vazio>Seu pedido está vazio. Escolha os itens no cardápio.</p>'
            . '<div class="gds-carrinho-dados" data-gds-dados>'
-           . '<div class="gds-opcoes gds-opcoes-2">' . ($entrega ? $radio('entrega', '🛵 Entrega' . ($taxa > 0 ? ' (+' . frag_preco($taxa) . ')' : ''), $tipoSel === 'entrega') : '')
+           . '<div class="gds-opcoes gds-opcoes-2">' . ($entrega ? $radio('entrega', '🛵 Entrega' . (!$bairros && $taxa > 0 ? ' (+' . frag_preco($taxa) . ')' : ''), $tipoSel === 'entrega') : '')
            . ($retirada ? $radio('retirada', '🏪 Retirar no local', $tipoSel === 'retirada' || !$entrega) : '') . '</div>'
+           . ($entrega && $bairros ? '<div class="gds-campo" data-gds-bairro><label for="pd_bairro">Bairro</label><select id="pd_bairro" name="pd_bairro"><option value="">Escolha o bairro…</option>'
+                . implode('', array_map(fn($b) => '<option value="' . e($b['bairro']) . '" data-taxa="' . $b['taxa'] . '"' . (($p['pd_bairro'] ?? '') === $b['bairro'] ? ' selected' : '') . '>' . e($b['bairro']) . ' — ' . ($b['taxa'] > 0 ? e(frag_preco($b['taxa'])) : 'grátis') . '</option>', $bairros))
+                . '</select><small class="gds-mute">Não achou seu bairro? Chame no WhatsApp.</small></div>' : '')
            . ($entrega ? '<div class="gds-campo" data-gds-endereco><label for="pd_endereco">Endereço de entrega</label><input type="text" id="pd_endereco" name="pd_endereco" maxlength="250" autocomplete="street-address" placeholder="Rua, número, bairro, complemento" value="' . e($p['pd_endereco'] ?? '') . '"></div>' : '')
            . '<div class="gds-linha2"><div class="gds-campo"><label for="pd_nome">Seu nome</label><input type="text" id="pd_nome" name="pd_nome" required maxlength="120" autocomplete="name" value="' . e($p['pd_nome'] ?? '') . '"></div>'
            . '<div class="gds-campo"><label for="pd_telefone">WhatsApp</label><input type="tel" id="pd_telefone" name="pd_telefone" required inputmode="tel" autocomplete="tel" data-gds-tel placeholder="(00) 00000-0000" value="' . e($p['pd_telefone'] ?? '') . '"></div></div>'

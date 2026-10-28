@@ -90,3 +90,30 @@ function exigir_modulo(...$chaves) {
        . '<a class="btn" href="/empresa/configuracoes.php#modulos">Ligar em Configurações → Módulos</a></div></main></div></body></html>';
     exit;
 }
+
+// Taxa de entrega por bairro (empresas.bairros_entrega, JSON [{"bairro":"Centro","taxa":5}]).
+// Lista vazia = taxa única (empresas.taxa_entrega).
+function delivery_bairros($empresa) {
+    $lista = [];
+    foreach ((array)json_decode((string)($empresa['bairros_entrega'] ?? ''), true) as $b) {
+        $nome = trim((string)($b['bairro'] ?? ''));
+        if ($nome !== '') $lista[] = ['bairro' => $nome, 'taxa' => max(0, (float)($b['taxa'] ?? 0))];
+    }
+    return $lista;
+}
+
+// "Centro = 5" / "Jardim América; 7,50" (uma linha por bairro) → JSON
+function delivery_bairros_de_texto($texto) {
+    $lista = [];
+    foreach (preg_split('/\r?\n/', (string)$texto) as $linha) {
+        if (!preg_match('/^\s*(.+?)\s*[=;:|\t-]\s*(?:R\$\s*)?([\d.,]+)\s*$/u', $linha, $m)) continue;
+        $valor = str_contains($m[2], ',') ? (float)str_replace(',', '.', str_replace('.', '', $m[2])) : (float)$m[2];
+        $lista[] = ['bairro' => mb_substr(trim($m[1]), 0, 60), 'taxa' => round(max(0, $valor), 2)];
+        if (count($lista) >= 80) break;
+    }
+    return $lista ? json_encode($lista, JSON_UNESCAPED_UNICODE) : null;
+}
+
+function delivery_bairros_texto($empresa) {
+    return implode("\n", array_map(fn($b) => $b['bairro'] . ' = ' . number_format($b['taxa'], 2, ',', ''), delivery_bairros($empresa)));
+}

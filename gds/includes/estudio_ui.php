@@ -121,6 +121,17 @@ $sugestoes = [
                     <?php endforeach; ?>
                 </div>
 
+                <label>Fotos exclusivas com IA</label>
+                <div class="fotos-ia" id="fotosIa">
+                    <?php foreach (fotos_ia_do_site(['fotos_banco' => $site['fotos_banco'] ?? null]) as $fi): ?>
+                    <figure><img src="<?= e($fi['url']) ?>" alt="Foto gerada" loading="lazy"><button type="button" title="Remover" onclick="Estudio.removerFoto(this, <?= e(json_encode($fi['url'])) ?>)">×</button></figure>
+                    <?php endforeach; ?>
+                </div>
+                <?php if (img_ia_disponivel()): ?>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnFotos" onclick="Estudio.gerarFotos()"><?= icone('brilho', 14) ?> Gerar 3 fotos exclusivas do meu negócio</button>
+                <p class="dica" id="fotosStatus">A IA cria fotos no clima do seu negócio (topo do site, ambiente, detalhe). Leva cerca de 1 minuto.</p>
+                <?php else: ?><p class="dica">A geração de fotos com IA ainda não foi configurada pelo administrador.</p><?php endif; ?>
+
                 <label for="preferencias">Preferências (opcional)</label>
                 <input type="text" id="preferencias" placeholder="Ex: usar verde-escuro e dourado, fonte elegante, nada de fundo preto">
 
@@ -441,7 +452,28 @@ const Estudio = (() => {
         recarregarPreview();
     }
 
-    return { salvarAtendimento, salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
+    async function gerarFotos() {
+        const b = $('btnFotos'); if (!b || b.disabled) return;
+        b.disabled = true;
+        for (let i = 0; i < 3; i++) {
+            $('fotosStatus').textContent = 'Criando a foto ' + (i + 1) + ' de 3…';
+            const r = await api('gerar_foto', { indice: i, estilo: $('preferencias').value });
+            if (!r.ok) { toast(r.erro, 'erro'); break; }
+            $('fotosIa').insertAdjacentHTML('afterbegin', '<figure><img alt="Foto gerada"><button type="button" title="Remover">×</button></figure>');
+            const fig = $('fotosIa').firstElementChild;
+            fig.querySelector('img').src = r.url;
+            fig.querySelector('button').addEventListener('click', () => removerFoto(fig.querySelector('button'), r.url));
+        }
+        $('fotosStatus').textContent = 'Pronto! As fotos entram no site (topo e "sobre") e a IA usa nas próximas gerações.';
+        b.disabled = false;
+        recarregarPreview();
+    }
+    async function removerFoto(btn, url) {
+        const r = await api('remover_foto', { url });
+        if (r.ok) btn.closest('figure').remove();
+    }
+
+    return { gerarFotos, removerFoto, salvarAtendimento, salvarCor, gerar, refinar, restaurar, melhorarBriefing, abrirCodigo, salvarCodigo, alternarPublicacao, alternarModo, recarregarPreview };
 })();
 </script>
 </body>

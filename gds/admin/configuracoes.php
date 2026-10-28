@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key'];
+$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key'];
 $provedores = ['gemini', 'anthropic', 'openai'];
 
 // Testa a IA com uma chamada curtinha (o botão "Testar" chama via fetch)
@@ -35,6 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     set_config('ia_estudio_empresas', isset($_POST['ia_estudio_empresas']) ? '1' : '0');
     set_config('ia_limite_diario_empresa', (string)max(0, (int)($_POST['ia_limite_diario_empresa'] ?? 20)));
     set_config('google_analytics_id', trim($_POST['google_analytics_id'] ?? ''));
+    set_config('img_ia_provedor', array_key_exists($_POST['img_ia_provedor'] ?? '', img_ia_provedores()) ? $_POST['img_ia_provedor'] : 'auto');
+    set_config('img_ia_automatico', isset($_POST['img_ia_automatico']) ? '1' : '0');
+    set_config('img_gemini_modelo', preg_replace('/[^a-z0-9.\-]/', '', strtolower(trim($_POST['img_gemini_modelo'] ?? ''))));
     // Campos secretos: vazio = manter o valor atual (a tela nunca mostra a chave inteira)
     foreach ($segredos as $chave) {
         $v = trim($_POST[$chave] ?? '');
@@ -165,6 +168,16 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
         <h3 style="margin-top:24px">Fotos profissionais para os sites</h3>
         <?= campo_segredo('pexels_api_key', 'Pexels — API Key (grátis)', $cfg['pexels_api_key'], 'Cole a chave do pexels.com/api') ?>
         <p class="dica">Sites sem fotos próprias ganham fotos reais do tipo de negócio (topo do site e no Estúdio IA). Crie a chave grátis em <a class="link" href="https://www.pexels.com/api/" target="_blank" rel="noopener">pexels.com/api</a> → "Your API Key".</p>
+
+        <h3 style="margin-top:24px">Fotos exclusivas geradas por IA</h3>
+        <label>Quem gera as fotos</label>
+        <select name="img_ia_provedor"><?php foreach (img_ia_provedores() as $k => $v): ?><option value="<?= $k ?>" <?= get_config('img_ia_provedor', 'auto') === $k ? 'selected' : '' ?>><?= e($v) ?></option><?php endforeach; ?></select>
+        <?= campo_segredo('img_openai_key', 'OpenAI — API Key (só se escolher OpenAI)', $cfg['img_openai_key'], 'sk-...') ?>
+        <?= campo_segredo('img_pollinations_key', 'Pollinations — chave (opcional: sem ela o grátis libera 1 foto a cada 45s; crie em enter.pollinations.ai)', $cfg['img_pollinations_key'], 'sk_...') ?>
+        <label>Modelo de imagem do Gemini (avançado)</label>
+        <input type="text" name="img_gemini_modelo" value="<?= e(get_config('img_gemini_modelo', '')) ?>" placeholder="gemini-2.5-flash-image">
+        <label class="check"><input type="checkbox" name="img_ia_automatico" value="1" <?= get_config('img_ia_automatico', '1') === '1' ? 'checked' : '' ?>> Gerar sozinho 3 fotos para cada site publicado sem foto (pela rotina automática / cron)</label>
+        <p class="dica">Usadas no Estúdio IA ("Gerar fotos exclusivas") e no Marketing com IA. Agora: <strong><?= e(img_ia_provedores()[img_ia_provedor()] ?? img_ia_provedor()) ?></strong><?= img_ia_disponivel() ? '' : ' — não configurado' ?>.</p>
 
         <h3 style="margin-top:24px">Mapas e Analytics</h3>
         <?= campo_segredo('google_maps_key', 'Google Maps — API Key', $cfg['google_maps_key'], 'Opcional (sem chave usa o mapa simples)') ?>

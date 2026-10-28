@@ -121,18 +121,49 @@ hamburgueria vê Pedidos e Cardápio; DJ/fotógrafo vê Orçamentos e "Serviços
 extras em **Configurações → Módulos do painel** (ex.: barbearia que também vende produtos). Módulo desligado some do menu e do site.
 
 ## Design dos sites
-- **Template novo** com 5 estilos (Aurora, Elegante, Vibrante, Minimalista, Noite), escolhido automaticamente pelo tipo de
-  negócio ou em Configurações → Visual do meu site / Admin → Layout do template. Página única com topo animado, faixa
-  rolando, números animados, "como funciona" conforme o negócio e rodapé completo.
-- **Kit de animações próprio** (`assets/js/gds-motion.js`): entrada suave, título palavra por palavra, paralaxe, contadores,
-  cartões 3D, botões magnéticos, faixa rolando. A IA do Estúdio usa esse kit nos sites que gera.
-- **Fotos profissionais (Pexels, grátis)**: cole a chave em Admin → Configurações. Sites sem fotos ganham fotos reais do
-  tipo de negócio no topo e no Estúdio IA.
+- **Identidade por tipo de negócio** (`includes/site_nichos.php`): barbearia abre escura com dourado, letras altas
+  (Bebas Neue), listras de barbearia e tabela de preços estilo cardápio; salão/estética claro e elegante; hamburgueria
+  quente e vibrante; clínica calma; DJ/eventos com cara de festa. São 17 identidades com cores, fontes, textura, ícone
+  e frase de impacto. A empresa pode trocar por um dos 5 estilos (Aurora, Elegante, Vibrante, Minimalista, Noite) em
+  Configurações → Visual do meu site.
+- **Primeira impressão que gera confiança**: barra no topo com "aberto agora", nota das avaliações, endereço e
+  telefone; cartões flutuantes com a nota e um depoimento real e o **próximo horário livre** ("hoje às 15:30");
+  "Por que a gente" montado só com dados reais; **perguntas frequentes** com horário, endereço, entrega e pagamento
+  (também vão para o Google); chamada final com foto.
+- **Celular**: barra fixa embaixo com **Agendar/Pedir + WhatsApp + Como chegar**.
+- **Extensão de animações "Cinema"** (`assets/js/gds-cinema.js`, padrão): rolagem suave, topo que sai de cena,
+  luz seguindo o mouse, faixa que entorta com a velocidade, passos que acendem e itens entrando em cascata.
+  Usa GSAP 3.12.5 + Lenis 1.1.13 (versões fixas); se não carregarem, o site continua com o kit normal
+  (`gds-motion.js`). Escolha **Cinema / Suave / Leve** em Configurações → Visual do meu site.
+- **Fotos exclusivas por IA**: Admin → Configurações → "Fotos exclusivas geradas por IA" (Gemini, OpenAI ou
+  Pollinations grátis). No Estúdio IA há o botão **Gerar fotos com IA**, e a rotina automática (cron) gera sozinha
+  3 fotos para cada site publicado sem foto. Sem chave, o Pollinations libera 1 foto a cada 45s e coloca uma
+  marquinha no canto; com chave do Gemini ou do Pollinations as fotos saem limpas.
+- **Fotos profissionais (Pexels, grátis)**: cole a chave em Admin → Configurações.
+- **Sites feitos pelo Estúdio IA** recebem a mesma direção de arte do ramo e podem usar as bibliotecas de animação
+  liberadas (as demais são removidas por segurança).
+
+## Desempenho do site (painel da empresa)
+Menu **Desempenho**: visitas reais, pessoas, cliques no WhatsApp, pedidos/agendamentos feitos pelo site, taxa de
+conversão, celular × computador e **de onde vieram** (Instagram, Google, WhatsApp… use `?utm_source=instagram` no
+link da bio). Mais: faturamento, ticket médio, mais vendidos e **comissão por profissional** (defina o % em Equipe).
+
+## Funções novas do painel
+- **Agenda → Grade do dia**: uma coluna por profissional, linha do "agora" e clique no espaço vazio para marcar.
+- **Clientes**: **cartão fidelidade** (a cada N atendimentos/pedidos ganha um prêmio, com botão para avisar no
+  WhatsApp) e filtro **Sumidos** (não voltam há 45 dias) com mensagem pronta "sentimos sua falta".
+- **Delivery estilo iFood**: botão **Loja aberta / pausar**, item **Esgotou** (some o botão de pedir),
+  **taxa por bairro** (Configurações → Pedidos pelo site), **alerta sonoro** de pedido novo e **comanda para
+  impressora térmica** (botão Imprimir em cada pedido).
 
 ## Marketing com IA (Admin)
-Escolha o objetivo e o nicho: a IA escreve o post (título, legenda, hashtags, roteiro de Reels/TikTok) e a tela gera a
-arte em PNG (feed, story ou quadrado, 5 modelos) e um vídeo MP4 animado de 9:16 — tudo no navegador. Também monta o
-calendário da semana. Configure nome, @, site e cores da sua marca na própria tela.
+A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e o estilo. A tela:
+- gera **foto exclusiva com IA**, busca no **banco de fotos** ou usa a sua;
+- monta a arte em **9 modelos** (foto + título, foto + bloco, pergunta, número gigante, impacto, lista, antes × depois,
+  depoimento, oferta), **6 estilos** (Neon, Editorial, Bold, Pop, Minimal, Luxo) e **8 paletas**, com o botão
+  **Variar visual** para nenhum post sair igual ao outro;
+- baixa o **carrossel** completo (capa + 1 slide por item + fechamento);
+- grava o **vídeo MP4 9:16** com gancho em letras gigantes, fotos em movimento e oferta no final.
 
 ## WhatsApp automático (a plataforma manda as mensagens sozinha)
 O cliente final recebe no WhatsApp: agendamento recebido, **confirmado**, **lembrete** antes do horário, cancelado,
@@ -140,8 +171,10 @@ pedido de avaliação; orçamento recebido, **orçamento com o valor**, aprovado
 em preparo, **saiu para entrega** / pronto para retirada, entregue. A empresa também é avisada no WhatsApp dela
 a cada agendamento, orçamento ou pedido novo.
 
-1. **Admin → WhatsApp**: escolha o serviço — **Evolution API** (gratuita; roda num VPS à parte, ex.: Hostinger VPS
-   com o modelo Evolution API), **Z-API** (paga) ou **Webhook** (n8n/Make). Cole a URL e a chave, salve,
+1. **Admin → WhatsApp**: escolha o serviço — **Evolution API** ou **WPPConnect** (gratuitas; rodam num VPS à parte,
+   ex.: Hostinger VPS), **WhatsApp Cloud API oficial da Meta** (sem risco de bloqueio; usa um modelo "Utilidade"
+   quando o cliente não falou com o número nas últimas 24h), **Z-API** ou **UltraMsg** (pagas, sem servidor) ou
+   **Webhook** (n8n/Make). Cole a URL e a chave, salve,
    clique em **Gerar QR code** e leia com o WhatsApp do número da plataforma. Use **Enviar teste**.
 2. Cada empresa, em **WhatsApp automático**, escolhe: usar o número da plataforma (zero configuração),
    **conectar o próprio WhatsApp por QR code**, ou desligar. Lá ela liga/desliga e edita cada mensagem (com prévia).
@@ -205,9 +238,7 @@ a IA só decide onde eles ficam. No Estúdio IA, "Cor dos botões" troca a cor d
   `admin/financeiro.php` hoje permite marcar pagamento manualmente; a geração
   automática de cobrança PIX via Mercado Pago precisa da sua conta de vendedor
   configurada (posso implementar o endpoint assim que você tiver o token).
-- **WhatsApp automático** (envio de lembretes): precisa de um provedor tipo
-  WhatsApp Cloud API ou Twilio — hoje o site já tem o botão "Falar no WhatsApp"
-  (link direto), mas envio automático de mensagens requer token configurado.
+- **WhatsApp automático**: configure um dos serviços em Admin → WhatsApp (veja a seção acima).
 
 ## Segurança
 - **Rode o `adicional_11_rls_seguranca.sql`.** Sem ele, qualquer pessoa com a "anon key" do Supabase

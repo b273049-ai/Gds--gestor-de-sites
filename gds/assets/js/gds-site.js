@@ -429,7 +429,10 @@
             });
             $('[data-gds-vazio]', form).hidden = itens.length > 0;
             $('[data-gds-dados]', form).hidden = itens.length === 0;
-            var t = ehEntrega() ? taxa : 0;
+            var selB = $('[data-gds-bairro] select', form), optB = selB && selB.options[selB.selectedIndex];
+            var t = ehEntrega() ? (selB ? (optB && optB.value ? parseFloat(optB.getAttribute('data-taxa')) || 0 : 0) : taxa) : 0;
+            var caixaB = $('[data-gds-bairro]', form);
+            if (caixaB) { caixaB.hidden = !ehEntrega(); selB.required = ehEntrega(); }
             var linhaTaxa = $('[data-gds-linha-taxa]', form);
             linhaTaxa.hidden = !ehEntrega();
             $('[data-gds-taxa]', form).textContent = t > 0 ? dinheiro(t) : 'Grátis';
