@@ -310,7 +310,13 @@ CONTRATO TÉCNICO (obrigatório):
     óbvio pela foto, cor, fonte e frase), o status "aberto agora" e a nota das avaliações quando houver, e a ação
     principal sempre visível. No celular, uma barra fixa embaixo com a ação principal + WhatsApp. Prova (nota,
     depoimento real) perto do topo, preços claros, perguntas frequentes com dados reais e endereço com "Como chegar".
-12. Evite clichês: hero centralizado com gradiente roxo-azul genérico, cards idênticos com a mesma sombra, grade de 3
+12. PADRÃO DE ACABAMENTO (nível Lovable/Vercel): defina um sistema de design em :root (cores, raio, sombras, espaçamento
+    em escala 4/8/12/16/24/32/48/64/96/128px, escala tipográfica com clamp()); seções com respiro generoso (96-140px no
+    computador, 64-88px no celular) e largura máxima ~1200px; hierarquia clara (selo pequeno → título grande → texto
+    curto → botões); botões com estados hover/focus/active e transição de 200-300ms; cartões com borda fina de 1px e
+    sombra suave; ícones em SVG inline do mesmo traço; imagens com object-fit e cantos arredondados; cabeçalho fixo que
+    ganha fundo ao rolar; nada desalinhado, nada encostado na borda no celular, nada com texto cinza ilegível.
+13. Evite clichês: hero centralizado com gradiente roxo-azul genérico, cards idênticos com a mesma sombra, grade de 3
     ícones genéricos, emoji no lugar de ícone.
 REGRAS;
 }
@@ -340,6 +346,7 @@ function ia_gerar_html_site($ctx, $briefing, $plano) {
     $faqTxt = $faq !== ''
         ? "PERGUNTAS FREQUENTES (crie uma seção de FAQ acessível — <details>/<summary> — com estas):\n$faq"
         : '';
+    $referencia = !empty($plano['referencia']) ? "\nSITE DE REFERÊNCIA DO DONO — o estilo dele manda (cores, fontes, espaçamentos, componentes e layout); o conteúdo é deste negócio, nunca o da referência:\n" . mb_substr($plano['referencia'], 0, 9000) . "\n" : '';
     $semWhats = empty($ctx['whatsapp']) ? "\nATENÇÃO: o negócio NÃO tem WhatsApp cadastrado — não crie botões de WhatsApp; use {{LINK_PRINCIPAL}}." : '';
 
     $prompt = <<<PROMPT
@@ -370,7 +377,7 @@ $paginas
 
 MARCADORES DE COMPONENTE A INCLUIR (só estes, cada um uma única vez): $marcadores
 Os botões de chamada (topo, fim de cada página) usam href="{{LINK_PRINCIPAL}}".
-
+$referencia
 $regras
 PROMPT;
 
@@ -380,7 +387,7 @@ PROMPT;
 // ------------------------------------------------------------
 // EDIÇÃO POR CONVERSA — aplica um pedido em cima do HTML atual
 // ------------------------------------------------------------
-function ia_refinar_html_site($ctx, $htmlAtual, $instrucao) {
+function ia_refinar_html_site($ctx, $htmlAtual, $instrucao, $ent = null, $elemento = null, $referencia = '') {
     $dados = ia_contexto_texto($ctx);
     $regras = ia_regras_tecnicas();
     $marcadoresAtuais = array_values(array_filter(IA_MARCADORES, fn($m) => str_contains($htmlAtual, $m)));
@@ -389,13 +396,30 @@ function ia_refinar_html_site($ctx, $htmlAtual, $instrucao) {
     $obrigatorios = ia_marcadores_do_modo($modo, $ctx);
     $estrategia = ia_estrategia_conversao($modo, !empty($ctx['whatsapp']));
     $outroModo = $modo === 'agendamento' ? '{{ORCAMENTO}}' : ($modo === 'orcamento' ? '{{AGENDAMENTO}}' : '{{AGENDAMENTO}} e {{ORCAMENTO}}');
+    $nome = $ctx['nome'] ?? '';
+    $glossario = IA_GLOSSARIO_ESTILOS;
+    $combinado = '';
+    if ($ent) {
+        $combinado = "\nO QUE VOCÊ COMBINOU COM O DONO: " . $ent['entendi']
+            . ($ent['alteracoes'] ? "\nMUDANÇAS: - " . implode("\n- ", $ent['alteracoes']) : '')
+            . ($ent['preservar'] ? "\nNÃO MUDE: - " . implode("\n- ", $ent['preservar']) : '')
+            . ($ent['brief_design'] !== '' ? "\nDIREÇÃO DE DESIGN: " . $ent['brief_design'] : '');
+    }
+    $el = $elemento ? "\nELEMENTO SELECIONADO NO PREVIEW (mude só ele):\n" . ia_texto_elemento($elemento) : '';
+    $ref = $referencia !== '' ? "\nSITE DE REFERÊNCIA (copie o estilo — cores, fontes, espaçamentos, componentes, layout — NÃO o conteúdo):\n" . mb_substr($referencia, 0, 9000) : '';
 
     $prompt = <<<PROMPT
-Você é o desenvolvedor front-end que criou o site abaixo. O dono pediu uma alteração. Aplique SOMENTE o que foi pedido,
-com capricho, mantendo todo o resto (design, textos, estrutura, scripts) idêntico. Se o pedido for vago ("mais moderno",
-"mais bonito"), faça a melhoria visual mais impactante coerente com o estilo atual.
+Você é o desenvolvedor front-end que criou o site abaixo. O dono pediu uma alteração. Aplique o que foi pedido com
+capricho de designer sênior, mantendo todo o resto. Se o pedido for vago ("mais moderno", "mais bonito"), faça a
+melhoria visual mais impactante coerente com o estilo atual.
 
-PEDIDO DO DONO: "$instrucao"
+O SITE É DO NEGÓCIO "$nome" E CONTINUA SENDO: mesmo nome, mesmos serviços, mesmos contatos, mesma forma de atendimento,
+mesmos textos sobre o negócio (você pode reescrever títulos e chamadas para combinar com o novo visual, sempre falando
+deste negócio). Mudança de visual NÃO é mudança de negócio.
+
+PEDIDO DO DONO: "$instrucao"$combinado$el$ref
+
+$glossario
 
 DADOS REAIS DO NEGÓCIO (para consulta, se o pedido precisar):
 $dados
@@ -560,4 +584,240 @@ function ia_salvar_tema($empresaId, $plano) {
     } catch (PDOException $e) {
         // banco sem a coluna (adicional_12): os componentes usam a cor achada no CSS do site
     }
+}
+
+// ============================================================
+// AGENTE DE EDIÇÃO (no estilo Lovable)
+// 1) ENTENDER: lê a conversa, o site atual e o pedido, e diz o que vai fazer
+//    (ou faz uma pergunta quando o pedido é ambíguo).
+// 2) APLICAR: edição cirúrgica por blocos BUSCAR/TROCAR (mexe só no trecho
+//    certo) ou, para mudanças de visual do site todo, reescreve mantendo o
+//    negócio, os textos e os componentes.
+// ============================================================
+
+// Referências de estilo: SEMPRE significam "aplicar essa linguagem visual", nunca "mudar de negócio"
+const IA_GLOSSARIO_ESTILOS = <<<TXT
+REFERÊNCIAS DE ESTILO (quando o dono cita uma delas, é o VISUAL/LAYOUT que ele quer, aplicado ao negócio DELE):
+- "SaaS", "startup", "software", "app", "tech", "Lovable", "Vercel", "Linear", "Stripe": landing page moderna de produto —
+  navegação fixa com fundo em vidro, selo pequeno acima do título, título enorme com palavra em gradiente, subtítulo curto,
+  dois botões (principal e secundário), um "mockup"/cartão de vidro com foto ou prévia do serviço no topo, faixa de
+  confiança (nota, nº de avaliações, anos de bairro), grade de benefícios em "bento" (cartões de tamanhos diferentes,
+  bordas finas, ícones), seção "como funciona" em 3 passos numerados, cartões de serviço/preço tipo planos (um em
+  destaque), depoimentos em cartões, perguntas frequentes em acordeão, chamada final grande, rodapé organizado;
+  fundo com gradientes suaves/aurora, muito espaço em branco, cantos arredondados 16-24px, sombras suaves, fonte
+  sem serifa geométrica (Inter, Geist, Plus Jakarta Sans, Sora).
+- "Apple", "minimalista", "clean": muito branco, tipografia grande, fotos grandes, quase sem cor, animações suaves.
+- "luxo", "premium", "elegante": fundo escuro ou creme, serifada fina, dourado/champanhe, espaçamento generoso.
+- "Nubank", "iFood", "colorido", "jovem": cor forte de marca, formas arredondadas, ilustrações/ícones grossos.
+- "revista", "editorial": grade assimétrica, serifada grande, fotos recortadas, numeração de seções.
+- "dark", "escuro", "neon", "gamer": fundo quase preto, brilhos, bordas iluminadas.
+- "igual ao site X" / código colado: copie o estilo (cores, fontes, espaçamento, componentes, layout), não o conteúdo.
+O NEGÓCIO NUNCA MUDA por causa de uma referência: uma barbearia "estilo SaaS" continua sendo a barbearia, com os mesmos
+serviços, nome, contatos e forma de atendimento. Só mude o que o negócio é/vende se o dono disser isso com todas as letras
+(ex.: "agora meu negócio é uma loja de roupas").
+TXT;
+
+// Raio-X compacto do site atual (para a IA entender sem ler 60 mil caracteres)
+function ia_resumo_site($html) {
+    $l = [];
+    if (preg_match('#<title>(.*?)</title>#is', $html, $m)) $l[] = 'Título da página: ' . trim(strip_tags($m[1]));
+    if (preg_match_all('#fonts\.googleapis\.com/css2?\?family=([^"\'&]+)#i', $html, $m)) $l[] = 'Fontes: ' . implode(', ', array_unique(array_map(fn($f) => urldecode(explode(':', $f)[0]), $m[1])));
+    if (preg_match('#:root\s*\{([^}]{0,700})#i', $html, $m)) $l[] = 'Variáveis de cor/estilo: ' . preg_replace('/\s+/', ' ', trim($m[1]));
+    $navs = [];
+    if (preg_match_all('#data-page-link=["\']([^"\']+)["\'][^>]*>(.*?)</#is', $html, $m)) foreach ($m[1] as $i => $k) $navs[$k] = trim(strip_tags($m[2][$i]));
+    if ($navs) $l[] = 'Menu: ' . implode(' | ', array_map(fn($k, $v) => "$v ($k)", array_keys($navs), $navs));
+    if (preg_match_all('#<(section|header|footer)\b([^>]*)>(.*?)</\1>#is', $html, $m)) {
+        $s = [];
+        foreach ($m[0] as $i => $bloco) {
+            $attr = $m[2][$i];
+            $id = preg_match('#(?:id|data-page)=["\']([^"\']+)#', $attr, $a) ? $a[1] : '';
+            $classe = preg_match('#class=["\']([^"\']+)#', $attr, $a) ? $a[1] : '';
+            $tit = preg_match('#<h[1-3][^>]*>(.*?)</h[1-3]>#is', $m[3][$i], $h) ? trim(preg_replace('/\s+/', ' ', strip_tags($h[1]))) : '';
+            preg_match_all('/\{\{[A-Z_]+\}\}/', $bloco, $mk);
+            $s[] = '- <' . $m[1][$i] . ($id ? " #$id" : '') . ($classe ? ' .' . mb_substr($classe, 0, 40) : '') . '>' . ($tit ? ' "' . mb_substr($tit, 0, 80) . '"' : '')
+                 . ($mk[0] ? ' ' . implode(' ', array_unique($mk[0])) : '');
+            if (count($s) >= 25) break;
+        }
+        $l[] = "Seções:\n" . implode("\n", $s);
+    }
+    return implode("\n", $l);
+}
+
+// Site de referência colado pelo dono: extrai o "DNA" visual (CSS, fontes, estrutura) sem o conteúdo
+function ia_extrair_referencia($codigo) {
+    $codigo = (string)$codigo;
+    if (mb_strlen(trim($codigo)) < 40) return '';
+    if (!preg_match('/<[a-z][\s\S]*>/i', $codigo) && !preg_match('/\{[^}]*:[^}]*\}/', $codigo)) return 'Descrição da referência: ' . mb_substr(trim($codigo), 0, 1500);
+    $partes = [];
+    if (preg_match_all('#fonts\.googleapis\.com/css2?\?family=([^"\'&]+)#i', $codigo, $m)) $partes[] = 'Fontes: ' . implode(', ', array_unique(array_map(fn($f) => urldecode(explode(':', $f)[0]), $m[1])));
+    $css = '';
+    if (preg_match_all('#<style[^>]*>(.*?)</style>#is', $codigo, $m)) $css = implode("\n", $m[1]);
+    elseif (!str_contains($codigo, '<')) $css = $codigo;
+    // Projetos React/Tailwind (como os da Lovable): as classes utilitárias dizem o estilo
+    if (preg_match_all('#class(?:Name)?=["\']([^"\']{20,})["\']#', $codigo, $m)) {
+        $classes = array_slice(array_unique($m[1]), 0, 60);
+        $partes[] = "Classes usadas (Tailwind/utilitárias), na ordem em que aparecem:\n" . mb_substr(implode("\n", $classes), 0, 4000);
+    }
+    if ($css !== '') $partes[] = "CSS da referência:\n" . mb_substr(preg_replace('/\s+/', ' ', $css), 0, 7000);
+    if (preg_match_all('#<(section|header|nav|footer)\b[^>]*>#i', $codigo, $m)) $partes[] = 'Blocos principais: ' . implode(' ', array_slice($m[0], 0, 20));
+    if (preg_match_all('#<h[1-3][^>]*>(.*?)</h[1-3]>#is', $codigo, $m)) $partes[] = 'Títulos (só para entender o ritmo das seções, NÃO copie o texto): ' . mb_substr(implode(' | ', array_map(fn($t) => trim(strip_tags($t)), array_slice($m[1], 0, 15))), 0, 800);
+    return implode("\n\n", $partes);
+}
+
+function ia_historico_texto($empresaId, $limite = 8) {
+    $msgs = array_slice(ia_listar_mensagens($empresaId, 60), -$limite);
+    return implode("\n", array_map(fn($m) => ($m['papel'] === 'usuario' ? 'DONO: ' : 'VOCÊ: ') . mb_substr(preg_replace('/\s+/', ' ', $m['texto']), 0, 400), $msgs));
+}
+
+// ETAPA 1 — entender o pedido
+function ia_entender_pedido($ctx, $html, $instrucao, $historico = '', $elemento = null, $referencia = '') {
+    $dados = ia_contexto_texto($ctx);
+    $resumo = ia_resumo_site($html);
+    $nome = $ctx['nome'] ?? '';
+    $glossario = IA_GLOSSARIO_ESTILOS;
+    $el = $elemento ? "\nO DONO SELECIONOU ESTE ELEMENTO NO PREVIEW (o pedido vale só para ele, salvo se disser o contrário):\n" . ia_texto_elemento($elemento) : '';
+    $ref = $referencia !== '' ? "\nO DONO MANDOU UM SITE DE REFERÊNCIA (copiar o estilo, não o conteúdo):\n" . mb_substr($referencia, 0, 3000) : '';
+    $hist = $historico !== '' ? "\nCONVERSA ATÉ AGORA (mais recente por último):\n$historico" : '';
+    $prompt = <<<PROMPT
+ENTENDER O PEDIDO. Você é o assistente de um construtor de sites (como a Lovable). Antes de mexer em qualquer coisa,
+entenda exatamente o que o dono quer, como um designer experiente entenderia.
+
+NEGÓCIO: "$nome"
+$dados
+
+RAIO-X DO SITE ATUAL:
+$resumo
+$hist$el$ref
+
+PEDIDO AGORA: "$instrucao"
+
+$glossario
+
+Classifique e planeje. Regras:
+- Pedidos de estilo/visual/"modelo de"/"igual a"/"parecido com" = mudança de VISUAL; o conteúdo e o negócio ficam.
+- Interprete referências a mensagens anteriores ("volta como estava", "a cor de antes", "isso aí") usando a conversa.
+- Só pergunte (tipo "pergunta") quando houver duas leituras realmente diferentes e plausíveis; dê 2 a 4 opções curtas
+  e clicáveis. Na dúvida entre perguntar e fazer o mais provável, FAÇA o mais provável e diga o que entendeu.
+- Se for só uma pergunta/conversa ("o que você acha?", "por que...?"), responda em "resposta" com tipo "conversa".
+- "estrategia": "editar" quando a mudança é localizada (um texto, uma cor, uma seção, um botão, adicionar/remover um
+  bloco); "reescrever" quando muda o visual/layout do site inteiro.
+
+Responda APENAS com JSON:
+{"tipo":"visual_global|visual_local|texto|adicionar|remover|corrigir|conversa|pergunta",
+"entendi":"1 a 2 frases em 1ª pessoa dizendo o que você vai fazer, ex.: Vou deixar o site com cara de landing page de SaaS, mantendo a barbearia, os serviços e o agendamento.",
+"alteracoes":["lista curta do que vai mudar"],
+"preservar":["o que NÃO vai mudar"],
+"estrategia":"editar|reescrever",
+"brief_design":"se for visual: instruções concretas de design (layout, cores, fontes, componentes) para o desenvolvedor",
+"pergunta":"", "opcoes":[], "resposta":"",
+"proximos":["3 sugestões curtas do que o dono pode pedir em seguida"]}
+PROMPT;
+    $r = chamar_ia_json($prompt, 1800, 60, 0.4, ['esforco' => 'low']);
+    if (!$r['ok']) return $r;
+    $d = $r['dados'];
+    $tipos = ['visual_global', 'visual_local', 'texto', 'adicionar', 'remover', 'corrigir', 'conversa', 'pergunta'];
+    $d['tipo'] = in_array($d['tipo'] ?? '', $tipos, true) ? $d['tipo'] : 'visual_local';
+    $d['estrategia'] = ($d['estrategia'] ?? '') === 'reescrever' || $d['tipo'] === 'visual_global' ? 'reescrever' : 'editar';
+    if ($elemento && $d['tipo'] === 'visual_global') { $d['tipo'] = 'visual_local'; $d['estrategia'] = 'editar'; }
+    if ($d['tipo'] === 'pergunta' && count((array)($d['opcoes'] ?? [])) < 2) $d['tipo'] = 'visual_local'; // pergunta sem opções: faz o mais provável
+    foreach (['alteracoes', 'preservar', 'opcoes', 'proximos'] as $k) $d[$k] = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 160), (array)($d[$k] ?? []))));
+    foreach (['entendi', 'brief_design', 'pergunta', 'resposta'] as $k) $d[$k] = trim((string)($d[$k] ?? ''));
+    return ['ok' => true, 'entendimento' => $d];
+}
+
+function ia_texto_elemento($el) {
+    $el = (array)$el;
+    return 'Tag: <' . preg_replace('/[^a-z0-9]/i', '', (string)($el['tag'] ?? '')) . '>'
+         . (!empty($el['classes']) ? ' classes: ' . mb_substr((string)$el['classes'], 0, 120) : '')
+         . (!empty($el['id']) ? ' id: ' . mb_substr((string)$el['id'], 0, 60) : '')
+         . (!empty($el['secao']) ? ' dentro da seção: ' . mb_substr((string)$el['secao'], 0, 80) : '')
+         . "\nTexto: \"" . mb_substr((string)($el['texto'] ?? ''), 0, 200) . '"'
+         . (!empty($el['componente']) ? "\nATENÇÃO: é parte de um componente pronto do sistema ({$el['componente']}); o conteúdo dele vem do cadastro. Você só pode mudar a seção em volta (título, fundo, espaçamento), não o componente." : '')
+         . "\nHTML (como aparece no preview, pode diferir um pouco do código):\n" . mb_substr((string)($el['html'] ?? ''), 0, 1500);
+}
+
+// Aplica blocos BUSCAR/TROCAR no HTML. Aceita pequenas diferenças de espaços.
+function ia_aplicar_blocos($html, $texto) {
+    preg_match_all('/<{5,}\s*BUSCAR\s*\n(.*?)\n={5,}\s*\n(.*?)\n?>{5,}\s*(?:FIM|TROCAR)?/s', $texto, $m, PREG_SET_ORDER);
+    $aplicados = 0; $falhas = [];
+    foreach ($m as $b) {
+        [$_, $busca, $troca] = $b;
+        if (trim($busca) === '') { $falhas[] = '(vazio)'; continue; }
+        if (substr_count($html, $busca) >= 1) { $html = preg_replace('/' . preg_quote($busca, '/') . '/', str_replace(['\\', '$'], ['\\\\', '\\$'], $troca), $html, 1); $aplicados++; continue; }
+        // tolerância a espaços/quebras diferentes
+        $padrao = '/' . implode('\s+', array_map(fn($p) => preg_quote($p, '/'), preg_split('/\s+/', trim($busca)))) . '/s';
+        if (@preg_match($padrao, $html) === 1) { $html = preg_replace($padrao, str_replace(['\\', '$'], ['\\\\', '\\$'], $troca), $html, 1); $aplicados++; continue; }
+        $falhas[] = mb_substr(trim($busca), 0, 80);
+    }
+    return [$html, $aplicados, $falhas, count($m)];
+}
+
+// ETAPA 2a — edição cirúrgica
+function ia_editar_por_blocos($ctx, $html, $instrucao, $ent, $elemento = null, $referencia = '') {
+    $modo = $ctx['atendimento']['modo'] ?? 'agendamento';
+    $estrategia = ia_estrategia_conversao($modo, !empty($ctx['whatsapp']));
+    $plano = '- ' . implode("\n- ", $ent['alteracoes'] ?: [$instrucao]);
+    $manter = $ent['preservar'] ? '- ' . implode("\n- ", $ent['preservar']) : '- todo o resto';
+    $el = $elemento ? "\nELEMENTO SELECIONADO (mude só ele e o que for necessário para ele funcionar):\n" . ia_texto_elemento($elemento) : '';
+    $ref = $referencia !== '' ? "\nREFERÊNCIA DE ESTILO:\n" . mb_substr($referencia, 0, 5000) : '';
+    $dados = ia_contexto_texto($ctx);
+    $prompt = <<<PROMPT
+BLOCOS DE EDIÇÃO. Você é o desenvolvedor que mantém o site abaixo. Faça a alteração com o MÍNIMO de mudanças, como um
+editor de código: devolva só os trechos que mudam, no formato exato abaixo (pode repetir quantos blocos precisar):
+
+<<<<<<< BUSCAR
+trecho copiado EXATAMENTE do HTML atual (curto, mas único no arquivo)
+=======
+trecho novo
+>>>>>>> FIM
+
+Depois dos blocos, escreva uma linha: RESUMO: o que você mudou, em 1 frase para o dono.
+
+PEDIDO DO DONO: "$instrucao"
+O QUE FOI COMBINADO FAZER:
+$plano
+O QUE NÃO PODE MUDAR:
+$manter$el$ref
+{$ent['brief_design']}
+
+Regras: não toque nos marcadores {{...}} a não ser que o pedido seja sobre eles; mantenha o HTML válido; para mudar cor
+ou fonte do site, prefira trocar as variáveis CSS; textos em português do Brasil e coerentes com o negócio; não invente
+preços, números ou depoimentos. Forma de atendimento: "$modo". $estrategia
+
+DADOS REAIS DO NEGÓCIO (consulta):
+$dados
+
+HTML ATUAL:
+$html
+PROMPT;
+    $r = chamar_ia($prompt, 12000, 150, 0.3, null, ['esforco' => 'low']);
+    if (!$r['ok']) return $r;
+    [$novo, $aplicados, $falhas, $total] = ia_aplicar_blocos($html, $r['texto']);
+    if ($total === 0 || $aplicados === 0 || $falhas) return ['ok' => false, 'erro' => 'blocos', 'falhas' => $falhas];
+    $resumo = preg_match('/RESUMO:\s*(.+)/u', $r['texto'], $m) ? trim($m[1]) : '';
+    if ($novo === $html) return ['ok' => false, 'erro' => 'blocos'];
+    return ['ok' => true, 'html' => ia_pos_processar_html($novo, IA_MARCADORES_OBRIGATORIOS), 'resumo' => $resumo, 'metodo' => 'edicao'];
+}
+
+// Orquestra: edição cirúrgica quando dá, reescrita quando precisa; confere se o negócio continuou o mesmo
+function ia_editar_site($ctx, $html, $instrucao, $ent, $elemento = null, $referencia = '') {
+    $r = null;
+    if ($ent['estrategia'] === 'editar') {
+        $r = ia_editar_por_blocos($ctx, $html, $instrucao, $ent, $elemento, $referencia);
+        if (!$r['ok'] && ($r['erro'] ?? '') !== 'blocos') return $r;
+    }
+    if (!$r || !$r['ok']) {
+        $r = ia_refinar_html_site($ctx, $html, $instrucao, $ent, $elemento, $referencia);
+        if (!$r['ok']) return $r;
+        $r['metodo'] = 'reescrita';
+    }
+    // O nome do negócio sumiu sem o dono pedir? Isso é sinal de que a IA "trocou de negócio": refaz com aviso forte.
+    $nome = trim((string)($ctx['nome'] ?? ''));
+    $trocaNome = preg_match('/\b(nome|chamar|renomear)\b/iu', $instrucao);
+    if ($nome !== '' && mb_stripos(strip_tags($html), $nome) !== false && mb_stripos(strip_tags($r['html']), $nome) === false && !$trocaNome) {
+        $ent['preservar'][] = "o nome \"$nome\" e o que o negócio vende — o site continua sendo de \"$nome\"";
+        $r2 = ia_refinar_html_site($ctx, $html, $instrucao, $ent, $elemento, $referencia);
+        if ($r2['ok'] && mb_stripos(strip_tags($r2['html']), $nome) !== false) { $r = $r2; $r['metodo'] = 'reescrita'; }
+    }
+    return $r;
 }
