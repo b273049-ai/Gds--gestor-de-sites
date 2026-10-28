@@ -13,6 +13,10 @@
 // Integrações suportadas (o admin escolhe em Configurações):
 //   evolution → Evolution API (gratuita, você hospeda; conecta por QR code)
 //   zapi      → Z-API (paga, brasileira)
+//   wppconnect→ WPPConnect Server (grátis, código aberto; conecta por QR code)
+//   ultramsg  → UltraMsg (paga, simples)
+//   cloud     → WhatsApp Cloud API OFICIAL da Meta (sem risco de bloqueio; usa
+//               modelo de mensagem aprovado quando o cliente não falou nas últimas 24h)
 //   webhook   → manda um POST JSON para uma URL (n8n, Make, outro gateway)
 // ============================================================
 
@@ -124,6 +128,8 @@ function wa_api() {
         'plat_token' => get_config('wa_plataforma_token', ''),
         'plat_ativo' => get_config('wa_plataforma_ativo', '0') === '1',
         'empresas_conectar' => get_config('wa_empresas_conectar', '1') === '1',
+        'cloud_modelo' => get_config('wa_cloud_modelo', ''),          // nome do modelo aprovado na Meta (ex.: aviso_cliente)
+        'cloud_idioma' => get_config('wa_cloud_idioma', 'pt_BR'),
     ];
 }
 
@@ -131,6 +137,9 @@ function wa_api_configurada() {
     $a = wa_api();
     if ($a['tipo'] === 'evolution') return $a['url'] !== '' && $a['chave'] !== '';
     if ($a['tipo'] === 'zapi') return true;
+    if ($a['tipo'] === 'wppconnect') return $a['url'] !== '' && $a['chave'] !== '';
+    if ($a['tipo'] === 'ultramsg') return true;
+    if ($a['tipo'] === 'cloud') return $a['plat_instancia'] !== '' && $a['plat_token'] !== '';
     if ($a['tipo'] === 'webhook') return $a['url'] !== '';
     return false;
 }
@@ -138,7 +147,7 @@ function wa_api_configurada() {
 // A empresa pode conectar o próprio número por QR code?
 function wa_pode_conectar_proprio() {
     $a = wa_api();
-    return $a['empresas_conectar'] && in_array($a['tipo'], ['evolution', 'zapi'], true) && wa_api_configurada();
+    return $a['empresas_conectar'] && in_array($a['tipo'], ['evolution', 'zapi', 'wppconnect', 'ultramsg'], true) && wa_api_configurada();
 }
 
 function wa_plataforma_disponivel() {
@@ -187,6 +196,50 @@ function wa_http($metodo, $url, $corpo = null, $cabecalhos = [], $timeout = 12) 
     return ['ok' => $ok, 'status' => $code, 'erro' => $erro, 'dados' => $dados, 'bruto' => $resp];
 }
 
+// WPPConnect: cada sessão tem um token gerado com a chave secreta do servidor (guardado em cache)
+function wa_wpp_token($sessao, $renovar = false) {
+    $a = wa_api();
+    $chave = 'wa_wpp_token_' . md5($sessao);
+    if (!$renovar && ($t = get_config($chave, '')) !== '') return $t;
+    $r = wa_http('POST', $a['url'] . '/api/' . rawurlencode($sessao) . '/' . rawurlencode($a['chave']) . '/generate-token', []);
+    $t = $r['dados']['token'] ?? '';
+    if ($t !== '') set_config($chave, $t);
+    return $t;
+}
+function wa_wpp($metodo, $sessao, $rota, $corpo = null) {
+    $a = wa_api();
+    $req = fn($tok) => wa_http($metodo, $a['url'] . '/api/' . rawurlencode($sessao) . '/' . $rota, $corpo, ['Authorization: Bearer ' . $tok], 25);
+    $r = $req(wa_wpp_token($sessao));
+    if ($r['status'] === 401) $r = $req(wa_wpp_token($sessao, true)); // token velho: gera outro e tenta de novo
+    return $r;
+}
+
+function wa_ultramsg($metodo, $instancia, $token, $rota, $campos = []) {
+    $url = (getenv('GDS_ULTRAMSG_BASE_URL') ?: 'https://api.ultramsg.com') . '/' . rawurlencode($instancia) . '/' . $rota;
+    if ($metodo === 'GET') return wa_http('GET', $url . '?' . http_build_query(['token' => $token] + $campos));
+    return wa_http('POST', $url, ['token' => $token] + $campos);
+}
+
+// WhatsApp Cloud API oficial. Texto livre só vale até 24h depois da última mensagem do cliente;
+// fora disso a Meta exige um MODELO aprovado — mandamos o texto como parâmetro do modelo.
+function wa_cloud_enviar($rem, $numero, $texto, $nomeEmpresa = '') {
+    $a = wa_api();
+    $url = (getenv('GDS_WA_CLOUD_BASE_URL') ?: 'https://graph.facebook.com') . '/v21.0/' . rawurlencode($rem['instancia']) . '/messages';
+    $cab = ['Authorization: Bearer ' . $rem['token']];
+    $r = wa_http('POST', $url, ['messaging_product' => 'whatsapp', 'to' => $numero, 'type' => 'text', 'text' => ['body' => $texto, 'preview_url' => true]], $cab);
+    $codigo = (int)($r['dados']['error']['code'] ?? 0);
+    if (!$r['ok'] && $codigo === 131047 && $a['cloud_modelo'] !== '') {
+        // Modelo com 2 variáveis no corpo: {{1}} = nome do negócio, {{2}} = mensagem (sem quebras de linha, até 1000 caracteres)
+        $plano = mb_substr(trim(preg_replace('/\s*\n+\s*/', ' · ', str_replace('*', '', $texto))), 0, 1000);
+        $r = wa_http('POST', $url, ['messaging_product' => 'whatsapp', 'to' => $numero, 'type' => 'template', 'template' => [
+            'name' => $a['cloud_modelo'], 'language' => ['code' => $a['cloud_idioma'] ?: 'pt_BR'],
+            'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => $nomeEmpresa ?: 'nosso atendimento'], ['type' => 'text', 'text' => $plano]]]],
+        ]], $cab);
+    }
+    if (!$r['ok'] && isset($r['dados']['error']['message'])) $r['erro'] = 'Erro ' . ($r['dados']['error']['code'] ?? $r['status']) . ': ' . $r['dados']['error']['message'];
+    return $r;
+}
+
 function wa_zapi_base($instancia, $token) {
     return 'https://api.z-api.io/instances/' . rawurlencode($instancia) . '/token/' . rawurlencode($token);
 }
@@ -204,6 +257,16 @@ function wa_enviar_agora($remetente, $numero, $texto, $extra = []) {
         case 'zapi':
             $r = wa_http('POST', wa_zapi_base($remetente['instancia'], $remetente['token']) . '/send-text', ['phone' => $numero, 'message' => $texto],
                 $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
+            break;
+        case 'wppconnect':
+            $r = wa_wpp('POST', $remetente['instancia'], 'send-message', ['phone' => $numero, 'message' => $texto, 'isGroup' => false]);
+            break;
+        case 'ultramsg':
+            $r = wa_ultramsg('POST', $remetente['instancia'], $remetente['token'], 'messages/chat', ['to' => '+' . $numero, 'body' => $texto]);
+            if ($r['ok'] && !empty($r['dados']['error'])) { $r['ok'] = false; $r['erro'] = is_string($r['dados']['error']) ? $r['dados']['error'] : json_encode($r['dados']['error']); }
+            break;
+        case 'cloud':
+            $r = wa_cloud_enviar($remetente, $numero, $texto, $extra['empresa_nome'] ?? '');
             break;
         case 'webhook':
             $r = wa_http('POST', $a['url'], ['numero' => $numero, 'texto' => $texto, 'canal' => $remetente['canal'], 'instancia' => $remetente['instancia']] + $extra,
@@ -231,7 +294,7 @@ function wa_enfileirar($empresa, $telefone, $texto, $evento, $para = 'cliente', 
         return null;
     }
     if ($rem) {
-        $extra = ['empresa_id' => (int)$empresa['id'], 'evento' => $evento];
+        $extra = ['empresa_id' => (int)$empresa['id'], 'evento' => $evento, 'empresa_nome' => $empresa['nome'] ?? ''];
         if (!empty($GLOBALS['wa_adiar'])) $GLOBALS['wa_adiados'][] = [$id, $rem, $num, $texto, $extra];
         else wa_tentar_envio($id, $rem, $num, $texto, $extra);
     }
@@ -470,10 +533,15 @@ function wa_avisar_status_agendamento($empresa, $agId, $status) {
 function wa_conexao_criar($empresa) {
     global $pdo;
     $a = wa_api();
-    if ($a['tipo'] === 'zapi') {
-        // Na Z-API cada número é uma instância contratada: a empresa informa ID e token
-        if (empty($empresa['wa_instancia']) || empty($empresa['wa_instancia_token'])) return ['ok' => false, 'erro' => 'Informe o ID e o token da sua instância Z-API.'];
-        return ['ok' => true];
+    if ($a['tipo'] === 'wppconnect') {
+        $nome = $empresa['wa_instancia'] ?: 'gds-' . (int)$empresa['id'] . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
+        $pdo->prepare("UPDATE empresas SET wa_instancia=?, wa_status='aguardando' WHERE id=?")->execute([$nome, $empresa['id']]);
+        return wa_conexao_qr(array_merge($empresa, ['wa_instancia' => $nome]));
+    }
+    if ($a['tipo'] === 'zapi' || $a['tipo'] === 'ultramsg') {
+        // Na Z-API/UltraMsg cada número é uma instância contratada: a empresa informa ID e token
+        if (empty($empresa['wa_instancia']) || empty($empresa['wa_instancia_token'])) return ['ok' => false, 'erro' => 'Informe o ID e o token da sua instância.'];
+        return wa_conexao_qr($empresa);
     }
     if ($a['tipo'] !== 'evolution') return ['ok' => false, 'erro' => 'A conexão por QR code não está disponível nesta plataforma.'];
     $nome = $empresa['wa_instancia'] ?: 'gds-' . (int)$empresa['id'] . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
@@ -491,6 +559,19 @@ function wa_conexao_criar($empresa) {
 
 function wa_conexao_qr($empresa, $numeroPareamento = '') {
     $a = wa_api();
+    if ($a['tipo'] === 'wppconnect') {
+        $r = wa_wpp('POST', $empresa['wa_instancia'], 'start-session', ['waitQrCode' => true]);
+        if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro']];
+        $st = strtoupper((string)($r['dados']['status'] ?? ''));
+        $qr = $r['dados']['qrcode'] ?? null;
+        return ['ok' => true, 'qr' => $qr ? (str_starts_with($qr, 'data:') ? $qr : 'data:image/png;base64,' . $qr) : null, 'conectado' => in_array($st, ['CONNECTED', 'ISLOGGED'], true)];
+    }
+    if ($a['tipo'] === 'ultramsg') {
+        $r = wa_ultramsg('GET', $empresa['wa_instancia'], $empresa['wa_instancia_token'], 'instance/qrCode');
+        if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro']];
+        $v = $r['dados']['qrCode'] ?? '';
+        return ['ok' => true, 'qr' => $v ? (str_starts_with($v, 'data:') ? $v : 'data:image/png;base64,' . $v) : null];
+    }
     if ($a['tipo'] === 'zapi') {
         $r = wa_http('GET', wa_zapi_base($empresa['wa_instancia'], $empresa['wa_instancia_token']) . '/qr-code/image', null, $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
         if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro']];
@@ -513,6 +594,18 @@ function wa_conexao_estado($empresa) {
     if ($a['tipo'] === 'zapi') {
         $r = wa_http('GET', wa_zapi_base($empresa['wa_instancia'], $empresa['wa_instancia_token']) . '/status', null, $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
         $conectado = $r['ok'] && !empty($r['dados']['connected']);
+        $numero = '';
+    } elseif ($a['tipo'] === 'wppconnect') {
+        $r = wa_wpp('GET', $empresa['wa_instancia'], 'status-session');
+        $conectado = $r['ok'] && in_array(strtoupper((string)($r['dados']['status'] ?? '')), ['CONNECTED', 'ISLOGGED'], true);
+        $numero = '';
+        if ($conectado) {
+            $info = wa_wpp('GET', $empresa['wa_instancia'], 'host-device');
+            $numero = preg_replace('/\D/', '', (string)($info['dados']['response']['phoneNumber'] ?? ($info['dados']['response']['wid']['user'] ?? '')));
+        }
+    } elseif ($a['tipo'] === 'ultramsg') {
+        $r = wa_ultramsg('GET', $empresa['wa_instancia'], $empresa['wa_instancia_token'], 'instance/status');
+        $conectado = $r['ok'] && strtolower((string)($r['dados']['status']['accountStatus']['status'] ?? '')) === 'authenticated';
         $numero = '';
     } else {
         $r = wa_http('GET', $a['url'] . '/instance/connectionState/' . rawurlencode($empresa['wa_instancia']), null, ['apikey: ' . $a['chave']]);
@@ -540,6 +633,11 @@ function wa_conexao_desconectar($empresa) {
             wa_http('DELETE', $a['url'] . '/instance/logout/' . rawurlencode($empresa['wa_instancia']), null, ['apikey: ' . $a['chave']]);
             wa_http('DELETE', $a['url'] . '/instance/delete/' . rawurlencode($empresa['wa_instancia']), null, ['apikey: ' . $a['chave']]);
             $pdo->prepare("UPDATE empresas SET wa_instancia=NULL, wa_instancia_token=NULL WHERE id=?")->execute([$empresa['id']]);
+        } elseif ($a['tipo'] === 'wppconnect') {
+            wa_wpp('POST', $empresa['wa_instancia'], 'logout-session');
+            $pdo->prepare("UPDATE empresas SET wa_instancia=NULL WHERE id=?")->execute([$empresa['id']]);
+        } elseif ($a['tipo'] === 'ultramsg') {
+            wa_ultramsg('POST', $empresa['wa_instancia'], $empresa['wa_instancia_token'], 'instance/logout');
         } elseif ($a['tipo'] === 'zapi') {
             wa_http('GET', wa_zapi_base($empresa['wa_instancia'], $empresa['wa_instancia_token']) . '/disconnect', null, $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
         }

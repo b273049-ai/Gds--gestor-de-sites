@@ -5,7 +5,7 @@
 // de repetir). Assim ninguém precisa lembrar de colar SQL no Supabase
 // depois de atualizar os arquivos da plataforma.
 // ============================================================
-const GDS_SCHEMA_VERSAO = 16;
+const GDS_SCHEMA_VERSAO = 17;
 
 // versão => [arquivo, consulta que diz se ela já está aplicada]
 function gds_migracoes() {
@@ -17,6 +17,7 @@ function gds_migracoes() {
         14 => ['adicional_14_mais_segmentos.sql', $coluna('segmentos', 'grupo') . " AND EXISTS (SELECT 1 FROM segmentos WHERE slug='palestrante')"],
         15 => ['adicional_15_whatsapp_delivery_dominio.sql', "to_regclass('public.whatsapp_mensagens') IS NOT NULL AND " . $coluna('empresas', 'wa_modo') . " AND " . $coluna('pedidos', 'token') . " AND " . $coluna('empresas', 'dominio_status') . " AND " . $coluna('agendamentos', 'lembrete_enviado_em')],
         16 => ['adicional_16_modulos_design.sql', $coluna('empresas', 'modulos') . " AND " . $coluna('sites', 'estilo') . " AND to_regclass('public.marketing_posts') IS NOT NULL"],
+        17 => ['adicional_17_sites_painel.sql', $coluna('sites', 'animacoes') . " AND to_regclass('public.site_eventos') IS NOT NULL AND " . $coluna('empresas', 'bairros_entrega') . " AND " . $coluna('servicos', 'esgotado') . " AND " . $coluna('profissionais', 'comissao')],
     ];
 }
 

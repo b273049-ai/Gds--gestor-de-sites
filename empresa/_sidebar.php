@@ -8,6 +8,7 @@ $mods = modulos_atuais();
     <div class="sidebar-brand"><span class="brand-logo">G</span><div><strong>Meu Negócio</strong><small><?= e(atendimento_modos()[$mods['modo']]['nome'] ?? 'GDS') ?></small></div></div>
     <nav>
         <?= menu_item('/empresa/index.php', 'index.php', 'dashboard', 'Dashboard') ?>
+        <?= menu_item('/empresa/desempenho.php', 'desempenho.php', 'grafico', 'Desempenho') ?>
         <?php if ($estudioLiberado): ?><?= menu_item('/empresa/ia_estudio.php', 'ia_estudio.php', 'brilho', 'Estúdio IA', 'destaque') ?><?php else: ?><?= menu_item('/empresa/meu_site.php', 'meu_site.php', 'globo', 'Meu site') ?><?php endif; ?>
         <div class="sidebar-grupo">Atendimento</div>
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/agenda.php', 'agenda.php', 'calendario', 'Agenda') ?><?php endif; ?>

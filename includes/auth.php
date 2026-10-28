@@ -225,6 +225,7 @@ require_once __DIR__ . '/atendimento.php';
 require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/dominio.php';
 require_once __DIR__ . '/modulos.php';
+require_once __DIR__ . '/fotos.php';
 
 // Link wa.me a partir de um telefone brasileiro (acrescenta o 55 quando vier só DDD + número)
 function link_whatsapp($telefone, $mensagem = '') {

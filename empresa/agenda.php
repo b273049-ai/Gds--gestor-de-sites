@@ -78,6 +78,9 @@ elseif ($ver === 'semana') $where[] = "a.data_hora >= CURRENT_DATE AND a.data_ho
 elseif ($ver === 'passados') $where[] = 'a.data_hora < NOW()';
 elseif ($ver === 'proximos') $where[] = "a.data_hora >= NOW() - INTERVAL '2 hours'";
 if ($filtroProf) { $where[] = 'a.profissional_id = ?'; $params[] = $filtroProf; }
+// Grade do dia: uma coluna por profissional, horários em linha do tempo
+$diaGrade = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['dia'] ?? '') ? $_GET['dia'] : date('Y-m-d');
+if ($ver === 'grade') { $where = ['a.empresa_id = ?', 'a.data_hora::date = ?', "a.status <> 'cancelado'"]; $params = [$empresaId, $diaGrade]; }
 $ordem = $ver === 'passados' || $ver === 'todos' ? 'DESC' : 'ASC';
 $agendamentos = $pdo->prepare("
     SELECT a.*, c.nome AS cliente_nome, c.telefone, s.nome AS servico_nome, s.duracao_minutos, pr.nome AS profissional_nome
@@ -126,7 +129,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
     </details>
 
     <form class="toolbar" method="get">
-        <?php foreach (['proximos' => 'Próximos', 'hoje' => 'Hoje', 'semana' => '7 dias', 'passados' => 'Passados', 'todos' => 'Todos'] as $v => $l): ?>
+        <?php foreach (['grade' => '▦ Grade do dia', 'proximos' => 'Próximos', 'hoje' => 'Hoje', 'semana' => '7 dias', 'passados' => 'Passados', 'todos' => 'Todos'] as $v => $l): ?>
         <a class="btn btn-sm <?= $ver === $v ? '' : 'btn-ghost' ?>" href="?ver=<?= $v ?><?= $filtroProf ? '&profissional=' . $filtroProf : '' ?>"><?= $l ?></a>
         <?php endforeach; ?>
         <input type="date" name="data" value="<?= e($data) ?>" onchange="this.form.submit()" style="max-width:170px" aria-label="Ver um dia">
@@ -136,6 +139,54 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
         <input type="hidden" name="ver" value="<?= e($ver === 'data' ? 'todos' : $ver) ?>">
     </form>
 
+    <?php if ($ver === 'grade'):
+        $cfg = agenda_config($empresa);
+        $ini = (int)floor(agenda_hm_para_min($cfg['abertura']) / 60) * 60; $fim = (int)ceil(agenda_hm_para_min($cfg['fechamento']) / 60) * 60;
+        if ($fim <= $ini) { $ini = 480; $fim = 1140; }
+        $pxMin = 1.4; // 1 minuto = 1,4px
+        $colunas = $profissionais ?: [['id' => 0, 'nome' => 'Agenda']];
+        $porCol = [];
+        foreach ($agendamentos as $a) $porCol[$profissionais ? (int)$a['profissional_id'] : 0][] = $a;
+        $semProf = $profissionais ? ($porCol[0] ?? []) : [];
+        if ($semProf) $colunas[] = ['id' => 0, 'nome' => 'Sem profissional'];
+        $tsDia = strtotime($diaGrade); ?>
+    <div class="grade-nav">
+        <a class="btn btn-ghost btn-sm" href="?ver=grade&dia=<?= date('Y-m-d', strtotime('-1 day', $tsDia)) ?>">←</a>
+        <strong><?= $diasSemana[(int)date('w', $tsDia)] ?>, <?= date('d/m/Y', $tsDia) ?><?= $diaGrade === date('Y-m-d') ? ' · hoje' : '' ?></strong>
+        <a class="btn btn-ghost btn-sm" href="?ver=grade&dia=<?= date('Y-m-d', strtotime('+1 day', $tsDia)) ?>">→</a>
+        <?php if ($diaGrade !== date('Y-m-d')): ?><a class="btn btn-ghost btn-sm" href="?ver=grade">Hoje</a><?php endif; ?>
+        <span class="muted"><?= count($agendamentos) ?> horário(s) · clique num espaço vazio para marcar</span>
+    </div>
+    <div class="grade-dia" style="--colunas:<?= count($colunas) ?>">
+        <div class="grade-horas" style="height:<?= ($fim - $ini) * $pxMin ?>px"><?php for ($m = $ini; $m < $fim; $m += 60): ?><span style="top:<?= ($m - $ini) * $pxMin ?>px"><?= sprintf('%02d:00', $m / 60) ?></span><?php endfor; ?></div>
+        <?php foreach ($colunas as $col): ?>
+        <div class="grade-col">
+            <div class="grade-cab"><?= e($col['nome']) ?></div>
+            <div class="grade-corpo" style="height:<?= ($fim - $ini) * $pxMin ?>px">
+                <?php for ($m = $ini; $m < $fim; $m += 30): ?><a class="grade-vazio" style="top:<?= ($m - $ini) * $pxMin ?>px;height:<?= 30 * $pxMin ?>px" href="#novo" data-hora="<?= $diaGrade . 'T' . sprintf('%02d:%02d', intdiv($m, 60), $m % 60) ?>" data-prof="<?= (int)$col['id'] ?>" aria-label="Marcar às <?= sprintf('%02d:%02d', intdiv($m, 60), $m % 60) ?>"></a><?php endfor; ?>
+                <?php if ($diaGrade === date('Y-m-d')): $agora = (int)date('G') * 60 + (int)date('i'); if ($agora >= $ini && $agora <= $fim): ?><span class="grade-agora" style="top:<?= ($agora - $ini) * $pxMin ?>px"></span><?php endif; endif; ?>
+                <?php foreach ($porCol[(int)$col['id']] ?? [] as $a): $ts = strtotime($a['data_hora']); $mi = (int)date('G', $ts) * 60 + (int)date('i', $ts); $du = max(15, (int)($a['duracao_minutos'] ?: $cfg['intervalo'])); ?>
+                <div class="grade-ag st-<?= e($a['status']) ?>" style="top:<?= max(0, $mi - $ini) * $pxMin ?>px;height:<?= $du * $pxMin - 3 ?>px" title="<?= e(date('H:i', $ts) . ' · ' . ($a['cliente_nome'] ?? '') . ' · ' . ($a['servico_nome'] ?? '')) ?>">
+                    <strong><?= date('H:i', $ts) ?> <?= e(explode(' ', (string)($a['cliente_nome'] ?? '—'))[0]) ?></strong>
+                    <span><?= e($a['servico_nome'] ?? '') ?></span>
+                    <?php if ($a['telefone']): ?><a href="<?= e(link_whatsapp($a['telefone'])) ?>" target="_blank" rel="noopener" title="WhatsApp do cliente"><?= icone('chat', 12) ?></a><?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <script>
+    // Espaço vazio da grade: abre o "Novo agendamento" já com dia, hora e profissional
+    document.querySelectorAll('.grade-vazio').forEach(function (a) {
+        a.addEventListener('click', function () {
+            var box = document.getElementById('novo'); box.open = true;
+            box.querySelector('[name=data_hora]').value = a.dataset.hora;
+            var sel = box.querySelector('[name=profissional_id]'); if (sel && a.dataset.prof !== '0') sel.value = a.dataset.prof;
+        });
+    });
+    </script>
+    <?php else: ?>
     <div class="tabela-wrap"><table>
         <thead><tr><th>Quando</th><th>Cliente</th><th>Serviço</th><th>Profissional</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -164,6 +215,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
         <?php if (!$agendamentos): ?><tr class="vazio"><td colspan="6">Nenhum agendamento neste filtro.</td></tr><?php endif; ?>
         </tbody>
     </table></div>
+    <?php endif; ?>
 </main>
 </div>
 </body>

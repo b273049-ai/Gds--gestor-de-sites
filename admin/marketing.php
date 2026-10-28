@@ -44,11 +44,15 @@ OBSERVAÇÕES DO DONO: "$extra"
 
 Regras: português do Brasil, linguagem simples e direta, sem promessas exageradas ou números inventados (nada de
 "aumente 300%"). Use *asteriscos* em 1 a 3 palavras do título para destacá-las na arte. Título com no máximo 9 palavras.
-Escolha o "modelo" de arte que mais combina: impacto | lista | antes_depois | depoimento | oferta
+Escolha o "modelo" de arte que mais combina (VARIE — não use sempre o mesmo): impacto | lista | antes_depois |
+depoimento | oferta | foto_titulo (foto grande + título) | foto_split (foto + bloco de texto) | pergunta (gancho em
+forma de pergunta) | numero (um número/palavra gigante em "preco", ex.: "24h", "0 faltas", "1 min")
 (depoimento: deixe claro em "autor" que é um exemplo para trocar por um depoimento real).
+Em "cena_foto" descreva EM INGLÊS uma foto realista que combina com o post (pessoa real do público no ambiente do
+negócio, sem texto na imagem), e em "estilo" escolha: neon | editorial | bold | pop | minimal | luxo.
 
 Responda APENAS com JSON válido:
-{"modelo":"impacto","conteudo":{"selo":"até 5 palavras","titulo":"...","subtitulo":"até 18 palavras","itens":["até 6 itens curtos (lista)"],
+{"modelo":"impacto","estilo":"neon","cena_foto":"...","conteudo":{"selo":"até 5 palavras","titulo":"...","subtitulo":"até 18 palavras","itens":["até 6 itens curtos (lista)"],
 "antes":["3 itens"],"depois":["3 itens"],"citacao":"","autor":"","preco":"","cta":"até 4 palavras"},
 "legenda":"legenda pronta com gancho na 1ª linha, 3-6 linhas curtas, emojis com moderação e chamada para o direct/link",
 "hashtags":["8 a 15 hashtags relevantes, sem #"],
@@ -59,7 +63,8 @@ PROMPT;
             $r = chamar_ia_json($prompt, 2000, 60, 0.9, ['esforco' => 'low']);
             if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
             $d = $r['dados'];
-            if (!in_array($d['modelo'] ?? '', ['impacto', 'lista', 'antes_depois', 'depoimento', 'oferta'], true)) $d['modelo'] = 'impacto';
+            if (!in_array($d['modelo'] ?? '', ['impacto', 'lista', 'antes_depois', 'depoimento', 'oferta', 'foto_titulo', 'foto_split', 'pergunta', 'numero'], true)) $d['modelo'] = 'impacto';
+            if (!in_array($d['estilo'] ?? '', ['neon', 'editorial', 'bold', 'pop', 'minimal', 'luxo'], true)) $d['estilo'] = ['neon', 'editorial', 'bold', 'pop', 'minimal', 'luxo'][random_int(0, 5)];
             $pdo->prepare("INSERT INTO marketing_posts (rede, formato, tema, conteudo) VALUES (?,?,?,?)")
                 ->execute(['instagram/tiktok', $formato, mb_substr($obj, 0, 150), json_encode($d, JSON_UNESCAPED_UNICODE)]);
             responder_json(['ok' => true, 'post' => $d, 'formato' => $formato]);
@@ -73,6 +78,31 @@ PROMPT;
             $r = chamar_ia_json($prompt, 1500, 60, 0.9, ['esforco' => 'low']);
             if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
             responder_json(['ok' => true, 'dias' => array_slice((array)($r['dados']['dias'] ?? []), 0, 7)]);
+        case 'foto_ia':
+            // Foto exclusiva para a arte (gerada por IA e guardada em uploads/ia/marketing)
+            session_write_close();
+            if (!img_ia_disponivel()) responder_json(['ok' => false, 'erro' => 'Configure a geração de fotos em Configurações → Fotos exclusivas geradas por IA.']);
+            $cena = mb_substr(trim($_POST['cena'] ?? ''), 0, 300) ?: 'small business owner smiling while checking appointments on a smartphone in a modern local shop';
+            $fmt = ($_POST['formato'] ?? '') === 'story' ? '9:16' : (($_POST['formato'] ?? '') === 'quadrado' ? '1:1' : '4:5');
+            $r = img_ia_gerar(img_ia_prompt_foto($cena), $fmt, 'ia/marketing');
+            responder_json($r['ok'] ? ['ok' => true, 'url' => $r['url']] : ['ok' => false, 'erro' => $r['erro']]);
+        case 'foto_banco':
+            // Fotos profissionais (Pexels) baixadas para o servidor (a arte precisa da imagem no mesmo site para exportar)
+            session_write_close();
+            if (!fotos_configurado()) responder_json(['ok' => false, 'erro' => 'Cadastre a chave grátis do Pexels em Configurações para buscar fotos.']);
+            $termo = mb_substr(trim($_POST['termo'] ?? ''), 0, 80) ?: 'small business';
+            $termo = fotos_termo_segmento(mb_strtolower(preg_replace('/\s+/', '-', $termo)), $termo, $termo);
+            $pasta = img_ia_pasta('ia/marketing');
+            if (!$pasta) responder_json(['ok' => false, 'erro' => 'A pasta uploads/ não tem permissão de escrita no servidor.']);
+            $urls = [];
+            foreach (array_slice(fotos_buscar($termo, 6, ($_POST['formato'] ?? '') === 'story' ? 'portrait' : 'landscape'), 0, 6) as $i => $f) {
+                $ch = curl_init($f['medio']); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_FOLLOWLOCATION => true]);
+                $bytes = curl_exec($ch); $ok = curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200; curl_close($ch);
+                if (!$ok || !$bytes) continue;
+                $salvo = img_ia_salvar($bytes, $pasta . '/banco-' . substr(md5($f['medio']), 0, 12), 1600);
+                if ($salvo) $urls[] = ['url' => '/uploads/ia/marketing/' . basename($salvo), 'autor' => $f['autor']];
+            }
+            responder_json($urls ? ['ok' => true, 'fotos' => $urls] : ['ok' => false, 'erro' => 'Nenhuma foto encontrada para "' . $termo . '".']);
         case 'historico':
             $id = (int)($_POST['id'] ?? 0);
             $st = $pdo->prepare("SELECT * FROM marketing_posts WHERE id=?"); $st->execute([$id]); $p = $st->fetch();
@@ -91,7 +121,7 @@ $historico = $pdo->query("SELECT id, formato, tema, criado_em FROM marketing_pos
 <!DOCTYPE html>
 <html lang="pt-br">
 <head><?= painel_head('Marketing com IA - GDS Admin') ?>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Inter:wght@400;500;600;700;800&family=Bebas+Neue&family=Playfair+Display:wght@700;800&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Cormorant+Garamond:wght@600;700&display=swap">
 <style>
 .mkt-grade { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(300px, 460px); gap: 20px; align-items: start; }
 @media (max-width: 1050px) { .mkt-grade { grid-template-columns: 1fr; } }
@@ -105,6 +135,13 @@ $historico = $pdo->query("SELECT id, formato, tema, criado_em FROM marketing_pos
 .mkt-acoes .btn { margin: 0; }
 .mkt-semana td { vertical-align: top; }
 textarea.mkt-legenda { min-height: 160px; }
+.mkt-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-top: 10px; }
+.mkt-fotos button { padding: 0; border: 2px solid transparent; border-radius: 10px; overflow: hidden; aspect-ratio: 1; background: var(--bg); cursor: pointer; margin: 0; }
+.mkt-fotos button.ativo { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91,124,255,.25); }
+.mkt-fotos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-paletas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.mkt-paletas button { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--border); padding: 0; margin: 0; cursor: pointer; }
+.mkt-paletas button.ativo { border-color: #fff; box-shadow: 0 0 0 3px var(--primary); }
 </style>
 </head>
 <body>
@@ -142,7 +179,7 @@ textarea.mkt-legenda { min-height: 160px; }
             <h3>2. Ajuste a arte</h3>
             <label>Modelo</label>
             <div class="mkt-modelos" id="modelos">
-                <?php foreach (['impacto' => 'Impacto + celular', 'lista' => 'Lista', 'antes_depois' => 'Antes × Depois', 'depoimento' => 'Depoimento', 'oferta' => 'Oferta'] as $k => $v): ?>
+                <?php foreach (['foto_titulo' => '📷 Foto + título', 'foto_split' => '📷 Foto + bloco', 'pergunta' => '❓ Pergunta', 'numero' => '🔢 Número', 'impacto' => 'Impacto + celular', 'lista' => 'Lista', 'antes_depois' => 'Antes × Depois', 'depoimento' => 'Depoimento', 'oferta' => 'Oferta'] as $k => $v): ?>
                 <button type="button" class="btn btn-ghost btn-sm" data-modelo="<?= $k ?>"><?= $v ?></button><?php endforeach; ?>
             </div>
             <div class="form-row">
@@ -157,7 +194,26 @@ textarea.mkt-legenda { min-height: 160px; }
                 <div><label>Depois (um por linha)</label><textarea data-c="depois" rows="3"></textarea></div>
             </div>
             <div data-para="depoimento"><label>Depoimento</label><textarea data-c="citacao" rows="3"></textarea><label>Autor</label><input type="text" data-c="autor"></div>
-            <div data-para="oferta"><label>Preço / destaque no círculo</label><input type="text" data-c="preco" maxlength="20"></div>
+            <div data-para="oferta numero"><label>Preço / número em destaque</label><input type="text" data-c="preco" maxlength="20"></div>
+            <div class="form-row">
+                <div><label>Estilo visual</label><select id="estilo"><?php foreach (['neon' => 'Neon (moderno, brilho)', 'editorial' => 'Editorial (revista, serifado)', 'bold' => 'Bold (letras gigantes)', 'pop' => 'Pop (listras, energia)', 'minimal' => 'Minimal (limpo)', 'luxo' => 'Luxo (dourado, sofisticado)'] as $k => $v): ?><option value="<?= $k ?>"><?= $v ?></option><?php endforeach; ?></select></div>
+                <div><label>Paleta</label><div class="mkt-paletas" id="paletas"></div></div>
+            </div>
+            <div class="mkt-acoes"><button type="button" class="btn btn-ghost btn-sm" onclick="MKT.variar()">🎲 Variar visual (estilo, cores e foto)</button></div>
+        </section>
+
+        <section class="form-box largo">
+            <h3>Fotos da arte</h3>
+            <p class="dica">Fotos de verdade fazem o post parar o dedo. Gere uma exclusiva com IA, busque no banco de fotos ou use a sua.</p>
+            <label>Descreva a foto (ou deixe a IA sugerir ao gerar o post)</label>
+            <input type="text" id="cenaFoto" placeholder="Ex: barbeiro sorrindo mostrando o celular com a agenda, barbearia moderna">
+            <div class="mkt-acoes">
+                <button type="button" class="btn btn-sm" id="btnFotoIa" onclick="MKT.fotoIa()"><?= icone('brilho', 14) ?> Gerar foto com IA</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="MKT.fotoBanco()">🔎 Buscar no banco de fotos</button>
+                <label class="btn btn-ghost btn-sm" style="margin:0;cursor:pointer">⬆ Usar minha foto<input type="file" accept="image/*" multiple hidden onchange="MKT.minhaFoto(this)"></label>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="MKT.semFoto()">Sem foto</button>
+            </div>
+            <div class="mkt-fotos" id="fotos"></div>
         </section>
 
         <section class="form-box largo">
@@ -206,21 +262,22 @@ textarea.mkt-legenda { min-height: 160px; }
         <canvas id="tela" width="1080" height="1350" aria-label="Prévia da arte"></canvas>
         <div class="mkt-acoes">
             <button type="button" class="btn" onclick="MKT.baixarPng()"><?= icone('download', 16) ?> Baixar imagem</button>
+            <button type="button" class="btn btn-ghost" onclick="MKT.carrossel()">🗂 Baixar carrossel</button>
             <button type="button" class="btn btn-ghost" id="btnVideo" onclick="MKT.video()"><?= icone('celular', 16) ?> Gerar vídeo (Reels/TikTok)</button>
         </div>
-        <p class="dica" id="statusVideo">O vídeo usa o roteiro: cada cena vira uma tela animada (9:16). Grave no Chrome do computador.</p>
+        <p class="dica" id="statusVideo">O vídeo usa o roteiro: cada cena vira uma tela animada (9:16) com as suas fotos em movimento e texto entrando palavra por palavra. Grave no Chrome do computador.</p>
     </div>
     </div>
 </main>
 </div>
 <div id="toasts"></div>
-<script src="/assets/js/gds-criativos.js?v=1"></script>
+<script src="/assets/js/gds-criativos.js?v=2"></script>
 <script>
 const MKT = (() => {
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
     const $ = (id) => document.getElementById(id);
     const MARCA = <?= json_encode($marca, JSON_UNESCAPED_UNICODE) ?>;
-    let modelo = 'impacto';
+    let modelo = 'foto_titulo', estilo = 'neon', paleta = null, fotos = [], fotoAtual = null;
     let conteudo = { selo: 'Sites para negócios locais', titulo: 'Seu cliente procura no Google. *Ele te acha?*', subtitulo: 'Site profissional com agendamento e WhatsApp automático.', cta: 'Quero meu site',
         itens: ['Agendamento online 24h', 'Confirmação automática no WhatsApp', 'Orçamento com valor pelo WhatsApp', 'Domínio próprio'], antes: ['Responde WhatsApp o dia todo', 'Cliente esquece o horário', 'Perde orçamento'], depois: ['Cliente agenda sozinho', 'Lembrete automático', 'Orçamento em minutos'],
         citacao: '', autor: '', preco: '' };
@@ -231,12 +288,63 @@ const MKT = (() => {
         catch (e) { return { ok: false, erro: 'Falha de conexão.' }; }
     }
     function toast(msg, tipo) { const t = document.createElement('div'); t.className = 'toast toast-' + (tipo || 'info'); t.textContent = msg; $('toasts').appendChild(t); setTimeout(() => t.remove(), 5000); }
-    function opcoes() { return { modelo, formato: $('formato').value, cor: MARCA.cor, cor2: MARCA.cor2, marca: MARCA.marca, arroba: MARCA.arroba, site: MARCA.site, escuro: MARCA.escuro }; }
+    function opcoes() {
+        const p = paleta || { cor: MARCA.cor, cor2: MARCA.cor2, escuro: MARCA.escuro };
+        return { modelo, estilo, formato: $('formato').value, cor: p.cor, cor2: p.cor2, escuro: p.escuro, marca: MARCA.marca, arroba: MARCA.arroba, site: MARCA.site, foto: fotoAtual ? fotoAtual.img : null };
+    }
+    // ---------- paletas e estilo ----------
+    function montarPaletas() {
+        const box = $('paletas'); box.innerHTML = '';
+        [{ nome: 'Minha marca', cor: MARCA.cor, cor2: MARCA.cor2, escuro: MARCA.escuro }].concat(GDSCriativos.paletas).forEach((p, i) => {
+            const b = document.createElement('button'); b.type = 'button'; b.title = p.nome;
+            b.style.background = 'linear-gradient(135deg,' + p.cor + ' 0 50%,' + (p.escuro ? '#0b0b10' : p.cor2) + ' 50% 100%)';
+            b.classList.toggle('ativo', i === 0 ? !paleta : paleta && paleta.nome === p.nome);
+            b.addEventListener('click', () => { paleta = i === 0 ? null : p; montarPaletas(); desenhar(); });
+            box.appendChild(b);
+        });
+    }
+    $('estilo').addEventListener('change', () => { estilo = $('estilo').value; desenhar(); });
+    function variar() {
+        const ests = Object.keys(GDSCriativos.estilos), pals = GDSCriativos.paletas;
+        estilo = ests[Math.floor(Math.random() * ests.length)]; $('estilo').value = estilo;
+        paleta = pals[Math.floor(Math.random() * pals.length)];
+        if (fotos.length) fotoAtual = fotos[Math.floor(Math.random() * fotos.length)];
+        const comFoto = ['foto_titulo', 'foto_split', 'pergunta', 'numero', 'impacto', 'lista'];
+        if (fotoAtual && !['antes_depois', 'depoimento', 'oferta'].includes(modelo)) modelo = comFoto[Math.floor(Math.random() * comFoto.length)];
+        montarPaletas(); montarFotos(); preencher();
+    }
+    // ---------- fotos ----------
+    function carregar(url) { return new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => erro(new Error('Não carregou a foto.')); i.src = url; }); }
+    async function addFoto(url, selecionar) {
+        try { const img = await carregar(url); const f = { url, img }; fotos.unshift(f); fotos = fotos.slice(0, 18); if (selecionar || !fotoAtual) fotoAtual = f; montarFotos(); desenhar(); }
+        catch (e) { toast(e.message, 'erro'); }
+    }
+    function montarFotos() {
+        const box = $('fotos'); box.innerHTML = '';
+        fotos.forEach(f => { const b = document.createElement('button'); b.type = 'button'; b.className = f === fotoAtual ? 'ativo' : ''; b.innerHTML = '<img alt="">'; b.querySelector('img').src = f.url;
+            b.addEventListener('click', () => { fotoAtual = f; if (!['foto_titulo', 'foto_split', 'pergunta', 'slide', 'numero'].includes(modelo)) modelo = 'foto_titulo'; montarFotos(); preencher(); }); box.appendChild(b); });
+    }
+    async function fotoIa() {
+        const b = $('btnFotoIa'); b.disabled = true; const t = b.innerHTML; b.textContent = 'Gerando foto… (5 a 40s)';
+        const r = await api({ acao: 'foto_ia', cena: $('cenaFoto').value, formato: $('formato').value });
+        b.disabled = false; b.innerHTML = t;
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        await addFoto(r.url, true); if (!['foto_titulo', 'foto_split'].includes(modelo)) { modelo = 'foto_titulo'; preencher(); }
+    }
+    async function fotoBanco() {
+        toast('Buscando fotos…');
+        const r = await api({ acao: 'foto_banco', termo: $('publico').value || $('cenaFoto').value || 'small business', formato: $('formato').value });
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        for (const f of r.fotos.reverse()) await addFoto(f.url, false);
+        toast(r.fotos.length + ' fotos adicionadas. Clique numa para usar.', 'sucesso');
+    }
+    function minhaFoto(input) { [...input.files].slice(0, 6).forEach(f => { const rd = new FileReader(); rd.onload = () => addFoto(rd.result, true); rd.readAsDataURL(f); }); input.value = ''; }
+    function semFoto() { fotoAtual = null; if (['foto_titulo', 'foto_split'].includes(modelo)) modelo = 'impacto'; montarFotos(); preencher(); }
     function desenhar() { GDSCriativos.desenhar($('tela'), conteudo, opcoes()); }
     function preencher() {
         document.querySelectorAll('[data-c]').forEach(el => { const v = conteudo[el.dataset.c]; el.value = Array.isArray(v) ? v.join('\n') : (v || ''); });
         document.querySelectorAll('[data-modelo]').forEach(b => b.classList.toggle('btn-ghost', b.dataset.modelo !== modelo));
-        document.querySelectorAll('[data-para]').forEach(el => el.hidden = el.dataset.para !== modelo);
+        document.querySelectorAll('[data-para]').forEach(el => el.hidden = !el.dataset.para.split(' ').includes(modelo));
         desenhar();
     }
     document.querySelectorAll('[data-c]').forEach(el => el.addEventListener('input', () => {
@@ -248,6 +356,9 @@ const MKT = (() => {
 
     function mostrarPost(p) {
         modelo = p.modelo || 'impacto';
+        if (p.estilo && GDSCriativos.estilos[p.estilo]) { estilo = p.estilo; $('estilo').value = estilo; }
+        if (p.cena_foto) $('cenaFoto').value = p.cena_foto;
+        if (!fotoAtual && ['foto_titulo', 'foto_split'].includes(modelo)) toast('Esse post pede uma foto: clique em "Gerar foto com IA" ou busque no banco.', 'info');
         conteudo = Object.assign(conteudo, p.conteudo || {});
         $('legenda').value = p.legenda || '';
         $('hashtags').value = (p.hashtags || []).map(h => '#' + String(h).replace(/^#/, '').replace(/\s+/g, '')).join(' ');
@@ -287,14 +398,35 @@ const MKT = (() => {
     function baixar(blob, nome) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
     function nomeArquivo(ext) { return (MARCA.marca || 'post').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + modelo + '-' + $('formato').value + '.' + ext; }
     function baixarPng() { desenhar(); $('tela').toBlob(b => baixar(b, nomeArquivo('png')), 'image/png'); }
+    // Carrossel: capa (pergunta/foto) + 1 slide por item + slide final com o botão
+    async function carrossel() {
+        const itens = (conteudo.itens && conteudo.itens.length ? conteudo.itens : (conteudo.depois || [])).slice(0, 6);
+        if (!itens.length) { toast('Preencha os "Itens" (modelo Lista) para montar o carrossel.', 'erro'); return; }
+        const total = itens.length + 2, tela = document.createElement('canvas'), o = opcoes();
+        const salvar = (nome) => new Promise(ok => tela.toBlob(b => { baixar(b, nome); setTimeout(ok, 350); }, 'image/png'));
+        const base = (MARCA.marca || 'post').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-carrossel-';
+        GDSCriativos.desenhar(tela, Object.assign({}, conteudo, { cta: '' }), Object.assign({}, o, { modelo: fotoAtual ? 'foto_titulo' : 'pergunta' }));
+        await salvar(base + '01.png');
+        for (let i = 0; i < itens.length; i++) {
+            const f = fotos.length > 1 ? fotos[(i + 1) % fotos.length] : fotoAtual;
+            GDSCriativos.desenhar(tela, { numero: i + 1, total, titulo: itens[i], subtitulo: '' }, Object.assign({}, o, { modelo: 'slide', foto: f ? f.img : null }));
+            await salvar(base + String(i + 2).padStart(2, '0') + '.png');
+        }
+        GDSCriativos.desenhar(tela, conteudo, Object.assign({}, o, { modelo: conteudo.preco ? 'oferta' : 'impacto' }));
+        await salvar(base + String(total).padStart(2, '0') + '.png');
+        toast(total + ' imagens do carrossel baixadas — poste na ordem.', 'sucesso');
+    }
     async function video() {
-        const cenas = roteiro.length ? roteiro.slice(0, 6).map((c, i, arr) => ({
-            modelo: i === 0 ? 'impacto' : (i === arr.length - 1 ? (conteudo.preco ? 'oferta' : 'impacto') : 'lista'),
-            segundos: 3,
-            conteudo: i === 0 ? Object.assign({}, conteudo, { titulo: c.texto_tela || conteudo.titulo, cta: '' })
-                    : (i === arr.length - 1 ? Object.assign({}, conteudo, { titulo: c.texto_tela || conteudo.titulo })
-                    : { titulo: c.texto_tela || '', itens: (conteudo.itens || []).slice(0, Math.min(4, i + 1)) })
-        })) : [{ modelo, segundos: 4, conteudo }, { modelo: 'lista', segundos: 4, conteudo }, { modelo: 'oferta', segundos: 3, conteudo }];
+        // Cenas: gancho em tipografia gigante → fotos em movimento com o texto do roteiro → oferta/CTA
+        const fotoDe = (i) => fotos.length ? fotos[i % fotos.length].img : null;
+        const passos = roteiro.length ? roteiro.slice(0, 6) : [{ texto_tela: conteudo.titulo }, { texto_tela: (conteudo.itens || [])[0] || conteudo.subtitulo }, { texto_tela: conteudo.cta }];
+        const cenas = passos.map((c, i, arr) => {
+            const texto = c.texto_tela || conteudo.titulo;
+            if (i === 0) return { modelo: 'kinetic', segundos: 2.6, conteudo: { titulo: texto }, foto: fotoDe(0) };
+            if (i === arr.length - 1) return { modelo: conteudo.preco ? 'oferta' : (fotos.length ? 'foto_titulo' : 'impacto'), segundos: 3.4, conteudo: Object.assign({}, conteudo, { titulo: texto }), foto: fotoDe(i) };
+            if (fotos.length) return { modelo: i % 2 ? 'foto_titulo' : 'foto_split', segundos: 3, conteudo: { titulo: texto, subtitulo: '' }, foto: fotoDe(i) };
+            return { modelo: i % 2 ? 'lista' : 'numero', segundos: 3, conteudo: { titulo: texto, itens: (conteudo.itens || []).slice(0, Math.min(4, i + 1)), preco: conteudo.preco || '' } };
+        });
         $('btnVideo').disabled = true; $('statusVideo').textContent = 'Gravando o vídeo… (' + cenas.reduce((s, c) => s + c.segundos, 0) + 's)';
         try {
             const blob = await GDSCriativos.gravarVideo($('tela'), cenas, Object.assign(opcoes(), { formato: 'story' }));
@@ -312,9 +444,10 @@ const MKT = (() => {
         if (r.ok) { Object.assign(MARCA, { marca: dados.mkt_marca, arroba: dados.mkt_arroba, site: dados.mkt_site, cor: dados.mkt_cor, cor2: dados.mkt_cor2, escuro: dados.mkt_escuro === '1' }); desenhar(); toast('Marca salva!', 'sucesso'); }
     }
     async function abrir(id) { const r = await api({ acao: 'historico', id }); if (r.ok) { $('formato').value = r.formato || 'feed'; mostrarPost(r.post); scrollTo({ top: 0, behavior: 'smooth' }); } }
+    montarPaletas();
     document.fonts.ready.then(preencher);
     preencher();
-    return { gerar, semana, baixarPng, video, copiar, salvarMarca, abrir };
+    return { gerar, semana, baixarPng, video, copiar, salvarMarca, abrir, variar, fotoIa, fotoBanco, minhaFoto, semFoto, carrossel };
 })();
 </script>
 </body>

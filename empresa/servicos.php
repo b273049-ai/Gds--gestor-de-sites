@@ -29,6 +29,11 @@ if (isset($_GET['ativar']) || isset($_GET['desativar'])) {
     $pdo->prepare("UPDATE servicos SET ativo=? WHERE id=? AND empresa_id=?")->execute([isset($_GET['ativar']) ? 'true' : 'false', (int)($_GET['ativar'] ?? $_GET['desativar']), $empresaId]);
     header('Location: servicos.php'); exit;
 }
+// Esgotado hoje (cardápio/produtos): continua no site, mas sem botão de pedir
+if (isset($_GET['esgotar']) || isset($_GET['repor'])) {
+    try { $pdo->prepare("UPDATE servicos SET esgotado=? WHERE id=? AND empresa_id=?")->execute([isset($_GET['esgotar']) ? 'true' : 'false', (int)($_GET['esgotar'] ?? $_GET['repor']), $empresaId]); } catch (PDOException $e) {}
+    header('Location: servicos.php'); exit;
+}
 if (isset($_GET['excluir'])) {
     $pdo->prepare("DELETE FROM servicos WHERE id=? AND empresa_id=?")->execute([(int)$_GET['excluir'], $empresaId]);
     flash('sucesso', 'Serviço excluído.');
@@ -81,9 +86,10 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
             <td><strong><?= e($s['nome']) ?></strong><?= pg_bool($s['destaque'] ?? false) ? ' <span class="pill pill-ok">destaque</span>' : '' ?><?= $s['categoria'] ? ' <span class="pill pill-neutro">' . e($s['categoria']) . '</span>' : '' ?><?php if ($s['descricao']): ?><span class="mini"><?= e(mb_strimwidth($s['descricao'], 0, 80, '…')) ?></span><?php endif; ?></td>
             <td><?= (float)$s['preco'] > 0 ? (pg_bool($s['preco_a_partir'] ?? false) ? 'a partir de ' : '') . 'R$ ' . number_format($s['preco'], 2, ',', '.') : 'Sob consulta' ?></td>
             <?php if ($comAgenda): ?><td><?= (int)$s['duracao_minutos'] ?> min</td><?php endif; ?>
-            <td><span class="badge badge-<?= $ativo ? 'ativo' : 'inativo' ?>"><?= $ativo ? 'no site' : 'oculto' ?></span></td>
+            <td><span class="badge badge-<?= $ativo ? 'ativo' : 'inativo' ?>"><?= $ativo ? 'no site' : 'oculto' ?></span><?= pg_bool($s['esgotado'] ?? false) ? ' <span class="pill pill-aviso">esgotado</span>' : '' ?></td>
             <td class="acoes">
                 <a class="btn btn-ghost btn-sm" href="?editar=<?= $s['id'] ?>#form"><?= icone('lapis', 14) ?></a>
+                <?php if ($ehCatalogo && $ativo): $esg = pg_bool($s['esgotado'] ?? false); ?><a class="btn btn-sm <?= $esg ? '' : 'btn-ghost' ?>" href="?<?= $esg ? 'repor' : 'esgotar' ?>=<?= $s['id'] ?><?= csrf_qs() ?>" title="<?= $esg ? 'Voltar a vender' : 'Marcar como esgotado hoje' ?>"><?= $esg ? '✓ Repor' : 'Esgotou' ?></a><?php endif; ?>
                 <a class="btn btn-ghost btn-sm" href="?<?= $ativo ? 'desativar' : 'ativar' ?>=<?= $s['id'] ?><?= csrf_qs() ?>"><?= $ativo ? 'Ocultar' : 'Mostrar' ?></a>
                 <a class="btn btn-perigo btn-sm" href="?excluir=<?= $s['id'] ?><?= csrf_qs() ?>" onclick="return confirm('Excluir o serviço <?= e(addslashes($s['nome'])) ?>?<?= $s['usos'] ? ' Ele aparece em ' . (int)$s['usos'] . ' agendamento(s) — prefira Ocultar.' : '' ?>')"><?= icone('lixeira', 14) ?></a>
             </td>

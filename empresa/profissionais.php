@@ -24,6 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_profissional']
         $pdo->prepare("INSERT INTO profissionais (empresa_id, nome, especialidade, foto) VALUES (?,?,?,?)")->execute([$empresaId, $nome, trim($_POST['especialidade'] ?? ''), $foto ?: null]);
         flash('sucesso', 'Profissional cadastrado.');
     }
+    // Comissão (%): coluna nova, salva à parte para não travar se o banco ainda não tiver
+    $salvoId = $id ?: (int)$pdo->lastInsertId();
+    if ($nome !== '' && $salvoId) {
+        try { $pdo->prepare("UPDATE profissionais SET comissao=? WHERE id=? AND empresa_id=?")->execute([max(0, min(100, (float)str_replace(',', '.', $_POST['comissao'] ?? '0'))), $salvoId, $empresaId]); } catch (PDOException $e) {}
+    }
     header('Location: profissionais.php'); exit;
 }
 if (isset($_GET['desativar'])) {
@@ -58,6 +63,8 @@ foreach ($profissionais as $p) if ((int)$p['id'] === (int)($_GET['editar'] ?? 0)
             <div><label>Nome</label><input type="text" name="nome" required value="<?= e($editando['nome'] ?? '') ?>"></div>
             <div><label>Especialidade</label><input type="text" name="especialidade" placeholder="Ex: Barbeiro, Dentista…" value="<?= e($editando['especialidade'] ?? '') ?>"></div>
         </div>
+        <label>Comissão (%) <span class="muted">— opcional, para o relatório em Desempenho</span></label>
+        <input type="text" name="comissao" inputmode="decimal" placeholder="Ex: 40" style="max-width:140px" value="<?= isset($editando['comissao']) && (float)$editando['comissao'] > 0 ? e(rtrim(rtrim(number_format((float)$editando['comissao'], 2, ',', ''), '0'), ',')) : '' ?>">
         <label>Foto (URL da imagem, opcional)</label><input type="url" name="foto" placeholder="https://..." value="<?= e($editando['foto'] ?? '') ?>">
         <button type="submit" name="salvar_profissional" value="1" <?= !$editando && $limiteAtingido() ? 'disabled title="Limite do plano atingido"' : '' ?>><?= $editando ? 'Salvar alterações' : 'Adicionar' ?></button>
         <?php if ($editando): ?><a href="profissionais.php" class="btn btn-ghost" style="margin-top:18px">Cancelar</a><?php endif; ?>

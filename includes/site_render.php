@@ -15,7 +15,7 @@ require_once __DIR__ . '/site_template.php';
 const SITE_SQL_BASE = "
     SELECT e.*, s.titulo, s.subtitulo, s.sobre, s.publicado, s.cor_primaria, s.cor_secundaria,
            s.galeria_imagens, s.seo_titulo, s.seo_descricao, s.layout, s.secoes, s.banner_imagem,
-           s.html_gerado, s.ia_modo_total, s.ia_tema, s.estilo, s.fotos_banco,
+           s.html_gerado, s.ia_modo_total, s.ia_tema, s.estilo, s.fotos_banco, s.animacoes,
            seg.nome AS segmento_nome, e.segmento_descricao AS segmento_descricao_emp, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo,
            pl.permite_pix
     FROM empresas e
@@ -32,7 +32,7 @@ function site_buscar_empresa($where, $param) {
         $st->execute([$param]);
         return $st->fetch();
     } catch (PDOException $e) {
-        $legado = str_replace([', s.ia_tema, s.estilo, s.fotos_banco', ', e.segmento_descricao AS segmento_descricao_emp', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], [', NULL AS ia_tema, NULL AS estilo, NULL AS fotos_banco', '', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
+        $legado = str_replace([', s.ia_tema, s.estilo, s.fotos_banco, s.animacoes', ', e.segmento_descricao AS segmento_descricao_emp', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], [', NULL AS ia_tema, NULL AS estilo, NULL AS fotos_banco, NULL AS animacoes', '', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
         $st = $pdo->prepare($legado . " WHERE $where LIMIT 1");
         $st->execute([$param]);
         return $st->fetch();
@@ -388,6 +388,8 @@ function site_processar_post($empresa, $dados) {
 function site_pedido_online($empresa, $modo) {
     if ($modo !== 'catalogo') return false;
     $lig = fn($c) => !isset($empresa[$c]) || $empresa[$c] === null || pg_bool($empresa[$c]);
+    // Loja pausada no painel (ex.: cozinha lotada): o carrinho some e os itens viram "Pedir no WhatsApp"
+    if (pg_bool($empresa['loja_pausada'] ?? false)) return false;
     return $lig('pedido_online') && ($lig('aceita_entrega') || $lig('aceita_retirada'));
 }
 
@@ -410,13 +412,20 @@ function site_processar_pedido($empresa, $dados) {
     $itens = []; $subtotal = 0;
     foreach ((array)json_decode((string)($_POST['pd_itens'] ?? ''), true) as $it) {
         $id = (int)($it['id'] ?? 0); $qtd = max(0, min(99, (int)($it['qtd'] ?? 0)));
-        if ($qtd < 1 || !isset($porId[$id]) || (float)$porId[$id]['preco'] <= 0) continue;
+        if ($qtd < 1 || !isset($porId[$id]) || (float)$porId[$id]['preco'] <= 0 || pg_bool($porId[$id]['esgotado'] ?? false)) continue;
         $preco = (float)$porId[$id]['preco'];
         $itens[] = ['id' => $id, 'nome' => $porId[$id]['nome'], 'qtd' => $qtd, 'preco' => $preco];
         $subtotal += $preco * $qtd;
         if (count($itens) >= 50) break;
     }
     $taxa = $tipo === 'entrega' ? (float)($empresa['taxa_entrega'] ?? 0) : 0;
+    // Taxa por bairro: o bairro escolhido define a taxa (e entra no endereço)
+    $bairros = delivery_bairros($empresa);
+    $bairro = null;
+    if ($tipo === 'entrega' && $bairros) {
+        foreach ($bairros as $b) if ($b['bairro'] === ($_POST['pd_bairro'] ?? '')) $bairro = $b;
+        if ($bairro) { $taxa = $bairro['taxa']; if (mb_stripos($endereco, $bairro['bairro']) === false) $endereco = trim($endereco . ' — ' . $bairro['bairro']); }
+    }
     $total = round($subtotal + $taxa, 2);
     $minimo = (float)($empresa['pedido_minimo'] ?? 0);
     $erro = '';
@@ -424,6 +433,7 @@ function site_processar_pedido($empresa, $dados) {
     elseif ($nome === '' || strlen(preg_replace('/\D/', '', $tel)) < 10) $erro = 'Informe seu nome e WhatsApp (com DDD).';
     elseif ($tipo === 'entrega' && !$lig('aceita_entrega')) $erro = 'No momento só aceitamos retirada no local.';
     elseif ($tipo === 'retirada' && !$lig('aceita_retirada')) $erro = 'No momento só fazemos entrega.';
+    elseif ($tipo === 'entrega' && $bairros && !$bairro) $erro = 'Escolha o seu bairro para calcular a entrega.';
     elseif ($tipo === 'entrega' && mb_strlen($endereco) < 8) $erro = 'Informe o endereço completo para a entrega.';
     elseif ($minimo > 0 && $subtotal < $minimo) $erro = 'O pedido mínimo é R$ ' . number_format($minimo, 2, ',', '.') . '.';
     elseif ($troco !== null && $troco > 0 && $troco < $total) $erro = 'O troco precisa ser maior que o total do pedido.';
@@ -475,14 +485,14 @@ function valor_decimal_site($s) {
     return is_numeric($s) ? (float)$s : null;
 }
 
-function site_fragmentos_marcadores($empresa, $dados, $estado) {
+function site_fragmentos_marcadores($empresa, $dados, $estado, $extraServicos = []) {
     $html = (string)($empresa['html_gerado'] ?? '');
     $modoTemplate = !pg_bool($empresa['ia_modo_total'] ?? false) || $html === '';
     $modo = $dados['modo'];
     $temAgenda = $modoTemplate ? $modo === 'agendamento' : str_contains($html, '{{AGENDAMENTO}}');
     $temOrcamento = $modoTemplate ? $modo === 'orcamento' : str_contains($html, '{{ORCAMENTO}}');
     $optsServicos = ['modo' => $modo, 'tem_agendamento' => $temAgenda, 'tem_orcamento' => $temOrcamento, 'tem_contato' => true, 'whatsapp' => $empresa['whatsapp'],
-                     'carrinho' => site_pedido_online($empresa, $modo)];
+                     'carrinho' => site_pedido_online($empresa, $modo)] + $extraServicos;
     $info = atendimento_modos()[$modo];
     $linkWhats = so_digitos_frag($empresa['whatsapp'] ?? '') ? frag_link_whatsapp($empresa['whatsapp'], trim((string)($empresa['whatsapp_mensagem'] ?? '')) ?: 'Olá! Vim pelo site e gostaria de mais informações.') : '#gds-contato';
     $linkPrincipal = ['agendamento' => $temAgenda ? '#gds-agendamento' : $linkWhats, 'orcamento' => $temOrcamento ? '#gds-orcamento' : $linkWhats,
@@ -593,7 +603,7 @@ function site_render_ia($empresa, $dados, $estado, $preview = false) {
         $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], frag_carrinho($empresa, $estado['pedido'] ?? [])) . '</body>', $html, 1);
     }
     $extras = frag_css_apoio($dados['tema']) . site_json_ld($empresa, $dados);
-    if (!$preview) $extras .= site_script_analytics($dados['analytics_id']);
+    if (!$preview) $extras .= site_script_analytics($dados['analytics_id']) . site_script_eventos($empresa);
     if (stripos($html, '</head>') !== false) {
         $html = preg_replace('/<\/head>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], $extras) . '</head>', $html, 1);
     } else {

@@ -21,6 +21,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cliente'])) {
     }
     header('Location: clientes.php'); exit;
 }
+// Cartão fidelidade: a cada N atendimentos/pedidos concluídos, o cliente ganha um prêmio
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_fidelidade'])) {
+    try {
+        $pdo->prepare("UPDATE empresas SET fidelidade_meta=?, fidelidade_premio=? WHERE id=?")
+            ->execute([max(0, min(50, (int)($_POST['fidelidade_meta'] ?? 0))), mb_substr(trim($_POST['fidelidade_premio'] ?? ''), 0, 120) ?: null, $empresaId]);
+        flash('sucesso', 'Cartão fidelidade salvo.');
+    } catch (PDOException $e) { flash('erro', 'Atualize o banco (Admin → Diagnóstico) para usar esta função.'); }
+    header('Location: clientes.php'); exit;
+}
 if (isset($_GET['excluir'])) {
     $pdo->prepare("DELETE FROM clientes WHERE id=? AND empresa_id=?")->execute([(int)$_GET['excluir'], $empresaId]);
     flash('sucesso', 'Cliente excluído.');
@@ -41,10 +50,16 @@ if (isset($_GET['exportar'])) {
 }
 
 $busca = trim($_GET['q'] ?? '');
-$sql = "SELECT c.*, COUNT(a.id) AS visitas, MAX(a.data_hora) AS ultima
+$sumidos = isset($_GET['sumidos']);
+$emp = $pdo->prepare("SELECT * FROM empresas WHERE id=?"); $emp->execute([$empresaId]); $emp = $emp->fetch();
+$meta = (int)($emp['fidelidade_meta'] ?? 0);
+// Compras = atendimentos concluídos + pedidos concluídos (para o cartão fidelidade)
+$sql = "SELECT c.*, COUNT(a.id) AS visitas, GREATEST(MAX(a.data_hora), (SELECT MAX(p.criado_em) FROM pedidos p WHERE p.cliente_id=c.id AND p.status<>'cancelado')) AS ultima,
+            COUNT(a.id) FILTER (WHERE a.status='concluido') + (SELECT COUNT(*) FROM pedidos p WHERE p.cliente_id=c.id AND p.status='concluido') AS compras
         FROM clientes c LEFT JOIN agendamentos a ON a.cliente_id = c.id AND a.status <> 'cancelado'
         WHERE c.empresa_id=?" . ($busca !== '' ? " AND (c.nome ILIKE ? OR c.email ILIKE ? OR c.telefone ILIKE ?)" : '') . "
-        GROUP BY c.id ORDER BY c.nome LIMIT 500";
+        GROUP BY c.id" . ($sumidos ? " HAVING GREATEST(MAX(a.data_hora), (SELECT MAX(p.criado_em) FROM pedidos p WHERE p.cliente_id=c.id AND p.status<>'cancelado')) < NOW() - INTERVAL '45 days'" : '') . "
+        ORDER BY " . ($sumidos ? 'ultima' : 'c.nome') . " LIMIT 500";
 $st = $pdo->prepare($sql);
 $st->execute($busca !== '' ? [$empresaId, "%$busca%", "%$busca%", "%$busca%"] : [$empresaId]);
 $clientes = $st->fetchAll();
@@ -78,9 +93,24 @@ if (isset($_GET['editar'])) { $e = $pdo->prepare("SELECT * FROM clientes WHERE i
             <?php if ($editando): ?><a href="clientes.php" class="btn btn-ghost" style="margin-top:18px">Cancelar</a><?php endif; ?>
         </form>
     </details>
-    <form class="toolbar" method="get"><input type="search" name="q" placeholder="Buscar por nome, e-mail ou telefone…" value="<?= e($busca) ?>"><button class="btn btn-ghost">Buscar</button><?php if ($busca): ?><a class="link" href="clientes.php">limpar</a><?php endif; ?></form>
+    <details class="form-box" <?= $meta ? '' : '' ?>>
+        <summary>🎁 Cartão fidelidade <?= $meta ? '<span class="pill pill-ok">a cada ' . $meta . ' = ' . e($emp['fidelidade_premio'] ?: 'prêmio') . '</span>' : '<span class="muted">(desligado)</span>' ?></summary>
+        <form method="post">
+            <?= csrf_campo() ?>
+            <div class="form-row">
+                <div><label>A cada quantos atendimentos/pedidos?</label><input type="number" name="fidelidade_meta" min="0" max="50" value="<?= $meta ?: '' ?>" placeholder="Ex: 10 (0 = desligado)"></div>
+                <div><label>O cliente ganha</label><input type="text" name="fidelidade_premio" maxlength="120" value="<?= e($emp['fidelidade_premio'] ?? '') ?>" placeholder="Ex: 1 corte grátis"></div>
+            </div>
+            <p class="dica">Conta sozinho os atendimentos e pedidos marcados como concluídos. Quando o cliente completa, aparece 🎁 aqui com o botão para avisar no WhatsApp.</p>
+            <button type="submit" name="salvar_fidelidade" value="1">Salvar</button>
+        </form>
+    </details>
+    <form class="toolbar" method="get"><input type="search" name="q" placeholder="Buscar por nome, e-mail ou telefone…" value="<?= e($busca) ?>"><button class="btn btn-ghost">Buscar</button>
+        <a class="btn btn-sm <?= $sumidos ? '' : 'btn-ghost' ?>" href="?<?= $sumidos ? '' : 'sumidos=1' ?>" title="Não voltam há mais de 45 dias">😴 Sumidos</a>
+        <?php if ($busca || $sumidos): ?><a class="link" href="clientes.php">limpar</a><?php endif; ?></form>
+    <?php if ($sumidos): ?><p class="dica">Clientes que não voltam há mais de 45 dias. Um "sentimos sua falta" no WhatsApp traz muita gente de volta.</p><?php endif; ?>
     <div class="tabela-wrap"><table>
-        <thead><tr><th>Nome</th><th>Contato</th><th>Visitas</th><th>Última</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Contato</th><th>Visitas</th><th>Última</th><?php if ($meta): ?><th>Fidelidade</th><?php endif; ?><th></th></tr></thead>
         <tbody>
         <?php foreach ($clientes as $c): ?>
         <tr>
@@ -88,13 +118,18 @@ if (isset($_GET['editar'])) { $e = $pdo->prepare("SELECT * FROM clientes WHERE i
             <td><?= e($c['email']) ?><?php if ($c['telefone']): ?><span class="mini"><a class="link" target="_blank" href="<?= e(link_whatsapp($c['telefone'])) ?>"><?= e($c['telefone']) ?></a></span><?php endif; ?></td>
             <td><?= (int)$c['visitas'] ?></td>
             <td><?= $c['ultima'] ? date('d/m/Y', strtotime($c['ultima'])) : '—' ?></td>
+            <?php if ($meta): $n = (int)$c['compras']; $ganhou = $n > 0 && $n % $meta === 0; $prog = $ganhou ? $meta : $n % $meta; ?>
+            <td style="min-width:130px"><?php if ($ganhou): ?><span class="pill pill-ok">🎁 ganhou!</span><?php if ($c['telefone']): ?> <a class="link" target="_blank" href="<?= e(link_whatsapp($c['telefone'], 'Oi, ' . explode(' ', $c['nome'])[0] . '! 🎉 Você completou o cartão fidelidade da ' . $emp['nome'] . ' e ganhou: ' . ($emp['fidelidade_premio'] ?: 'um presente') . '. É só usar na próxima vez!')) ?>">avisar</a><?php endif; ?>
+                <?php else: ?><div class="progresso" title="<?= $prog ?> de <?= $meta ?>"><div style="width:<?= round($prog / $meta * 100) ?>%"></div></div><span class="mini"><?= $prog ?>/<?= $meta ?></span><?php endif; ?></td>
+            <?php endif; ?>
             <td class="acoes">
+                <?php if ($sumidos && $c['telefone']): ?><a class="btn btn-ghost btn-sm" target="_blank" href="<?= e(link_whatsapp($c['telefone'], 'Oi, ' . explode(' ', $c['nome'])[0] . '! Sentimos sua falta aqui na ' . $emp['nome'] . ' 💛 Que tal voltar essa semana? ' . 'É só escolher seu horário: ' . wa_url_publica($emp))) ?>"><?= icone('chat', 14) ?> Chamar de volta</a><?php endif; ?>
                 <a class="btn btn-ghost btn-sm" href="?editar=<?= $c['id'] ?>#form"><?= icone('lapis', 14) ?></a>
                 <a class="btn btn-perigo btn-sm" href="?excluir=<?= $c['id'] ?><?= csrf_qs() ?>" onclick="return confirm('Excluir este cliente? Os agendamentos dele continuam na agenda, sem o nome.')"><?= icone('lixeira', 14) ?></a>
             </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (!$clientes): ?><tr class="vazio"><td colspan="5"><?= $busca ? 'Nenhum cliente encontrado.' : 'Nenhum cliente ainda.' ?></td></tr><?php endif; ?>
+        <?php if (!$clientes): ?><tr class="vazio"><td colspan="6"><?= $busca || $sumidos ? 'Nenhum cliente encontrado.' : 'Nenhum cliente ainda.' ?></td></tr><?php endif; ?>
         </tbody>
     </table></div>
 </main>

@@ -337,3 +337,20 @@ html.gds-sem-rolagem { overflow: hidden; }
 .gds-c .gds-invalido { border-color: var(--gds-erro) !important; }
 .gds-c .gds-carrinho input, .gds-c .gds-carrinho select, .gds-c .gds-carrinho textarea { background: #fff; color: #16181d; }
 @media (prefers-reduced-motion: reduce) { .gds-c .gds-carrinho, .gds-c .gds-carrinho-barra.gds-pulo { animation: none; } }
+
+/* ---------- Serviços estilo "tabela de preços" (barbearia, salão) ---------- */
+.gds-c.gds-menu { display: grid; gap: 34px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); column-gap: 56px; }
+.gds-c .gds-menu-cat { font-size: .82rem; letter-spacing: .18em; text-transform: uppercase; color: var(--gds-accent); margin: 0 0 10px; font-weight: 700; }
+.gds-c .gds-menu-lista { list-style: none; margin: 0; padding: 0; }
+.gds-c .gds-menu-item { padding: 16px 0; border-bottom: 1px solid var(--gds-line); }
+.gds-c .gds-menu-linha { display: flex; align-items: baseline; gap: 10px; }
+.gds-c .gds-menu-nome { font-size: 1.12rem; font-weight: 700; }
+.gds-c .gds-menu-selo { color: var(--gds-accent); font-size: .85em; }
+.gds-c .gds-menu-pontos { flex: 1; border-bottom: 2px dotted var(--gds-line); transform: translateY(-4px); min-width: 20px; }
+.gds-c .gds-menu-preco { font-weight: 800; font-size: 1.12rem; white-space: nowrap; color: var(--gds-accent); }
+.gds-c .gds-menu-preco small { font-weight: 500; font-size: .7em; opacity: .75; color: inherit; }
+.gds-c .gds-menu-rodape { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: .9rem; }
+.gds-c .gds-btn.gds-btn-mini, .gds-c button.gds-btn.gds-btn-mini { min-height: 36px; padding: 6px 14px; font-size: .82rem; flex: none; }
+.gds-c .gds-esgotado { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: .82rem; font-weight: 700; letter-spacing: .02em;
+    color: color-mix(in srgb, currentColor 70%, transparent); background: color-mix(in srgb, currentColor 8%, transparent); }
+.gds-c [data-gds-bairro] small { display: block; margin-top: 4px; font-size: .8rem; }

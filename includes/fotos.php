@@ -6,6 +6,7 @@
 // vez por empresa e fica guardada em sites.fotos_banco.
 // Chave grátis em https://www.pexels.com/api/ → Admin → Configurações.
 // ============================================================
+require_once __DIR__ . '/imagens_ia.php';
 
 // Termos em inglês dão resultados muito melhores no Pexels
 function fotos_termo_segmento($slug, $nome = '', $descricao = '') {
@@ -58,8 +59,29 @@ function fotos_buscar($termo, $qtd = 8, $orientacao = 'landscape') {
     return $fotos;
 }
 
-// Fotos guardadas do site (busca na primeira vez)
+// Fotos geradas por IA para o site (guardadas junto, em fotos_banco.ia)
+function fotos_ia_do_site($empresa) {
+    $salvo = json_decode((string)($empresa['fotos_banco'] ?? ''), true);
+    return array_map(fn($u) => ['url' => $u, 'medio' => $u, 'autor' => '', 'link' => '', 'alt' => 'Foto exclusiva', 'ia' => true], array_values((array)($salvo['ia'] ?? [])));
+}
+
+function fotos_ia_adicionar($empresaId, $url) {
+    global $pdo;
+    $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?");
+    $st->execute([$empresaId]);
+    $salvo = json_decode((string)$st->fetchColumn(), true) ?: [];
+    $salvo['ia'] = array_slice(array_values(array_unique(array_merge([$url], (array)($salvo['ia'] ?? [])))), 0, 9);
+    $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresaId]);
+    return $salvo['ia'];
+}
+
+// Fotos do site: as exclusivas (IA) primeiro, depois as do banco de imagens (busca na primeira vez)
 function fotos_do_site($empresa, $forcar = false) {
+    $ia = fotos_ia_do_site($empresa);
+    return array_merge($ia, fotos_banco_pexels($empresa, $forcar));
+}
+
+function fotos_banco_pexels($empresa, $forcar = false) {
     global $pdo;
     $salvo = json_decode((string)($empresa['fotos_banco'] ?? ''), true);
     if (!$forcar && is_array($salvo) && isset($salvo['fotos'])) return $salvo['fotos'];
@@ -69,7 +91,40 @@ function fotos_do_site($empresa, $forcar = false) {
     $termo = fotos_termo_segmento($empresa['segmento_slug'] ?? '', $empresa['segmento_nome'] ?? '', $empresa['segmento_descricao'] ?? '');
     $fotos = fotos_buscar($termo, 8);
     try {
-        $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode(['termo' => $termo, 'em' => time(), 'fotos' => $fotos], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresa['id']]);
+        $novo = ['termo' => $termo, 'em' => time(), 'fotos' => $fotos] + (is_array($salvo) && isset($salvo['ia']) ? ['ia' => $salvo['ia']] : []);
+        $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($novo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresa['id']]);
     } catch (PDOException $e) { /* coluna ainda não existe */ }
     return $fotos;
+}
+
+// Rotina (cron): sites publicados sem foto própria ganham fotos exclusivas geradas por IA,
+// uma por vez (cada uma leva de 5 a 40s), até ter 3. Desliga em Admin → Configurações.
+function fotos_ia_rotina() {
+    global $pdo;
+    if (!img_ia_disponivel() || get_config('img_ia_automatico', '1') !== '1') return ['fotos_ia' => 'desligado'];
+    try {
+        $sites = $pdo->query("SELECT e.id, e.nome, e.segmento_descricao, seg.slug, seg.nome AS segmento_nome, s.fotos_banco, s.galeria_imagens
+            FROM sites s JOIN empresas e ON e.id = s.empresa_id LEFT JOIN segmentos seg ON seg.id = e.segmento_id
+            WHERE s.publicado = true AND COALESCE(s.banner_imagem, '') = '' AND COALESCE(s.ia_modo_total, false) = false
+            ORDER BY s.empresa_id LIMIT 200")->fetchAll();
+    } catch (PDOException $e) { return ['fotos_ia' => 'sem tabela']; }
+    foreach ($sites as $s) {
+        if (count(array_filter(explode(',', (string)$s['galeria_imagens']))) >= 2) continue;
+        $salvo = json_decode((string)$s['fotos_banco'], true) ?: [];
+        $ia = (array)($salvo['ia'] ?? []);
+        if (count($ia) >= 3 || time() - (int)($salvo['ia_tentativa'] ?? 0) < 1800) continue;
+        $salvo['ia_tentativa'] = time();
+        $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $s['id']]);
+        $cenas = img_ia_cenas($s['slug'] ?? '', $s['segmento_nome'] ?? '', $s['segmento_descricao'] ?? '');
+        $i = min(count($ia), count($cenas) - 1);
+        $r = img_ia_gerar(img_ia_prompt_foto($cenas[$i]), $i === 0 ? '16:9' : '4:5', 'ia/empresa-' . $s['id']);
+        if (!$r['ok']) return ['fotos_ia' => 'erro: ' . $r['erro']];
+        // Junta com a lista atual (a 1ª gerada vira a foto do topo)
+        $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?"); $st->execute([$s['id']]);
+        $atual = json_decode((string)$st->fetchColumn(), true) ?: [];
+        $atual['ia'] = array_slice(array_values(array_unique(array_merge((array)($atual['ia'] ?? []), [$r['url']]))), 0, 9);
+        $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($atual, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $s['id']]);
+        return ['fotos_ia' => 'empresa ' . $s['id'] . ': ' . count($atual['ia']) . ' foto(s)'];
+    }
+    return ['fotos_ia' => 'nada a fazer'];
 }

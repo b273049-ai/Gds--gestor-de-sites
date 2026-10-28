@@ -1,11 +1,13 @@
 <?php
-// Rotina automática: lembretes de agendamento e reenvio de mensagens de WhatsApp.
+// Rotina automática: lembretes de agendamento, reenvio de mensagens de WhatsApp
+// e fotos exclusivas por IA para os sites que ainda não têm foto.
 // Configure na hospedagem (Hostinger: Avançado → Cron Jobs), a cada 5 minutos:
 //   curl -s "https://SEU-DOMINIO/cron.php?chave=CHAVE" >/dev/null
 // A chave aparece em Admin → WhatsApp.
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/migracoes.php';
 require_once __DIR__ . '/includes/whatsapp.php';
+require_once __DIR__ . '/includes/fotos.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -18,4 +20,7 @@ if ($chave === '' || !hash_equals($chave, $enviada)) {
 }
 @set_time_limit(120);
 gds_garantir_schema();
-echo json_encode(['ok' => true] + wa_rotina(true));
+$res = ['ok' => true] + wa_rotina(true);
+// Fotos exclusivas por IA para sites sem foto (uma por execução, para não estourar o tempo)
+try { $res += fotos_ia_rotina(); } catch (Throwable $e) { $res['fotos_ia'] = 'erro: ' . mb_substr($e->getMessage(), 0, 160); }
+echo json_encode($res);

@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     switch ($_POST['acao']) {
         case 'conectar':
             if (!wa_pode_conectar_proprio()) responder_json(['ok' => false, 'erro' => 'A conexão do número próprio não está disponível. Fale com o administrador da plataforma.']);
-            if ($api['tipo'] === 'zapi') {
+            if (in_array($api['tipo'], ['zapi', 'ultramsg'], true)) {
                 $inst = trim($_POST['zapi_instancia'] ?? ''); $tok = trim($_POST['zapi_token'] ?? '');
                 if ($inst === '' || $tok === '') responder_json(['ok' => false, 'erro' => 'Informe o ID e o token da sua instância Z-API.']);
                 $pdo->prepare("UPDATE empresas SET wa_instancia=?, wa_instancia_token=?, wa_status='aguardando' WHERE id=?")->execute([$inst, $tok, $empresaId]);
@@ -154,9 +154,9 @@ $statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pi
                 <li>No celular, abra o WhatsApp → <strong>⋮ / Configurações</strong> → <strong>Aparelhos conectados</strong> → <strong>Conectar um aparelho</strong>.</li>
                 <li>Aponte a câmera para o QR code. Pronto!</li>
             </ol>
-            <?php if ($api['tipo'] === 'zapi'): ?>
+            <?php if (in_array($api['tipo'], ['zapi', 'ultramsg'], true)): ?>
             <div class="form-row">
-                <div><label>ID da instância Z-API</label><input type="text" id="zapiInst" value="<?= e($empresa['wa_instancia'] ?? '') ?>"></div>
+                <div><label>ID da instância <?= $api['tipo'] === 'zapi' ? 'Z-API' : 'UltraMsg' ?></label><input type="text" id="zapiInst" value="<?= e($empresa['wa_instancia'] ?? '') ?>"></div>
                 <div><label>Token da instância</label><input type="text" id="zapiTok" value="<?= e($empresa['wa_instancia_token'] ?? '') ?>"></div>
             </div>
             <?php endif; ?>
