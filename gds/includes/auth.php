@@ -31,6 +31,7 @@ function exigir_login($role = null) {
         exit;
     }
 
+    gds_tratar_erros_painel();
     gds_garantir_schema();
     wa_rotina_em_segundo_plano();
 
@@ -42,6 +43,24 @@ function exigir_login($role = null) {
         header('Location: ' . strtok($_SERVER['REQUEST_URI'] ?? '/', '?') . (isset($_GET['empresa_id']) ? '?empresa_id=' . (int)$_GET['empresa_id'] : ''));
         exit;
     }
+}
+
+// Erro inesperado numa tela do painel: em vez de página em branco, mostra o que houve
+// (com o detalhe técnico para o administrador) e um link para o Diagnóstico.
+function gds_tratar_erros_painel() {
+    if (eh_requisicao_ajax()) return; // telas com fetch têm o próprio tratamento JSON
+    set_exception_handler(function (Throwable $e) {
+        error_log('GDS painel: ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
+        if (!headers_sent()) http_response_code(500);
+        $admin = is_admin();
+        $detalhe = $admin || (defined('APP_DEBUG') && APP_DEBUG) ? $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')' : '';
+        echo '<!DOCTYPE html><html lang="pt-br"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Algo deu errado</title>'
+           . '<style>body{font-family:system-ui,sans-serif;background:#0b0e1f;color:#eef0fa;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:20px}'
+           . '.c{max-width:620px;background:#12162e;border:1px solid #262b52;border-radius:16px;padding:28px}code{display:block;white-space:pre-wrap;background:#0b0e1f;padding:12px;border-radius:8px;margin:12px 0;font-size:13px;color:#ffb4b4}a{color:#8ab4ff}</style></head>'
+           . '<body><div class="c"><h2 style="margin-top:0">Não foi possível abrir esta tela</h2><p>Tente de novo em instantes.</p>'
+           . ($detalhe ? '<code>' . htmlspecialchars($detalhe, ENT_QUOTES, 'UTF-8') . '</code><p>Abra o <a href="/admin/diagnostico.php">Diagnóstico</a> para ver o que falta (banco desatualizado, arquivo faltando…).</p>' : '')
+           . '<p><a href="javascript:history.back()">← Voltar</a></p></div></body></html>';
+    });
 }
 
 function usuario_logado() {
@@ -205,6 +224,7 @@ require_once __DIR__ . '/migracoes.php';
 require_once __DIR__ . '/atendimento.php';
 require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/dominio.php';
+require_once __DIR__ . '/modulos.php';
 
 // Link wa.me a partir de um telefone brasileiro (acrescenta o 55 quando vier só DDD + número)
 function link_whatsapp($telefone, $mensagem = '') {

@@ -16,6 +16,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_dados'])) {
     $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([atendimento_modo_valido($modoAt) ? $modoAt : null, $empresaId]);
     flash('sucesso', 'Dados atualizados!'); $voltar('dados'); exit;
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_modulos'])) {
+    $padrao = modulos_padrao(atendimento_info_empresa($empresaId)['modo']);
+    $escolhas = [];
+    foreach (array_keys(modulos_catalogo()) as $k) {
+        $lig = isset($_POST['modulo'][$k]);
+        if ($lig !== in_array($k, $padrao, true)) $escolhas[$k] = $lig; // guarda só o que difere do padrão
+    }
+    $pdo->prepare("UPDATE empresas SET modulos=? WHERE id=?")->execute([$escolhas ? json_encode($escolhas) : null, $empresaId]);
+    flash('sucesso', 'Módulos atualizados — o menu já mostra só o que você usa.');
+    $voltar('modulos'); exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_delivery'])) {
     $formas = implode(', ', array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim($x), 0, 40), explode(',', (string)($_POST['formas_pagamento'] ?? ''))))), 0, 8));
     $entrega = isset($_POST['aceita_entrega']); $retirada = isset($_POST['aceita_retirada']);
@@ -67,7 +79,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_horario'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cor'])) {
     $pdo->prepare("UPDATE sites SET cor_primaria=?, cor_secundaria=? WHERE empresa_id=?")
         ->execute([cor_hex_valida($_POST['cor_primaria'] ?? '', '#4f7cff'), cor_hex_valida($_POST['cor_secundaria'] ?? '', '#16213e'), $empresaId]);
-    flash('sucesso', 'Cores salvas!'); $voltar('cor'); exit;
+    require_once __DIR__ . '/../includes/site_template.php';
+    $est = $_POST['estilo'] ?? '';
+    $pdo->prepare("UPDATE sites SET estilo=? WHERE empresa_id=?")->execute([isset(site_estilos()[$est]) ? $est : null, $empresaId]);
+    flash('sucesso', 'Visual salvo!'); $voltar('cor'); exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_pagamento'])) {
     $token = trim($_POST['mercadopago_access_token'] ?? '');
@@ -143,6 +158,20 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         <button type="submit" name="salvar_dados" value="1">Salvar dados</button>
     </form>
 
+    <?php $modsAtuais = modulos_atuais(); $padraoMods = modulos_padrao($modsAtuais['modo']); ?>
+    <form method="post" class="form-box largo" id="modulos">
+        <?= csrf_campo() ?>
+        <h3><?= icone('dashboard', 16) ?> Módulos do painel</h3>
+        <p class="dica">Seu painel mostra só o que combina com <strong><?= e(atendimento_modos()[$modsAtuais['modo']]['nome']) ?></strong>. Ligue algo a mais se você também trabalha assim (ex.: barbearia que vende produtos).</p>
+        <div class="wa-modos">
+        <?php foreach (modulos_catalogo() as $k => $m): ?>
+            <label class="wa-modo"><input type="checkbox" name="modulo[<?= $k ?>]" <?= in_array($k, $modsAtuais['ativos'], true) ? 'checked' : '' ?>>
+                <span><strong><?= e($m['rotulo']) ?></strong><?= in_array($k, $padraoMods, true) ? ' <span class="pill pill-ok" style="font-size:10px">recomendado</span>' : '' ?><small><?= e($m['desc']) ?></small></span></label>
+        <?php endforeach; ?>
+        </div>
+        <button type="submit" name="salvar_modulos" value="1">Salvar módulos</button>
+    </form>
+
     <form method="post" class="form-box largo" id="horario">
         <?= csrf_campo() ?>
         <h3><?= icone('calendario', 16) ?> Horário de atendimento</h3>
@@ -157,13 +186,19 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
             <div><label>Pausa (almoço) — início, opcional</label><input type="time" name="pausa_inicio" value="<?= e(substr($empresa['pausa_inicio'] ?? '', 0, 5)) ?>"></div>
             <div><label>Pausa — fim</label><input type="time" name="pausa_fim" value="<?= e(substr($empresa['pausa_fim'] ?? '', 0, 5)) ?>"></div>
         </div>
+        <?php if (modulo_ativo('agenda')): ?>
         <div class="form-row">
             <div><label>Horários de quantos em quantos minutos</label><select name="intervalo_agenda"><?php foreach ([15, 20, 30, 45, 60, 90, 120] as $m): ?><option value="<?= $m ?>" <?= (int)($empresa['intervalo_agenda'] ?? 30) === $m ? 'selected' : '' ?>><?= $m ?> min</option><?php endforeach; ?></select></div>
             <div><label>Aceita agendar até quantos dias à frente</label><input type="number" min="0" max="365" name="antecedencia_max_dias" value="<?= (int)($empresa['antecedencia_max_dias'] ?? 60) ?>"></div>
         </div>
+        <?php else: ?>
+        <input type="hidden" name="intervalo_agenda" value="<?= (int)($empresa['intervalo_agenda'] ?? 30) ?>"><input type="hidden" name="antecedencia_max_dias" value="<?= (int)($empresa['antecedencia_max_dias'] ?? 60) ?>">
+        <p class="dica">Aparece no site ("aberto agora") e no rodapé.</p>
+        <?php endif; ?>
         <button type="submit" name="salvar_horario" value="1">Salvar horário</button>
     </form>
 
+    <?php if (modulo_ativo('agenda')): ?>
     <div class="form-box largo" id="folgas">
         <h3><?= icone('calendario', 16) ?> Folgas e feriados</h3>
         <p class="dica">Dias cadastrados aqui ficam fechados no calendário do site (para a empresa toda ou só para um profissional).</p>
@@ -189,8 +224,10 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         </tbody></table></div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <?php $modoAt = atendimento_info_empresa($empresaId)['modo']; $lig = fn($c) => !isset($empresa[$c]) || $empresa[$c] === null || pg_bool($empresa[$c]); ?>
+    <?php if (modulo_ativo('delivery')): ?>
     <form method="post" class="form-box largo" id="delivery">
         <?= csrf_campo() ?>
         <h3><?= icone('pacote', 16) ?> Pedidos pelo site (delivery / retirada)</h3>
@@ -211,19 +248,26 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         <input type="text" name="tempo_entrega" maxlength="60" value="<?= e($empresa['tempo_entrega'] ?? '') ?>" placeholder="Ex: Entrega em 40–60 min">
         <button type="submit" name="salvar_delivery" value="1">Salvar</button>
     </form>
+    <?php endif; ?>
 
     <form method="post" class="form-box largo" id="cor">
         <?= csrf_campo() ?>
-        <h3>Cores do meu site</h3>
-        <p class="dica">Usadas no template padrão. Se o site foi desenhado pela IA, as cores vêm do design dela.</p>
+        <?php require_once __DIR__ . '/../includes/site_template.php'; ?>
+        <h3>Visual do meu site</h3>
+        <p class="dica">Vale para o site padrão. Se o site foi desenhado pela IA (Estúdio IA), o visual vem do design dela.</p>
+        <label>Estilo</label>
+        <select name="estilo"><option value="">Automático (combina com o meu tipo de negócio)</option>
+            <?php foreach (site_estilos() as $k => $est): ?><option value="<?= $k ?>" <?= ($site['estilo'] ?? '') === $k ? 'selected' : '' ?>><?= e($est['nome']) ?> — <?= e($est['desc']) ?></option><?php endforeach; ?></select>
         <div class="form-row">
             <div><label>Cor principal</label><input type="color" name="cor_primaria" value="<?= e(cor_hex_valida($site['cor_primaria'] ?? '', '#4f7cff')) ?>"></div>
             <div><label>Cor secundária</label><input type="color" name="cor_secundaria" value="<?= e(cor_hex_valida($site['cor_secundaria'] ?? '', '#16213e')) ?>"></div>
         </div>
-        <button type="submit" name="salvar_cor" value="1">Salvar cores</button>
+        <p class="dica">Deixe a cor principal no azul padrão para usar a cor do estilo.</p>
+        <button type="submit" name="salvar_cor" value="1">Salvar visual</button>
         <a href="/<?= e($empresa['slug']) ?>" target="_blank" class="btn btn-ghost" style="margin-top:18px"><?= icone('olho') ?> Ver meu site</a>
     </form>
 
+    <?php if (modulo_ativo('pix')): ?>
     <form method="post" class="form-box largo" id="pix">
         <?= csrf_campo() ?>
         <h3><?= icone('cartao', 16) ?> Pagamento online (PIX)</h3>
@@ -235,6 +279,7 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         <?php if ($tokenSalvo !== ''): ?><label class="check" style="font-size:12px;margin-top:6px"><input type="checkbox" name="limpar_token"> remover token salvo</label><?php endif; ?>
         <button type="submit" name="salvar_pagamento" value="1">Salvar</button>
     </form>
+    <?php endif; ?>
 
     <form method="post" class="form-box largo" id="senha">
         <?= csrf_campo() ?>

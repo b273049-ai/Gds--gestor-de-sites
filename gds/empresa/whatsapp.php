@@ -88,8 +88,15 @@ $historico->execute([$empresaId]); $historico = $historico->fetchAll();
 $exemplo = ['nome' => 'Maria', 'empresa' => $empresa['nome'], 'servico' => 'Corte + Barba', 'profissional' => ' com Ana', 'data' => 'sexta, 14/11', 'hora' => '15:30',
             'valor' => '💰 R$ 85,00', 'total' => 'R$ 92,00', 'itens' => "2x Smash burger — R$ 64,00\n1x Batata — R$ 18,00", 'entrega' => '🛵 Entrega em: Rua das Flores, 120',
             'pagamento' => 'Pix', 'mensagem' => 'Inclui som e iluminação.', 'codigo' => '123', 'link' => wa_url_publica($empresa), 'endereco' => $empresa['endereco'] ?: 'Rua Exemplo, 100', 'telefone' => ''];
+// Só as mensagens dos módulos que a empresa usa
 $grupos = [];
-foreach (wa_eventos() as $k => $ev) $grupos[$ev['grupo']][$k] = $ev;
+$modGrupo = ['Agendamentos' => 'agenda', 'Orçamentos' => 'orcamentos', 'Pedidos / Delivery' => 'delivery'];
+foreach (wa_eventos() as $k => $ev) {
+    $g = $ev['grupo'];
+    if ($k === 'pedido_cancelado' && !modulo_ativo('delivery') && modulo_ativo('orcamentos')) $g = 'Orçamentos';
+    if (isset($modGrupo[$g]) && !modulo_ativo($modGrupo[$g])) continue;
+    $grupos[$g][$k] = $ev;
+}
 $statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pill-neutro'], 'erro' => ['Falhou', 'pill-aviso'], 'manual' => ['Envio manual', 'pill-neutro']];
 ?>
 <!DOCTYPE html>
@@ -100,7 +107,7 @@ $statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pi
 <?php include '_sidebar.php'; ?>
 <main class="content">
     <div class="page-header"><div><h1>WhatsApp automático</h1>
-        <p class="subtitulo">Seu cliente recebe no WhatsApp, sozinho: confirmação de agendamento, lembrete, orçamento com o valor, pedido recebido, saiu para entrega…</p></div></div>
+        <p class="subtitulo">Seu cliente recebe no WhatsApp, sozinho: <?= e(implode(', ', array_filter([modulo_ativo('agenda') ? 'confirmação de agendamento e lembrete' : '', modulo_ativo('orcamentos') ? 'orçamento com o valor' : '', modulo_ativo('delivery') ? 'pedido recebido e saiu para entrega' : '']) ?: ['as respostas do seu negócio'])) ?>.</p></div></div>
     <?= flash_render() ?>
 
     <section class="form-box largo">
@@ -125,8 +132,8 @@ $statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pi
                     <span><strong>Desligado</strong><small>Nada é enviado sozinho. Você envia pelos botões do painel.</small></span></label>
             </div>
             <div class="form-row">
-                <div><label class="check" style="margin-top:12px"><input type="checkbox" name="wa_avisar_empresa" <?= ($empresa['wa_avisar_empresa'] ?? null) === null || pg_bool($empresa['wa_avisar_empresa']) ? 'checked' : '' ?>> Me avisar no meu WhatsApp (<?= e($empresa['whatsapp'] ?: 'cadastre em Configurações') ?>) a cada agendamento, pedido ou orçamento novo</label></div>
-                <div><label>Lembrete do agendamento</label><select name="wa_lembrete_horas">
+                <div><label class="check" style="margin-top:12px"><input type="checkbox" name="wa_avisar_empresa" <?= ($empresa['wa_avisar_empresa'] ?? null) === null || pg_bool($empresa['wa_avisar_empresa']) ? 'checked' : '' ?>> Me avisar no meu WhatsApp (<?= e($empresa['whatsapp'] ?: 'cadastre em Configurações') ?>) a cada <?= e(implode(', ', array_filter([modulo_ativo('agenda') ? 'agendamento' : '', modulo_ativo('delivery') ? 'pedido' : '', modulo_ativo('orcamentos') ? 'orçamento' : '', 'contato'])) ) ?> novo</label></div>
+                <div <?= modulo_ativo('agenda') ? '' : 'hidden' ?>><label>Lembrete do agendamento</label><select name="wa_lembrete_horas">
                     <?php foreach ([1 => '1 hora antes', 2 => '2 horas antes', 3 => '3 horas antes', 6 => '6 horas antes', 12 => '12 horas antes', 24 => '1 dia antes', 48 => '2 dias antes'] as $h => $rot): ?>
                     <option value="<?= $h ?>" <?= (int)($empresa['wa_lembrete_horas'] ?? 24) === $h ? 'selected' : '' ?>><?= $rot ?></option><?php endforeach; ?></select></div>
             </div>

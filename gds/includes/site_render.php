@@ -8,12 +8,15 @@ require_once __DIR__ . '/site_fragmentos.php';
 require_once __DIR__ . '/agenda_helper.php';
 require_once __DIR__ . '/atendimento.php';
 require_once __DIR__ . '/whatsapp.php';
+require_once __DIR__ . '/modulos.php';
+require_once __DIR__ . '/fotos.php';
+require_once __DIR__ . '/site_template.php';
 
 const SITE_SQL_BASE = "
     SELECT e.*, s.titulo, s.subtitulo, s.sobre, s.publicado, s.cor_primaria, s.cor_secundaria,
            s.galeria_imagens, s.seo_titulo, s.seo_descricao, s.layout, s.secoes, s.banner_imagem,
-           s.html_gerado, s.ia_modo_total, s.ia_tema,
-           seg.nome AS segmento_nome, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo,
+           s.html_gerado, s.ia_modo_total, s.ia_tema, s.estilo, s.fotos_banco,
+           seg.nome AS segmento_nome, e.segmento_descricao AS segmento_descricao_emp, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo,
            pl.permite_pix
     FROM empresas e
     JOIN sites s ON s.empresa_id = e.id
@@ -29,7 +32,7 @@ function site_buscar_empresa($where, $param) {
         $st->execute([$param]);
         return $st->fetch();
     } catch (PDOException $e) {
-        $legado = str_replace([', s.ia_tema', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], [', NULL AS ia_tema', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
+        $legado = str_replace([', s.ia_tema, s.estilo, s.fotos_banco', ', e.segmento_descricao AS segmento_descricao_emp', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], [', NULL AS ia_tema, NULL AS estilo, NULL AS fotos_banco', '', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
         $st = $pdo->prepare($legado . " WHERE $where LIMIT 1");
         $st->execute([$param]);
         return $st->fetch();
@@ -67,6 +70,9 @@ function site_carregar_dados($empresa) {
     $d['status'] = agenda_status_agora($empresa);
     $d['tema'] = site_tema($empresa);
     $d['modo'] = atendimento_modo_da_linha($empresa);
+    // Módulos desligados pela empresa somem do site também
+    $d['modulos'] = modulos_da_empresa($empresa)['ativos'];
+    if (!in_array('cupons', $d['modulos'], true)) { $d['cupons'] = []; $d['agenda']['tem_cupons'] = false; }
     return $d;
 }
 
@@ -488,7 +494,7 @@ function site_fragmentos_marcadores($empresa, $dados, $estado) {
         '{{GALERIA}}' => frag_galeria($dados['galeria'], $empresa['nome']),
         '{{AGENDAMENTO}}' => frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $dados['agenda'], $empresa),
         '{{ORCAMENTO}}' => frag_orcamento($dados['servicos'], $estado['orcamento'] ?? [], $empresa),
-        '{{AVALIACOES}}' => frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao'], true, $dados['avaliacoes_resumo']),
+        '{{AVALIACOES}}' => !in_array('avaliacoes', $dados['modulos'] ?? ['avaliacoes'], true) ? '' : frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao'], true, $dados['avaliacoes_resumo']),
         '{{CONTATO}}' => frag_contato($estado['lead'], $empresa, $dados['status']),
         '{{MAPA}}' => frag_mapa($empresa['endereco'], $dados['maps_key']),
         '{{CUPONS}}' => frag_cupons($dados['cupons']),
@@ -615,6 +621,8 @@ function psite_icon($nome) {
 // MODO TEMPLATE (4 estilos prontos + ordem de seções configurável)
 // ------------------------------------------------------------
 function site_render_template($empresa, $dados, $estado, $preview = false) {
+    // Template novo (5 estilos). O antigo fica abaixo só como reserva (layout "legado").
+    if (($empresa['layout'] ?? '') !== 'legado') return site_render_template_premium($empresa, $dados, $estado, $preview);
     $layout = in_array($empresa['layout'], ['classico', 'bold', 'editorial', 'grid'], true) ? $empresa['layout'] : 'classico';
     $nome = $empresa['nome'];
     $sec = []; $nav = [];
@@ -639,7 +647,7 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
     } elseif ($dados['modo'] === 'orcamento') {
         $secao('agendar', 'Peça seu orçamento', '<p class="lead" style="margin-bottom:22px">Conte o que você precisa — respondemos com o orçamento rapidinho.</p>' . $f['{{ORCAMENTO}}'], 'Orçamento');
     }
-    $secao('avaliacoes', 'Avaliações', $f['{{AVALIACOES}}']);
+    if (in_array('avaliacoes', $dados['modulos'] ?? ['avaliacoes'], true)) $secao('avaliacoes', 'Avaliações', $f['{{AVALIACOES}}']);
     $secao('contato', 'Contato', $f['{{CONTATO}}']
         . ($empresa['endereco'] ? '<div style="margin-top:28px">' . $f['{{MAPA}}'] . '</div>' : '')
         . '<div style="margin-top:28px;max-width:420px"><h3 style="margin-bottom:12px">Horário de atendimento</h3>' . $f['{{HORARIOS}}'] . '</div>');

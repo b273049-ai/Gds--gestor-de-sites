@@ -31,9 +31,20 @@ $empresa = $pdo->prepare("SELECT e.*, s.publicado, s.cor_primaria, s.html_gerado
 $empresa->execute([$empresaId]); $empresa = $empresa->fetch();
 $totalServicos = $um("SELECT COUNT(*) c FROM servicos WHERE empresa_id=? AND ativo=true")['c'];
 $totalProfissionais = $um("SELECT COUNT(*) c FROM profissionais WHERE empresa_id=? AND ativo=true")['c'];
+$temAgenda = modulo_ativo('agenda');
+$temPedidos = modulo_ativo('delivery') || modulo_ativo('orcamentos');
+$pedAbertos = $temPedidos ? $um("SELECT COUNT(*) FILTER (WHERE status='novo') novos, COUNT(*) FILTER (WHERE status NOT IN ('concluido','cancelado')) abertos,
+    COALESCE(SUM(valor) FILTER (WHERE status NOT IN ('concluido','cancelado')),0) valor FROM pedidos WHERE empresa_id=?") : null;
+$pedHoje = $temPedidos ? $um("SELECT COUNT(*) c FROM pedidos WHERE empresa_id=? AND criado_em::date = CURRENT_DATE")['c'] : 0;
+$ultimosPedidos = [];
+if ($temPedidos) {
+    $st = $pdo->prepare("SELECT p.id, p.status, p.valor, p.tipo, p.criado_em, p.descricao, c.nome AS cliente_nome FROM pedidos p LEFT JOIN clientes c ON c.id=p.cliente_id
+        WHERE p.empresa_id=? AND p.status NOT IN ('concluido','cancelado') ORDER BY (p.status='novo') DESC, p.criado_em DESC LIMIT 8");
+    $st->execute([$empresaId]); $ultimosPedidos = $st->fetchAll();
+}
 $checklist = [
-    ['Pelo menos 1 serviço cadastrado', $totalServicos > 0, 'servicos.php'],
-    ['Pelo menos 1 profissional cadastrado', $totalProfissionais > 0, 'profissionais.php'],
+    ['Pelo menos 1 item em ' . modulos_rotulo_catalogo(), $totalServicos > 0, 'servicos.php'],
+    ...(modulo_ativo('equipe') ? [['Pelo menos 1 profissional cadastrado', $totalProfissionais > 0, 'profissionais.php']] : []),
     ['WhatsApp, endereço e horários preenchidos', !empty($empresa['whatsapp']) && !empty($empresa['endereco']), 'configuracoes.php'],
     ['Logo cadastrada', !empty($empresa['logo']), 'configuracoes.php'],
     ['Site publicado', pg_bool($empresa['publicado'] ?? false), empresa_pode_usar_estudio($empresaId) ? 'ia_estudio.php' : null],
@@ -52,7 +63,8 @@ $percentual = round($feitos / count($checklist) * 100);
         <div><h1>Olá, <?= e($_SESSION['nome']) ?> 👋</h1><p class="subtitulo">Resumo de hoje, <?= date('d/m/Y') ?>.</p></div>
         <div class="acoes">
             <a href="/<?= e($empresa['slug']) ?>" target="_blank" class="btn btn-ghost"><?= icone('olho') ?> Ver meu site</a>
-            <a href="agenda.php#novo" class="btn"><?= icone('mais') ?> Novo agendamento</a>
+            <?php if ($temAgenda): ?><a href="agenda.php#novo" class="btn"><?= icone('mais') ?> Novo agendamento</a>
+            <?php elseif ($temPedidos): ?><a href="pedidos.php?status=abertos" class="btn"><?= icone(modulo_ativo('delivery') ? 'pacote' : 'prancheta') ?> <?= e(modulos_rotulo_pedidos()) ?><?= $pedAbertos['novos'] ? ' (' . (int)$pedAbertos['novos'] . ' novos)' : '' ?></a><?php endif; ?>
         </div>
     </div>
     <?= flash_render() ?>
@@ -71,12 +83,35 @@ $percentual = round($feitos / count($checklist) * 100);
     <?php endif; ?>
 
     <div class="cards">
+        <?php if ($temAgenda): ?>
         <div class="card"><div class="label"><?= icone('calendario', 16) ?> Agendamentos hoje</div><div class="value"><?= $hoje['c'] ?></div><?php if ($hoje['canc']): ?><div class="sub" style="color:var(--danger)"><?= $hoje['canc'] ?> cancelado(s)</div><?php endif; ?></div>
+        <?php endif; ?>
+        <?php if ($temPedidos): ?>
+        <div class="card"><div class="label"><?= icone(modulo_ativo('delivery') ? 'pacote' : 'prancheta', 16) ?> <?= modulo_ativo('delivery') ? 'Pedidos hoje' : 'Orçamentos em aberto' ?></div>
+            <div class="value"><?= modulo_ativo('delivery') ? (int)$pedHoje : (int)$pedAbertos['abertos'] ?></div>
+            <div class="sub"><?= (int)$pedAbertos['novos'] ?> novo(s) · R$ <?= number_format((float)$pedAbertos['valor'], 2, ',', '.') ?> em aberto</div></div>
+        <?php endif; ?>
         <div class="card"><div class="label"><?= icone('usuarios', 16) ?> Clientes</div><div class="value"><?= $totalClientes ?></div><div class="sub">+<?= $novosClientes ?> este mês</div></div>
         <div class="card"><div class="label"><?= icone('dinheiro', 16) ?> Faturamento do mês</div><div class="value">R$ <?= number_format($faturamentoMes, 2, ',', '.') ?></div><div class="sub">serviços e pedidos concluídos</div></div>
         <div class="card"><div class="label"><?= icone('caixa', 16) ?> Contatos do site (mês)</div><div class="value"><?= $novosContatos ?></div><div class="sub"><?= number_format($media['m'], 1, ',', '') ?> ★ média (<?= $media['c'] ?> avaliações)</div></div>
     </div>
 
+    <?php if ($temPedidos): $nomesSt = ['novo' => 'Novo', 'orcado' => 'Orçamento enviado', 'aprovado' => 'Aprovado', 'em_andamento' => 'Em andamento', 'pronto' => 'Pronto', 'saiu_entrega' => 'Saiu p/ entrega']; ?>
+    <h2><?= modulo_ativo('delivery') ? 'Pedidos em andamento' : 'Orçamentos em aberto' ?></h2>
+    <div class="tabela-wrap" style="margin-bottom:24px"><table>
+        <thead><tr><th>nº</th><th>Cliente</th><th>Pedido</th><th>Valor</th><th>Situação</th></tr></thead>
+        <tbody>
+        <?php foreach ($ultimosPedidos as $pd): ?>
+        <tr><td><a class="link" href="pedidos.php#pedido-<?= (int)$pd['id'] ?>"><?= (int)$pd['id'] ?></a></td><td><?= e($pd['cliente_nome'] ?? '—') ?><span class="mini"><?= date('d/m H:i', strtotime($pd['criado_em'])) ?></span></td>
+            <td><?= e(mb_strimwidth((string)$pd['descricao'], 0, 70, '…')) ?></td><td>R$ <?= number_format((float)$pd['valor'], 2, ',', '.') ?></td>
+            <td><span class="pill <?= $pd['status'] === 'novo' ? 'pill-aviso' : 'pill-neutro' ?>"><?= e($nomesSt[$pd['status']] ?? $pd['status']) ?></span></td></tr>
+        <?php endforeach; ?>
+        <?php if (!$ultimosPedidos): ?><tr class="vazio"><td colspan="5">Nada em aberto agora.</td></tr><?php endif; ?>
+        </tbody>
+    </table></div>
+    <?php endif; ?>
+
+    <?php if ($temAgenda): ?>
     <h2>Próximos agendamentos</h2>
     <div class="tabela-wrap"><table>
         <thead><tr><th>Quando</th><th>Cliente</th><th>Serviço</th><th>Profissional</th><th>Status</th></tr></thead>
@@ -93,6 +128,7 @@ $percentual = round($feitos / count($checklist) * 100);
         <?php if (!$proximos): ?><tr class="vazio"><td colspan="5">Nenhum agendamento futuro.</td></tr><?php endif; ?>
         </tbody>
     </table></div>
+    <?php endif; ?>
     <p class="dica" style="margin-top:14px">Você só vê os dados do seu próprio negócio. Nenhuma outra empresa tem acesso a eles.</p>
 </main>
 </div>

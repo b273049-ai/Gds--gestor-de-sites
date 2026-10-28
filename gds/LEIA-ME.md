@@ -19,6 +19,8 @@
    - `sql/adicional_13_segmentos.sql` ← **novo**: segmentos inteligentes, forma de atendimento e pedidos de orçamento pelo site (aplicado sozinho pelo sistema)
    - `sql/adicional_14_mais_segmentos.sql` ← **novo**: 161 segmentos organizados em 18 grupos (aplicado sozinho pelo sistema)
    - `sql/adicional_15_whatsapp_delivery_dominio.sql` ← **novo**: WhatsApp automático, pedidos de delivery e verificação de domínio (aplicado sozinho pelo sistema)
+   - `sql/adicional_16_modulos_design.sql` ← **novo**: painel modular, estilos de site e posts de marketing (aplicado sozinho pelo sistema)
+   Se algo der erro, abra **Admin → Diagnóstico**: mostra o que falta (arquivo, extensão do PHP, atualização do banco) e tem o botão "Atualizar banco agora".
    - `sql/adicional_11_rls_seguranca.sql` ← **novo e muito recomendado**: fecha as tabelas para a API pública do Supabase (veja "Segurança")
    Se algum já tiver sido rodado antes, rodar de novo não quebra nada (os comandos usam `IF NOT EXISTS`).
    O `adicional_10` também é aplicado sozinho pelo sistema no primeiro acesso ao painel, se tiver faltado.
@@ -112,6 +114,25 @@ Cada negócio conquista cliente de um jeito, e o site segue isso:
 - Os botões que a IA escreve usam `{{LINK_PRINCIPAL}}`, `{{TEXTO_PRINCIPAL}}` e `{{LINK_WHATSAPP}}` — o número real do WhatsApp
   é sempre o cadastrado (links de WhatsApp com número inventado são corrigidos), e o WhatsApp abre em nova aba.
 - Pedidos de orçamento chegam em **Pedidos/Orçamentos** (com serviço, data do evento, local e "pelo site") e por e-mail.
+
+## Painel modular (cada negócio vê só o que usa)
+O menu e as telas da empresa mudam conforme a forma de atendimento: barbearia vê Agenda, Equipe e Cupons;
+hamburgueria vê Pedidos e Cardápio; DJ/fotógrafo vê Orçamentos e "Serviços e pacotes". A empresa pode ligar módulos
+extras em **Configurações → Módulos do painel** (ex.: barbearia que também vende produtos). Módulo desligado some do menu e do site.
+
+## Design dos sites
+- **Template novo** com 5 estilos (Aurora, Elegante, Vibrante, Minimalista, Noite), escolhido automaticamente pelo tipo de
+  negócio ou em Configurações → Visual do meu site / Admin → Layout do template. Página única com topo animado, faixa
+  rolando, números animados, "como funciona" conforme o negócio e rodapé completo.
+- **Kit de animações próprio** (`assets/js/gds-motion.js`): entrada suave, título palavra por palavra, paralaxe, contadores,
+  cartões 3D, botões magnéticos, faixa rolando. A IA do Estúdio usa esse kit nos sites que gera.
+- **Fotos profissionais (Pexels, grátis)**: cole a chave em Admin → Configurações. Sites sem fotos ganham fotos reais do
+  tipo de negócio no topo e no Estúdio IA.
+
+## Marketing com IA (Admin)
+Escolha o objetivo e o nicho: a IA escreve o post (título, legenda, hashtags, roteiro de Reels/TikTok) e a tela gera a
+arte em PNG (feed, story ou quadrado, 5 modelos) e um vídeo MP4 animado de 9:16 — tudo no navegador. Também monta o
+calendário da semana. Configure nome, @, site e cores da sua marca na própria tela.
 
 ## WhatsApp automático (a plataforma manda as mensagens sozinha)
 O cliente final recebe no WhatsApp: agendamento recebido, **confirmado**, **lembrete** antes do horário, cancelado,

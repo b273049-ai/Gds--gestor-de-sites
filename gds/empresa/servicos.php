@@ -43,41 +43,44 @@ $categorias = array_values(array_unique(array_filter(array_map(fn($s) => trim((s
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
-<head><?= painel_head('Serviços - Meu Negócio') ?></head>
+<?php $rotCat = modulos_rotulo_catalogo(); $comAgenda = modulo_ativo('agenda'); $ehCatalogo = modulos_atuais()['modo'] === 'catalogo';
+$item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto') : 'serviço'; ?>
+<head><?= painel_head($rotCat . ' - Meu Negócio') ?></head>
 <body>
 <div class="layout">
 <?php include '_sidebar.php'; ?>
 <main class="content">
-    <div class="page-header"><div><h1>Serviços</h1><p class="subtitulo">O que você oferece — aparece no site com preço e no agendamento online.</p></div></div>
+    <div class="page-header"><div><h1><?= e($rotCat) ?></h1><p class="subtitulo"><?= $ehCatalogo ? 'O que você vende — aparece no site com preço e botão de adicionar ao pedido.' : ($comAgenda ? 'O que você oferece — aparece no site com preço e no agendamento online.' : 'O que você oferece — aparece no site com o botão de pedir orçamento/contato.') ?></p></div></div>
     <?= flash_render() ?>
     <form method="post" class="form-box" id="form">
         <?= csrf_campo() ?>
-        <h3><?= $editando ? 'Editar serviço' : 'Novo serviço' ?></h3>
+        <h3><?= $editando ? 'Editar ' . $item : 'Novo ' . $item ?></h3>
         <input type="hidden" name="servico_id" value="<?= (int)($editando['id'] ?? 0) ?>">
         <label>Nome</label><input type="text" name="nome" required maxlength="150" value="<?= e($editando['nome'] ?? '') ?>">
-        <label>Descrição (aparece no cartão do serviço no site)</label><textarea name="descricao" rows="2" maxlength="300" placeholder="O que está incluso, diferenciais…"><?= e($editando['descricao'] ?? '') ?></textarea>
+        <label>Descrição (aparece no cartão do serviço no site)</label><textarea name="descricao" rows="2" maxlength="300" placeholder="<?= $ehCatalogo ? 'Ingredientes, tamanho, sabor…' : 'O que está incluso, diferenciais…' ?>"><?= e($editando['descricao'] ?? '') ?></textarea>
         <div class="form-row">
             <div><label>Preço (R$) — 0 = sob consulta</label><input type="text" inputmode="decimal" name="preco" value="<?= e(number_format((float)($editando['preco'] ?? 0), 2, ',', '')) ?>"></div>
-            <div><label>Duração (minutos)</label><input type="number" min="5" max="720" step="5" name="duracao_minutos" value="<?= (int)($editando['duracao_minutos'] ?? 30) ?>"></div>
+            <?php if ($comAgenda): ?><div><label>Duração (minutos)</label><input type="number" min="5" max="720" step="5" name="duracao_minutos" value="<?= (int)($editando['duracao_minutos'] ?? 30) ?>"></div>
+            <?php else: ?><input type="hidden" name="duracao_minutos" value="<?= (int)($editando['duracao_minutos'] ?? 60) ?>"><?php endif; ?>
         </div>
         <div class="form-row">
-            <div><label>Categoria (agrupa os serviços no site)</label><input type="text" name="categoria" list="cats" maxlength="80" placeholder="Ex: Cabelo, Barba, Tratamentos" value="<?= e($editando['categoria'] ?? '') ?>"><datalist id="cats"><?php foreach ($categorias as $c): ?><option value="<?= e($c) ?>"><?php endforeach; ?></datalist></div>
+            <div><label>Categoria (agrupa os serviços no site)</label><input type="text" name="categoria" list="cats" maxlength="80" placeholder="<?= $ehCatalogo ? 'Ex: Lanches, Bebidas, Sobremesas' : 'Ex: Cabelo, Barba, Tratamentos' ?>" value="<?= e($editando['categoria'] ?? '') ?>"><datalist id="cats"><?php foreach ($categorias as $c): ?><option value="<?= e($c) ?>"><?php endforeach; ?></datalist></div>
             <div><label>Ordem no site (menor aparece primeiro)</label><input type="number" name="ordem" value="<?= (int)($editando['ordem'] ?? 0) ?>"></div>
         </div>
-        <label>Foto do serviço (URL, opcional)</label><input type="url" name="imagem" placeholder="https://..." value="<?= e($editando['imagem'] ?? '') ?>">
+        <label>Foto (URL, opcional)</label><input type="url" name="imagem" placeholder="https://..." value="<?= e($editando['imagem'] ?? '') ?>">
         <label class="check" style="margin-top:12px"><input type="checkbox" name="destaque" <?= $editando && pg_bool($editando['destaque'] ?? false) ? 'checked' : '' ?>> Destacar no site (aparece primeiro, com selo)</label>
         <label class="check"><input type="checkbox" name="preco_a_partir" <?= $editando && pg_bool($editando['preco_a_partir'] ?? false) ? 'checked' : '' ?>> Mostrar como "a partir de R$ …" (o preço pode variar)</label>
-        <button type="submit" name="salvar_servico" value="1"><?= $editando ? 'Salvar alterações' : 'Adicionar serviço' ?></button>
+        <button type="submit" name="salvar_servico" value="1"><?= $editando ? 'Salvar alterações' : 'Adicionar ' . $item ?></button>
         <?php if ($editando): ?><a href="servicos.php" class="btn btn-ghost" style="margin-top:18px">Cancelar</a><?php endif; ?>
     </form>
     <div class="tabela-wrap"><table>
-        <thead><tr><th>Serviço</th><th>Preço</th><th>Duração</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th><?= e(ucfirst($item)) ?></th><th>Preço</th><?php if ($comAgenda): ?><th>Duração</th><?php endif; ?><th>Status</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($servicos as $s): $ativo = pg_bool($s['ativo']); ?>
         <tr style="<?= $ativo ? '' : 'opacity:.6' ?>">
             <td><strong><?= e($s['nome']) ?></strong><?= pg_bool($s['destaque'] ?? false) ? ' <span class="pill pill-ok">destaque</span>' : '' ?><?= $s['categoria'] ? ' <span class="pill pill-neutro">' . e($s['categoria']) . '</span>' : '' ?><?php if ($s['descricao']): ?><span class="mini"><?= e(mb_strimwidth($s['descricao'], 0, 80, '…')) ?></span><?php endif; ?></td>
             <td><?= (float)$s['preco'] > 0 ? (pg_bool($s['preco_a_partir'] ?? false) ? 'a partir de ' : '') . 'R$ ' . number_format($s['preco'], 2, ',', '.') : 'Sob consulta' ?></td>
-            <td><?= (int)$s['duracao_minutos'] ?> min</td>
+            <?php if ($comAgenda): ?><td><?= (int)$s['duracao_minutos'] ?> min</td><?php endif; ?>
             <td><span class="badge badge-<?= $ativo ? 'ativo' : 'inativo' ?>"><?= $ativo ? 'no site' : 'oculto' ?></span></td>
             <td class="acoes">
                 <a class="btn btn-ghost btn-sm" href="?editar=<?= $s['id'] ?>#form"><?= icone('lapis', 14) ?></a>
