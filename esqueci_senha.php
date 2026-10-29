@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/email.php';
 
 $mensagem = '';
+$falhou = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_valido()) {
     $email = trim($_POST['email'] ?? '');
@@ -14,19 +16,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_valido()) {
 
     if ($usuario) {
         $token = bin2hex(random_bytes(32));
-        $expira = date('Y-m-d H:i:s', strtotime('+1 hour'));
-        $pdo->prepare("INSERT INTO password_reset_tokens (usuario_id, token, expira_em) VALUES (?,?,?)")
-            ->execute([$usuario['id'], $token, $expira]);
+        $pdo->prepare("INSERT INTO password_reset_tokens (usuario_id, token, expira_em) VALUES (?,?, NOW() + INTERVAL '1 hour')")
+            ->execute([$usuario['id'], $token]);
 
-        $hostSeguro = preg_replace('/[^a-z0-9.\-:]/i', '', $_SERVER['SERVER_NAME'] ?? $_SERVER['HTTP_HOST'] ?? 'localhost');
-        $link = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://') . $hostSeguro . '/redefinir_senha.php?token=' . $token;
-        $assunto = 'Redefinição de senha - GDS';
-        $corpo = "Olá {$usuario['nome']},\n\nClique no link para redefinir sua senha (válido por 1 hora):\n$link\n\nSe não foi você, ignore este e-mail.";
-        $headers = "From: nao-responda@" . preg_replace('/:\d+$/', '', $hostSeguro) . "\r\nContent-Type: text/plain; charset=UTF-8";
-
-        // Tenta enviar por e-mail. Em muitas hospedagens compartilhadas mail() funciona nativamente;
-        // se não funcionar aqui, é preciso configurar SMTP no lado da hospedagem.
-        @mail($usuario['email'], $assunto, $corpo, $headers);
+        $hostSeguro = preg_replace('/[^a-z0-9.\-:]/i', '', $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost');
+        $https = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+        $base = rtrim(get_config('plataforma_url', ''), '/') ?: (($https ? 'https://' : 'http://') . $hostSeguro);
+        $link = $base . '/redefinir_senha.php?token=' . $token;
+        $html = email_modelo('Redefinir sua senha', ['Olá, ' . htmlspecialchars(explode(' ', (string)$usuario['nome'])[0]) . '!', 'Recebemos um pedido para trocar a senha do seu acesso. O link vale por 1 hora.'],
+            'Criar nova senha', $link) . '';
+        $env = gds_enviar_email($usuario['email'], 'Redefinição de senha', $html);
+        if (!$env['ok']) $falhou = true;
     }
 }
 ?>
@@ -38,7 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_valido()) {
 <body class="login-page">
 <div class="login-box">
     <h1><span class="brand-logo">G</span><div>GDS <span>Recuperar senha</span></div></h1>
-    <?php if ($mensagem): ?><div class="alert alert-sucesso"><?= e($mensagem) ?></div><?php endif; ?>
+    <?php if ($mensagem): ?><div class="alert alert-sucesso"><?= e($mensagem) ?></div>
+    <p class="dica" style="font-size:13px;color:var(--text-dim);margin-top:10px">Não chegou em 5 minutos? Olhe a caixa de spam. Se for uma empresa, peça ao administrador da plataforma para redefinir a sua senha. Se você é o administrador, use a <a href="/recuperar_acesso.php">recuperação de emergência</a>.</p><?php endif; ?>
     <?php if (!$mensagem): ?>
     <form method="post">
         <?= csrf_campo() ?>

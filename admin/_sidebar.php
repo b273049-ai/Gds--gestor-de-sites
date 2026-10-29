@@ -14,6 +14,7 @@
         <?= menu_item('/admin/segmentos.php', 'segmentos.php', 'tag', 'Segmentos') ?>
         <?= menu_item('/admin/templates.php', 'templates.php', 'layout', 'Templates') ?>
         <div class="sidebar-grupo">Sistema</div>
+        <?= menu_item('/admin/prospeccao.php', 'prospeccao.php', 'usuarios', 'Prospecção de clientes') ?>
         <?= menu_item('/admin/marketing.php', 'marketing.php', 'brilho', 'Marketing com IA') ?>
         <?= menu_item('/admin/whatsapp.php', 'whatsapp.php', 'chat', 'WhatsApp') ?>
         <?= menu_item('/admin/dominios.php', 'dominios.php', 'globo', 'Domínios') ?>

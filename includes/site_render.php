@@ -119,10 +119,10 @@ function site_url_base() {
 // Aviso por e-mail para a empresa (agendamento novo, contato novo)
 function site_notificar_empresa($empresa, $assunto, $linhas) {
     if (empty($empresa['email']) || (isset($empresa['notificar_email']) && !pg_bool($empresa['notificar_email']))) return;
-    $host = preg_replace('/:\d+$/', '', preg_replace('/[^a-z0-9.\-:]/i', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
-    $corpo = "Olá, {$empresa['nome']}!\n\n" . implode("\n", $linhas) . "\n\nVeja no painel: " . site_url_base() . "/empresa/index.php\n\n— GDS · Gestor de Sites";
-    $cab = "From: GDS <nao-responda@$host>\r\nContent-Type: text/plain; charset=UTF-8";
-    @mail($empresa['email'], '=?UTF-8?B?' . base64_encode($assunto) . '?=', $corpo, $cab);
+    require_once __DIR__ . '/email.php';
+    $html = email_modelo($assunto, array_merge(['Olá, ' . htmlspecialchars($empresa['nome']) . '!'], array_map(fn($l) => htmlspecialchars($l), array_filter($linhas, fn($l) => trim($l) !== ''))),
+        'Abrir meu painel', site_url_base() . '/empresa/index.php');
+    gds_enviar_email($empresa['email'], $assunto, $html);
 }
 
 function site_cupom_valido($empresaId, $codigo) {

@@ -178,6 +178,26 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - baixa o **carrossel** completo (capa + 1 slide por item + fechamento);
 - grava o **vídeo MP4 9:16** com gancho em letras gigantes, fotos em movimento e oferta no final.
 
+## Prospecção de clientes (Admin)
+Menu **Prospecção de clientes**: digite o tipo de negócio e a cidade (ou bairro) e a plataforma busca no **Google Maps**
+as empresas que **não têm site próprio** (quem só tem Instagram/Facebook entra na lista). Cada empresa ganha uma
+**pontuação de 0 a 100** (sem site, celular com WhatsApp, quantidade de avaliações, nota e se o ramo usa agenda/pedido/
+orçamento) e aparece como 🔥 Quente, 🌤 Morno ou ❄ Frio. Botão **Chamar no WhatsApp** com a mensagem pronta e
+personalizada (nome, nota, avaliações, recurso certo para o ramo), botão **Escrever com IA** para uma mensagem única,
+funil (Novo → Contatado → Respondeu → Negociando → Fechado), anotações e exportação para planilha.
+- Para buscar no Google: crie uma chave no Google Cloud com a **Places API (New)** ativada e cole em Admin →
+  Configurações → Mapas. O Google dá uma cota grátis por mês e cobra acima dela (confira em console.cloud.google.com).
+- Sem chave, a busca usa o **OpenStreetMap** (grátis, menos empresas e sem avaliações).
+- Para não ter o WhatsApp bloqueado: mande uma por vez, no máximo 20 a 30 por dia, e descarte quem pedir.
+
+## E-mail e senhas
+- **Admin → Configurações → E-mail (SMTP)**: na Hostinger, crie um e-mail em "E-mails" e use `smtp.hostinger.com`,
+  porta 465, o e-mail completo e a senha dele. Use **Enviar teste**. Sem isso, a recuperação de senha e os avisos por
+  e-mail dependem da função mail() da hospedagem, que costuma não entregar.
+- **Esqueci minha senha** manda o link por esse SMTP (válido por 1 hora).
+- **Administrador sem acesso**: abra `/recuperar_acesso.php` e use a chave `GDS_CHAVE_RECUPERACAO` que está em
+  `config/local.php` (no Gerenciador de Arquivos da Hostinger). Empresas: o admin troca a senha em Empresas → editar.
+
 ## WhatsApp automático (a plataforma manda as mensagens sozinha)
 O cliente final recebe no WhatsApp: agendamento recebido, **confirmado**, **lembrete** antes do horário, cancelado,
 pedido de avaliação; orçamento recebido, **orçamento com o valor**, aprovado; **pedido do delivery** recebido,

@@ -67,6 +67,9 @@ try {
             PDO::ATTR_EMULATE_PREPARES => true,
         ]
     );
+    // O banco (Supabase) roda em UTC e o PHP em horário de Brasília: sem isto, NOW() no banco fica 3h
+    // adiantado em relação às datas gravadas pelo PHP (links de senha vencidos, lembretes fora de hora...).
+    $pdo->exec("SET TIME ZONE 'America/Sao_Paulo'");
 } catch (PDOException $e) {
     // Nunca mostra host/usuário/senha pro visitante — só no log (ou na tela em modo debug).
     error_log('GDS - erro de conexão com o banco: ' . $e->getMessage());

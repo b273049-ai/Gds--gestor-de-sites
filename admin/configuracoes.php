@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key'];
+$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key'];
 $provedores = ['gemini', 'anthropic', 'openai'];
 
 // Testa a IA com uma chamada curtinha (o botão "Testar" chama via fetch)
@@ -36,6 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     set_config('ia_limite_diario_empresa', (string)max(0, (int)($_POST['ia_limite_diario_empresa'] ?? 20)));
     set_config('google_analytics_id', trim($_POST['google_analytics_id'] ?? ''));
     set_config('img_ia_provedor', array_key_exists($_POST['img_ia_provedor'] ?? '', img_ia_provedores()) ? $_POST['img_ia_provedor'] : 'auto');
+    set_config('smtp_host', preg_replace('/[^a-z0-9.\-]/i', '', trim($_POST['smtp_host'] ?? '')));
+    set_config('smtp_porta', (string)(in_array((int)($_POST['smtp_porta'] ?? 465), [25, 465, 587, 2525], true) ? (int)$_POST['smtp_porta'] : 465));
+    set_config('smtp_usuario', filter_var(trim($_POST['smtp_usuario'] ?? ''), FILTER_VALIDATE_EMAIL) ?: '');
+    set_config('smtp_nome', mb_substr(trim($_POST['smtp_nome'] ?? ''), 0, 60));
     set_config('img_ia_automatico', isset($_POST['img_ia_automatico']) ? '1' : '0');
     set_config('img_gemini_modelo', preg_replace('/[^a-z0-9.\-]/', '', strtolower(trim($_POST['img_gemini_modelo'] ?? ''))));
     // Campos secretos: vazio = manter o valor atual (a tela nunca mostra a chave inteira)
@@ -51,6 +55,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     header('Location: configuracoes.php'); exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_email'])) {
+    require_once __DIR__ . '/../includes/email.php';
+    $para = trim($_POST['email_teste'] ?? '');
+    $r = gds_enviar_email($para, 'Teste de e-mail da plataforma', email_modelo('Funcionou! ✅', ['Este é um e-mail de teste da sua plataforma. Se chegou, a recuperação de senha e os avisos por e-mail estão funcionando.']));
+    flash($r['ok'] ? 'sucesso' : 'erro', $r['ok'] ? "E-mail de teste enviado para $para (via " . strtoupper($r['via']) . '). Confira também o spam.' : 'Não enviou: ' . $r['erro']);
+    header('Location: configuracoes.php#email'); exit;
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['trocar_senha'])) {
     $usuario = $pdo->prepare("SELECT * FROM usuarios WHERE id=?");
     $usuario->execute([usuario_logado()]); $usuario = $usuario->fetch();
@@ -179,12 +190,34 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
         <label class="check"><input type="checkbox" name="img_ia_automatico" value="1" <?= get_config('img_ia_automatico', '1') === '1' ? 'checked' : '' ?>> Gerar sozinho 3 fotos para cada site publicado sem foto (pela rotina automática / cron)</label>
         <p class="dica">Usadas no Estúdio IA ("Gerar fotos exclusivas") e no Marketing com IA. Agora: <strong><?= e(img_ia_provedores()[img_ia_provedor()] ?? img_ia_provedor()) ?></strong><?= img_ia_disponivel() ? '' : ' — não configurado' ?>.</p>
 
+        <h3 style="margin-top:24px" id="email">E-mail (recuperação de senha e avisos)</h3>
+        <p class="dica">Sem isso, os e-mails saem pela função mail() da hospedagem e quase sempre não chegam. Na Hostinger: crie um e-mail (ex.: contato@seudominio.com.br) em <strong>E-mails</strong> e use servidor <code>smtp.hostinger.com</code>, porta <code>465</code>, usuário = o e-mail completo e a senha dele.</p>
+        <div class="form-row">
+            <div><label>Servidor SMTP</label><input type="text" name="smtp_host" value="<?= e(get_config('smtp_host', '')) ?>" placeholder="smtp.hostinger.com"></div>
+            <div><label>Porta</label><select name="smtp_porta"><?php foreach ([465 => '465 (SSL — recomendado)', 587 => '587 (STARTTLS)', 2525 => '2525', 25 => '25'] as $pt => $rot): ?><option value="<?= $pt ?>" <?= (int)get_config('smtp_porta', '465') === $pt ? 'selected' : '' ?>><?= $rot ?></option><?php endforeach; ?></select></div>
+        </div>
+        <div class="form-row">
+            <div><label>E-mail (usuário SMTP e remetente)</label><input type="email" name="smtp_usuario" value="<?= e(get_config('smtp_usuario', '')) ?>" placeholder="contato@seudominio.com.br"></div>
+            <div><label>Nome do remetente</label><input type="text" name="smtp_nome" value="<?= e(get_config('smtp_nome', '')) ?>" placeholder="GDS Sites"></div>
+        </div>
+        <?= campo_segredo('smtp_senha', 'Senha do e-mail', $cfg['smtp_senha'], 'Senha da caixa de e-mail') ?>
+        <?php if (get_config('email_ultimo', '')): ?><p class="dica">Último envio: <?= e(get_config('email_ultimo', '')) ?></p><?php endif; ?>
+
         <h3 style="margin-top:24px">Mapas e Analytics</h3>
         <?= campo_segredo('google_maps_key', 'Google Maps — API Key', $cfg['google_maps_key'], 'Opcional (sem chave usa o mapa simples)') ?>
+        <?= campo_segredo('google_places_key', 'Google Places API (New) — para a Prospecção de clientes (se vazio, usa a chave do Maps)', $cfg['google_places_key'], 'AIza...') ?>
         <label>Google Analytics — ID</label>
         <input type="text" name="google_analytics_id" value="<?= e($cfg['google_analytics_id']) ?>" placeholder="G-XXXXXXXXXX">
 
         <button type="submit" name="salvar_config" value="1">Salvar configurações</button>
+    </form>
+
+    <form method="post" class="form-box largo">
+        <?= csrf_campo() ?>
+        <h3>Testar o envio de e-mail</h3>
+        <label>Enviar um e-mail de teste para</label>
+        <input type="email" name="email_teste" required value="<?= e($_SESSION['email'] ?? '') ?>">
+        <button type="submit" name="testar_email" value="1">Enviar teste</button>
     </form>
 
     <form method="post" class="form-box largo" id="senha">
