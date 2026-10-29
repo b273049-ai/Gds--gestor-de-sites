@@ -178,17 +178,27 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - baixa o **carrossel** completo (capa + 1 slide por item + fechamento);
 - grava o **vídeo MP4 9:16** com gancho em letras gigantes, fotos em movimento e oferta no final.
 
-## Prospecção de clientes (Admin)
-Menu **Prospecção de clientes**: digite o tipo de negócio e a cidade (ou bairro) e a plataforma busca no **Google Maps**
-as empresas que **não têm site próprio** (quem só tem Instagram/Facebook entra na lista). Cada empresa ganha uma
-**pontuação de 0 a 100** (sem site, celular com WhatsApp, quantidade de avaliações, nota e se o ramo usa agenda/pedido/
-orçamento) e aparece como 🔥 Quente, 🌤 Morno ou ❄ Frio. Botão **Chamar no WhatsApp** com a mensagem pronta e
-personalizada (nome, nota, avaliações, recurso certo para o ramo), botão **Escrever com IA** para uma mensagem única,
-funil (Novo → Contatado → Respondeu → Negociando → Fechado), anotações e exportação para planilha.
-- Para buscar no Google: crie uma chave no Google Cloud com a **Places API (New)** ativada e cole em Admin →
-  Configurações → Mapas. O Google dá uma cota grátis por mês e cobra acima dela (confira em console.cloud.google.com).
-- Sem chave, a busca usa o **OpenStreetMap** (grátis, menos empresas e sem avaliações).
-- Para não ter o WhatsApp bloqueado: mande uma por vez, no máximo 20 a 30 por dia, e descarte quem pedir.
+## Central de prospecção (Admin → Prospecção de clientes)
+- **Caçada em massa**: marque vários segmentos (ou o atalho "os que mais compram site", ou todos) e várias cidades/bairros
+  (um por linha). Com o Google, cada região é dividida em quadrantes (grade 2×2, 3×3, 4×4) para passar do limite de 60
+  resultados por busca. A tela mostra antes quantas buscas serão feitas, roda com barra de progresso e, se você fechar,
+  continua sozinha pela rotina automática (cron). Empresas repetidas são juntadas.
+- **Só oportunidades**: quem tem site próprio fica guardado apenas para comparar; quem só tem Instagram/Facebook/Linktree
+  é lead. Cada lead tem pontuação de 0 a 100 (🔥 quente, 🌤 morno, ❄ frio).
+- **Prévia do site pronta para cada empresa** (`/previa/CODIGO`): o site do negócio montado na hora, com a identidade do
+  ramo, o nome, as fotos e as avaliações reais do Google e o horário. A mensagem leva o link. A página não aparece no Google.
+- **Alertas**: quando o dono abre a prévia, você recebe um aviso no WhatsApp e o lead sobe para o topo da fila; se ele
+  clicar em "Quero este site", vai para Negociando e abre uma conversa com você. Robôs e você mesmo não contam.
+- **Raio-X da concorrência** na mensagem: "Das 20 empresas de barbearia que encontrei aqui em Moema, 8 já têm site
+  próprio" (dados reais das caçadas).
+- **Fila de hoje (modo sprint)**: primeiro quem abriu a prévia, depois os retornos do dia e os novos mais quentes. Um
+  clique abre o WhatsApp com a mensagem pronta e passa para o próximo. Cadência de 3 toques (abertura, dia 2, dia 5) com
+  meta diária (padrão 25) para não bloquear o seu número.
+- **Copiloto de objeções**: cole a resposta do cliente ("quanto custa?", "já tenho Instagram") e a IA sugere 2 respostas.
+- **Mapa** das oportunidades, **funil por segmento** (onde vale caçar mais) e exportação para planilha.
+- Configure em **Mensagens e alertas**: as 3 mensagens, o seu WhatsApp para os alertas, o limite diário e se traz fotos e
+  avaliações do Google (custa um pouco mais por busca na API do Google).
+- Chave: **Places API (New)** no Google Cloud, em Admin → Configurações → Mapas. Sem chave, usa o OpenStreetMap (grátis).
 
 ## E-mail e senhas
 - **Admin → Configurações → E-mail (SMTP)**: na Hostinger, crie um e-mail em "E-mails" e use `smtp.hostinger.com`,

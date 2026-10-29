@@ -8,6 +8,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/migracoes.php';
 require_once __DIR__ . '/includes/whatsapp.php';
 require_once __DIR__ . '/includes/fotos.php';
+require_once __DIR__ . '/includes/prospeccao.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -23,4 +24,6 @@ gds_garantir_schema();
 $res = ['ok' => true] + wa_rotina(true);
 // Fotos exclusivas por IA para sites sem foto (uma por execução, para não estourar o tempo)
 try { $res += fotos_ia_rotina(); } catch (Throwable $e) { $res['fotos_ia'] = 'erro: ' . mb_substr($e->getMessage(), 0, 160); }
+// Caçadas de prospecção continuam mesmo com a tela fechada
+try { $res += prosp_rotina(); } catch (Throwable $e) { $res['prospeccao'] = 'erro'; }
 echo json_encode($res);
