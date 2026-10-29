@@ -10,4 +10,6 @@ return [
     'GDS_DB_PASS'    => 'SUA_SENHA_DO_BANCO',
     'GDS_DB_SSLMODE' => 'require',
     'GDS_DEBUG'      => '0',                         // '1' mostra erros na tela (só para testes)
+    // Recuperação de emergência do administrador (/recuperar_acesso.php). Use uma frase longa (16+ caracteres).
+    'GDS_CHAVE_RECUPERACAO' => '',
 ];
