@@ -14,7 +14,7 @@
 require_once __DIR__ . '/ia_helper.php';
 require_once __DIR__ . '/fotos.php';
 
-const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}'];
+const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}', '{{CLUBE}}'];
 const IA_MARCADORES_OBRIGATORIOS = ['{{CONTATO}}'];
 
 function ia_direcoes_visuais() {
@@ -275,7 +275,7 @@ CONTRATO TÉCNICO (obrigatório):
    com horários livres → dados) | {{ORCAMENTO}} = formulário de pedido de orçamento (serviço, data do evento, local,
    detalhes, contato) | {{CONTATO}} = canais (WhatsApp, telefone, e-mail, endereço) + formulário | {{EQUIPE}} = cartões
    da equipe | {{AVALIACOES}} = nota média + depoimentos + formulário | {{GALERIA}} = grade com ampliação |
-   {{CUPONS}} = cupons | {{MAPA}} = mapa com "Como chegar" | {{HORARIOS}} = horário da semana | {{WHATSAPP_FLOAT}} =
+   {{CUPONS}} = cupons | {{CLUBE}} = planos de assinatura/pacotes de sessões (só se o negócio tiver) | {{MAPA}} = mapa com "Como chegar" | {{HORARIOS}} = horário da semana | {{WHATSAPP_FLOAT}} =
    botão flutuante do WhatsApp.
    Por isso: NÃO estilize classes que começam com "gds-" e NÃO crie você mesmo listas de serviços, equipe, avaliações,
    formulários, calendário, mapa ou botão de WhatsApp — só dê a cada componente uma seção com título, um respiro

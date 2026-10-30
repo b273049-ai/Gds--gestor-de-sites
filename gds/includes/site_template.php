@@ -225,6 +225,11 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
     if ($dados['cupons']) {
         $secao('cupons', '<section id="cupons" class="pt-secao"><div class="pt-container">' . $cabecalho('Promoções', 'Cupons de desconto') . '<div data-anim="fade-up">' . $f['{{CUPONS}}'] . '</div></div></section>');
     }
+    if (!empty($dados['planos'])) {
+        $temPacote = (bool)array_filter($dados['planos'], fn($p) => $p['tipo'] === 'pacote');
+        $temAssin = (bool)array_filter($dados['planos'], fn($p) => $p['tipo'] !== 'pacote');
+        $secao('clube', '<section id="clube" class="pt-secao pt-secao-alt"><div class="pt-container">' . $cabecalho($temAssin ? 'Clube' : 'Pacotes', $temAssin ? 'Assine e pague menos' : 'Pacotes de sessões', $temAssin ? 'Um valor fixo por mês e você agenda quando quiser, sem pagar a cada visita.' : 'Compre as sessões juntas e economize.') . '<div data-anim="fade-up">' . $f['{{CLUBE}}'] . '</div></div></section>', $temAssin ? 'Clube' : 'Pacotes');
+    }
     if ($modo === 'agendamento') {
         $secao('agendar', '<section id="agendar" class="pt-secao pt-secao-destaque"><div class="pt-container pt-estreito">' . $cabecalho('Agendamento online', 'Agende seu horário', 'Escolha o serviço, o profissional e o melhor horário — leva menos de um minuto.') . '<div data-anim="fade-up">' . $f['{{AGENDAMENTO}}'] . '</div></div></section>', 'Agendar');
     } elseif ($modo === 'orcamento') {
@@ -264,12 +269,13 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
         . '<div data-anim="fade-up" data-delay="120"><h3 class="pt-h3">Horário de atendimento</h3>' . $f['{{HORARIOS}}'] . '</div></div></div></section>', 'Contato');
 
     // Ordem: a escolhida no painel (as seções novas entram nos lugares naturais)
-    $ordemPadrao = ['servicos', 'blocos', 'sobre', 'equipe', 'galeria', 'como', 'cupons', 'agendar', 'avaliacoes', 'duvidas', 'contato'];
+    $ordemPadrao = ['servicos', 'blocos', 'sobre', 'equipe', 'galeria', 'como', 'clube', 'cupons', 'agendar', 'avaliacoes', 'duvidas', 'contato'];
     $escolhida = !empty($empresa['secoes']) ? array_values(array_filter(explode(',', $empresa['secoes']))) : null;
     $ordem = $escolhida ? array_values(array_unique(array_merge(array_slice($escolhida, 0, 2), ['como'], array_slice($escolhida, 2)))) : $ordemPadrao;
     if (!in_array('blocos', $ordem, true)) array_splice($ordem, min(1, count($ordem)), 0, ['blocos']);
     if (!in_array('contato', $ordem, true)) $ordem[] = 'contato';
     if (!in_array('duvidas', $ordem, true)) array_splice($ordem, array_search('contato', $ordem, true), 0, ['duvidas']);
+    if (!in_array('clube', $ordem, true)) array_splice($ordem, max(0, (int)array_search('contato', $ordem, true) - 1), 0, ['clube']);
     if ($temAgendar && !in_array('agendar', $ordem, true)) array_splice($ordem, max(0, count($ordem) - 3), 0, ['agendar']);
 
     $faixa = array_slice(array_map(fn($s) => $s['nome'], $dados['servicos']), 0, 12);
@@ -279,6 +285,8 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
     $caixa = !empty($N['titulo_caixa']) && $chaveEstilo === 'nicho';
     $classesHtml = 'pt-estilo-' . $chaveEstilo . ' pt-nicho-' . $chaveNicho . ' pt-motivo-' . $N['motivo'] . ' pt-anim-' . $anim . ($caixa ? ' pt-caixa' : '') . ($E['escuro'] ? ' pt-escuro' : ' pt-claro');
     $temAcoesMob = $linkWhats || $linkRota || $tel;
+    // Aula/avaliação experimental vira o botão principal do topo (academia, pilates, escolas, clínicas)
+    $experimental = $modo === 'agendamento' ? (array_values(array_filter($dados['servicos'], fn($s) => pg_bool($s['experimental'] ?? false)))[0] ?? null) : null;
     $ld = [];
     if (count($faq) >= 3) $ld = ['@context' => 'https://schema.org', '@type' => 'FAQPage', 'mainEntity' => array_map(fn($q) => ['@type' => 'Question', 'name' => $q[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $q[1]]], $faq)];
 
@@ -342,7 +350,8 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
             <h1 data-split<?= mb_strlen($headline) > 34 ? ' class="pt-h1-longo"' : '' ?>><?= e($headline) ?></h1>
             <p class="pt-hero-sub" data-anim="fade-up" data-delay="350"><?= e($sub) ?></p>
             <div class="pt-hero-acoes" data-anim="fade-up" data-delay="500">
-                <a class="pt-btn" href="<?= e($ctaHref) ?>" data-magnetic data-ev="<?= $temAgendar ? ($modo === 'orcamento' ? 'orcamento' : 'agendar') : ($modo === 'catalogo' ? 'pedido' : 'contato') ?>"><?= e($ctaTexto) ?> <span aria-hidden="true">→</span></a>
+                <?php if ($experimental): ?><a class="pt-btn" href="#gds-agendamento" data-gds-agendar-servico="<?= (int)$experimental['id'] ?>" data-ev="agendar"><?= e((float)$experimental['preco'] > 0 ? 'Agendar ' . mb_strtolower($experimental['nome']) : mb_strtoupper(mb_substr($experimental['nome'], 0, 1)) . mb_substr($experimental['nome'], 1) . ' grátis') ?> <span aria-hidden="true">→</span></a><?php endif; ?>
+                <a class="pt-btn<?= $experimental ? ' pt-btn-vidro' : '' ?>" href="<?= e($ctaHref) ?>" data-magnetic data-ev="<?= $temAgendar ? ($modo === 'orcamento' ? 'orcamento' : 'agendar') : ($modo === 'catalogo' ? 'pedido' : 'contato') ?>"><?= e($ctaTexto) ?> <span aria-hidden="true">→</span></a>
                 <?php if ($linkWhats): ?><a class="pt-btn pt-btn-vidro" href="<?= e($linkWhats) ?>" target="_blank" rel="noopener" data-ev="whatsapp"><?= frag_icone('whats') ?> WhatsApp</a><?php endif; ?>
             </div>
             <ul class="pt-confianca" data-stagger="100">
@@ -408,7 +417,7 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
 </nav>
 <?php endif; ?>
 <?= site_mostrar_whatsapp_float($empresa) ? frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $nome) : '' ?>
-<?= site_pedido_online($empresa, $modo) ? frag_carrinho($empresa, $estado['pedido'] ?? []) : '' ?>
+<?= site_pedido_online($empresa, $modo) ? frag_carrinho($empresa, $estado['pedido'] ?? [], $dados['servicos']) : '' ?>
 <script>
 // Depois de enviar um formulário, volta para a seção certa
 document.addEventListener('DOMContentLoaded', function () {

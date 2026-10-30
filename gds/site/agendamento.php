@@ -4,6 +4,7 @@ session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_S
 session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/site_render.php';
+require_once __DIR__ . '/../includes/espera.php';
 if (!function_exists('e')) { function e($s) { return htmlspecialchars((string)($s ?? ''), ENT_QUOTES, 'UTF-8'); } }
 header('X-Robots-Tag: noindex');
 
@@ -38,6 +39,8 @@ if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['cancel
             $varsCanc = wa_vars_agendamento($ag + ['telefone' => $ag['cliente_telefone'] ?? ''], $empresaWa);
             wa_notificar_empresa($empresaWa, 'cancelamento', ['nome' => $ag['cliente_nome']] + $varsCanc, 'agendamento', $ag['id']);
             if (!empty($ag['cliente_telefone'])) wa_notificar_cliente($empresaWa, 'agendamento_cancelado', $ag['cliente_telefone'], $varsCanc, 'agendamento', $ag['id']);
+            espera_avisar($empresaWa, $ag['data_hora'], $ag['servico_id'] ?? null); // vaga aberta: avisa a lista de espera
+            if (!empty($ag['assinatura_id'])) { require_once __DIR__ . '/../includes/clube.php'; clube_usar((int)$ag['assinatura_id'], -1); } // devolve o uso do plano
         }
         $ag['status'] = 'cancelado';
         $msg = 'ok';

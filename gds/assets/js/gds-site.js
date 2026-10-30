@@ -214,7 +214,8 @@
             var id = ++req;
             horasBox.innerHTML = '<p class="gds-carregando">Buscando horários livres…</p>';
             var prof = marcado('ag_profissional_id');
-            var url = '/site/horarios.php?e=' + cfg.empresa + '&data=' + iso(diaEscolhido) + '&duracao=' + duracao() + (prof && prof.value ? '&profissional=' + prof.value : '');
+            var svSel = marcado('ag_servico_id');
+            var url = '/site/horarios.php?e=' + cfg.empresa + '&data=' + iso(diaEscolhido) + '&duracao=' + duracao() + (prof && prof.value ? '&profissional=' + prof.value : '') + (svSel && svSel.value ? '&servico=' + svSel.value : '');
             fetch(url).then(function (r) { return r.json(); }).then(function (d) {
                 if (id !== req) return;
                 renderHoras(d);
@@ -237,12 +238,32 @@
                 html += '<div class="gds-turno"><p class="gds-turno-tit">' + t[0] + '</p><div class="gds-horas">';
                 lista.forEach(function (h) {
                     if (h[1]) livres++;
-                    html += '<button type="button" class="gds-hora" data-hora="' + h[0] + '"' + (h[1] ? '' : ' disabled title="Ocupado"') + ' aria-pressed="' + (h[0] === horaEscolhida ? 'true' : 'false') + '">' + h[0] + '</button>';
+                    var vg = d.vagas && h[1] ? d.vagas[h[0]] : null;
+                    html += '<button type="button" class="gds-hora' + (vg ? ' gds-hora-turma' : '') + '" data-hora="' + h[0] + '"' + (h[1] ? '' : ' disabled title="' + (d.turma ? 'Turma lotada' : 'Ocupado') + '"') + ' aria-pressed="' + (h[0] === horaEscolhida ? 'true' : 'false') + '">' + h[0]
+                        + (vg ? '<small>' + (vg === 1 ? 'última vaga' : vg + ' vagas') + '</small>' : '') + '</button>';
                 });
                 html += '</div></div>';
             });
             if (!livres) html += '<p class="gds-mute">Sem horários livres neste dia' + (marcado('ag_profissional_id') && marcado('ag_profissional_id').value ? ' com esse profissional' : '') + '. Tente outro dia.</p>';
+            // Lista de espera: se alguém cancelar, a pessoa é avisada no WhatsApp
+            if (!livres && cfg.espera) html += '<div class="gds-espera" data-gds-espera><p class="gds-rotulo">Quer esse dia mesmo? Entre na lista de espera</p><p class="gds-mute" style="margin:0 0 10px">Se alguém cancelar, avisamos você no WhatsApp na hora.</p>'
+                + '<div class="gds-linha2"><div class="gds-campo"><label for="esp_nome">Seu nome</label><input id="esp_nome" type="text" maxlength="120"></div>'
+                + '<div class="gds-campo"><label for="esp_tel">WhatsApp</label><input id="esp_tel" type="tel" inputmode="tel" data-gds-tel placeholder="(00) 00000-0000"></div></div>'
+                + '<button type="button" class="gds-btn-2" data-gds-espera-entrar>Entrar na lista de espera</button><p class="gds-mute" data-gds-espera-msg role="status"></p></div>';
             horasBox.innerHTML = html;
+            var esp = horasBox.querySelector('[data-gds-espera-entrar]');
+            if (esp) esp.addEventListener('click', function () {
+                var nome = horasBox.querySelector('#esp_nome').value.trim(), tel = horasBox.querySelector('#esp_tel').value.trim(), msg = horasBox.querySelector('[data-gds-espera-msg]');
+                if (nome.length < 2 || tel.replace(/\D/g, '').length < 10) { msg.textContent = 'Informe seu nome e WhatsApp com DDD.'; return; }
+                var sv = marcado('ag_servico_id'), pr = marcado('ag_profissional_id'), fd = new FormData();
+                fd.append('e', cfg.empresa); fd.append('data', iso(diaEscolhido)); fd.append('nome', nome); fd.append('telefone', tel);
+                if (sv && sv.value) fd.append('servico', sv.value); if (pr && pr.value) fd.append('profissional', pr.value);
+                esp.disabled = true;
+                fetch('/site/espera.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); }).then(function (d) {
+                    msg.textContent = d.ok ? '✅ Pronto! Você está na lista de espera. Se abrir um horário, avisamos no WhatsApp.' : (d.erro || 'Não foi possível agora.');
+                    if (!d.ok) esp.disabled = false;
+                }).catch(function () { esp.disabled = false; msg.textContent = 'Sem conexão. Tente de novo.'; });
+            });
             $$('.gds-hora:not([disabled])', horasBox).forEach(function (b) {
                 b.addEventListener('click', function () {
                     horaEscolhida = b.getAttribute('data-hora');
@@ -330,9 +351,32 @@
         inp.addEventListener('input', function () {
             var d = inp.value.replace(/\D/g, '').slice(0, 8);
             inp.value = d.length > 4 ? d.slice(0, 2) + '/' + d.slice(2, 4) + '/' + d.slice(4) : (d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d);
+            // Eventos: avisa na hora se a data já está reservada
+            var emp = inp.getAttribute('data-gds-data-livre'), msg = inp.parentNode.querySelector('[data-gds-data-msg]');
+            if (!emp || !msg) return;
+            msg.textContent = ''; msg.className = 'gds-data-livre';
+            if (d.length !== 8) return;
+            var iso = d.slice(4) + '-' + d.slice(2, 4) + '-' + d.slice(0, 2);
+            fetch('/site/data_livre.php?e=' + emp + '&data=' + iso).then(function (r) { return r.json(); }).then(function (j) {
+                if (!j.controla || inp.value.replace(/\D/g, '') !== d) return;
+                msg.textContent = j.livre ? '✓ Data disponível' : '✕ Data já reservada — escolha outra ou fale com a gente';
+                msg.className = 'gds-data-livre ' + (j.livre ? 'gds-ok' : 'gds-ruim');
+            }).catch(function () {});
         });
     });
     $$('[data-gds-form-orcamento]').forEach(function (form) {
+        // Perguntas do serviço escolhido
+        function perguntas() {
+            var r = $('input[name="orc_servico_id"]:checked', form), id = r ? r.value : '';
+            $$('[data-gds-perguntas]', form).forEach(function (b) { b.hidden = b.getAttribute('data-gds-perguntas') !== id; });
+        }
+        form.addEventListener('change', function (ev) { if (ev.target.name === 'orc_servico_id') perguntas(); });
+        form._gdsPerguntas = perguntas;
+        var fotos = $('[data-gds-fotos]', form);
+        if (fotos) fotos.addEventListener('change', function () {
+            var max = +fotos.getAttribute('data-gds-fotos');
+            if (fotos.files.length > max) { fotos.setCustomValidity('Envie no máximo ' + max + ' fotos'); fotos.reportValidity(); fotos.value = ''; fotos.setCustomValidity(''); }
+        });
         form.addEventListener('submit', function (ev) {
             var nome = $('#orc_nome', form), tel = $('#orc_tel', form);
             if (!nome.value.trim()) { ev.preventDefault(); nome.focus(); nome.reportValidity && nome.reportValidity(); return; }
@@ -350,6 +394,8 @@
         ev.preventDefault();
         var r = $('input[name="orc_servico_id"][value="' + a.getAttribute('data-gds-orcar-servico') + '"]', alvo);
         if (r) r.checked = true;
+        var f = $('[data-gds-form-orcamento]', alvo);
+        if (f && f._gdsPerguntas) f._gdsPerguntas();
         mostrarPaginaDe(alvo);
         setTimeout(function () { var c = $('#orc_detalhes', alvo); if (c) c.focus({ preventScroll: true }); }, 500);
     });
@@ -443,22 +489,80 @@
             var aviso = $('[data-gds-minimo-aviso]', form);
             if (aviso) aviso.hidden = !abaixo;
             $('[data-gds-finalizar]', form).disabled = itens.length === 0 || abaixo;
-            $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco }; }));
+            $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco, opcoes: i.opcoes || [] }; }));
         }
 
-        document.addEventListener('click', function (ev) {
-            var b = ev.target.closest('[data-gds-add]');
-            if (!b) return;
-            ev.preventDefault();
-            var id = parseInt(b.getAttribute('data-gds-add'), 10);
-            var it = itens.filter(function (i) { return i.id === id; })[0];
+        // Item com opções (adicionais, ponto, meio a meio, tamanho...): janela de escolha com preço ao vivo
+        function escolherOpcoes(b, grupos, pronto) {
+            var base = parseFloat(b.getAttribute('data-preco')) || 0, nome = b.getAttribute('data-nome');
+            var fundo = document.createElement('div'); fundo.className = 'gds-op-fundo';
+            var box = document.createElement('div'); box.className = 'gds-op-janela'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+            var h = '<h3></h3>';
+            grupos.forEach(function (g, gi) {
+                var tipo = g.max > 1 ? 'checkbox' : 'radio';
+                h += '<fieldset class="gds-op-grupo" data-g="' + gi + '"><legend><span></span><small>' + (g.min > 0 ? 'obrigatório' : 'opcional') + (g.max > 1 ? ' · até ' + g.max : '') + (g.regra === 'maior' ? ' · vale o maior preço' : '') + '</small></legend>';
+                g.itens.forEach(function (it, ii) {
+                    var preco = it.preco > 0 ? (g.regra === 'maior' ? dinheiro(it.preco) : '+ ' + dinheiro(it.preco)) : '';
+                    h += '<label class="gds-op-item"><input type="' + tipo + '" name="og' + gi + '" value="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span></label>';
+                });
+                h += '</fieldset>';
+            });
+            h += '<p class="gds-op-erro" hidden></p><div class="gds-op-acoes"><button type="button" class="gds-btn-2" data-x>Cancelar</button><button type="button" class="gds-btn" data-ok>Adicionar · <span data-total></span></button></div>';
+            box.innerHTML = h;
+            box.querySelector('h3').textContent = nome;
+            grupos.forEach(function (g, gi) {
+                var fs = box.querySelector('[data-g="' + gi + '"]'); fs.querySelector('legend span').textContent = g.nome;
+                fs.querySelectorAll('.gds-op-nome').forEach(function (el, ii) { el.textContent = g.itens[ii].nome; });
+            });
+            var escolhas = function () { var r = []; box.querySelectorAll('input:checked').forEach(function (c) { r.push([parseInt(c.closest('[data-g]').dataset.g, 10), parseInt(c.value, 10)]); }); return r; };
+            var calcular = function () {
+                var p = base, extra = 0, partes = [];
+                grupos.forEach(function (g, gi) {
+                    var sel = escolhas().filter(function (e) { return e[0] === gi; }).map(function (e) { return g.itens[e[1]]; });
+                    if (!sel.length) return;
+                    if (g.regra === 'maior') { p = Math.max(p, Math.max.apply(null, sel.map(function (x) { return x.preco; }))); partes.push(sel.map(function (x) { return x.nome; }).join(' / ')); }
+                    else { extra += sel.reduce(function (t, x) { return t + x.preco; }, 0); partes.push(sel.map(function (x) { return x.nome; }).join(', ')); }
+                });
+                return { preco: Math.round((p + extra) * 100) / 100, nome: nome + (partes.length ? ' (' + partes.join('; ') + ')' : '') };
+            };
+            var atualizar = function () {
+                grupos.forEach(function (g, gi) { // trava o máximo de cada grupo
+                    var cs = box.querySelectorAll('[data-g="' + gi + '"] input'), n = 0; cs.forEach(function (c) { if (c.checked) n++; });
+                    if (g.max > 1) cs.forEach(function (c) { c.disabled = !c.checked && n >= g.max; });
+                });
+                box.querySelector('[data-total]').textContent = dinheiro(calcular().preco);
+            };
+            var fechar = function () { fundo.remove(); box.remove(); };
+            box.addEventListener('change', atualizar);
+            box.querySelector('[data-x]').onclick = fechar; fundo.onclick = fechar;
+            box.querySelector('[data-ok]').onclick = function () {
+                var falta = grupos.filter(function (g, gi) { return g.min > 0 && !escolhas().some(function (e) { return e[0] === gi; }); })[0];
+                var erro = box.querySelector('.gds-op-erro');
+                if (falta) { erro.hidden = false; erro.textContent = 'Escolha: ' + falta.nome; return; }
+                var c = calcular(); fechar(); pronto(escolhas(), c.preco, c.nome);
+            };
+            raiz.appendChild(fundo); raiz.appendChild(box); atualizar();
+            var primeiro = box.querySelector('input'); if (primeiro) primeiro.focus();
+        }
+        function adicionar(b, id, opcoes, preco, nome) {
+            var chave = id + '|' + JSON.stringify(opcoes || []);
+            var it = itens.filter(function (i) { return (i.id + '|' + JSON.stringify(i.opcoes || [])) === chave; })[0];
             if (it) it.qtd = Math.min(99, it.qtd + 1);
-            else itens.push({ id: id, nome: b.getAttribute('data-nome'), preco: parseFloat(b.getAttribute('data-preco')) || 0, qtd: 1 });
+            else itens.push({ id: id, nome: nome, preco: preco, qtd: 1, opcoes: opcoes || [] });
             gravar(); render();
             b.classList.add('gds-adicionado');
             var txt = b.innerHTML; b.innerHTML = '✓ Adicionado';
             setTimeout(function () { b.innerHTML = txt; b.classList.remove('gds-adicionado'); }, 1100);
             barra.classList.remove('gds-pulo'); void barra.offsetWidth; barra.classList.add('gds-pulo');
+        }
+        document.addEventListener('click', function (ev) {
+            var b = ev.target.closest('[data-gds-add]');
+            if (!b) return;
+            ev.preventDefault();
+            var id = parseInt(b.getAttribute('data-gds-add'), 10);
+            var grupos = []; try { grupos = JSON.parse(b.getAttribute('data-gds-opcoes') || '[]'); } catch (e) { grupos = []; }
+            if (grupos.length) { escolherOpcoes(b, grupos, function (op, preco, nome) { adicionar(b, id, op, preco, nome); }); return; }
+            adicionar(b, id, [], parseFloat(b.getAttribute('data-preco')) || 0, b.getAttribute('data-nome'));
         });
         barra.addEventListener('click', function () { abrir(); render(); });
         $$('[data-gds-carrinho-fechar]', raiz).forEach(function (el) { el.addEventListener('click', function () { fechar(); render(); }); });
@@ -484,4 +588,27 @@
         render();
         if (raiz.getAttribute('data-aberto') === '1') { abrir(); render(); }
     })();
+})();
+
+// ---------- PIX: confirma sozinho quando o pagamento cai ----------
+(function () {
+    var caixas = document.querySelectorAll('[data-gds-pix]');
+    Array.prototype.forEach.call(caixas, function (box) {
+        var token = box.getAttribute('data-gds-pix'), tentativas = 0;
+        var status = box.querySelector('[data-gds-pix-status]');
+        var conferir = function () {
+            if (++tentativas > 360) return; // para depois de ~30 min
+            fetch('/site/pagamento.php?t=' + encodeURIComponent(token), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d && d.status === 'pago') {
+                    box.classList.add('gds-pix-pago');
+                    if (status) status.textContent = '✅ Pagamento confirmado! Obrigado.';
+                    var img = box.querySelector('img'); if (img) img.style.opacity = '.25';
+                    return;
+                }
+                if (d && d.status === 'cancelado') { if (status) status.textContent = 'Este Pix expirou. Fale com a empresa para gerar outro.'; return; }
+                setTimeout(conferir, 5000);
+            }).catch(function () { setTimeout(conferir, 8000); });
+        };
+        setTimeout(conferir, 4000);
+    });
 })();

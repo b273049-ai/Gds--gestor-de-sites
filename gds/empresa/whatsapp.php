@@ -90,7 +90,7 @@ $exemplo = ['nome' => 'Maria', 'empresa' => $empresa['nome'], 'servico' => 'Cort
             'pagamento' => 'Pix', 'mensagem' => 'Inclui som e iluminação.', 'codigo' => '123', 'link' => wa_url_publica($empresa), 'endereco' => $empresa['endereco'] ?: 'Rua Exemplo, 100', 'telefone' => ''];
 // Só as mensagens dos módulos que a empresa usa
 $grupos = [];
-$modGrupo = ['Agendamentos' => 'agenda', 'Orçamentos' => 'orcamentos', 'Pedidos / Delivery' => 'delivery'];
+$modGrupo = ['Agendamentos' => 'agenda', 'Clube e pacotes' => 'agenda', 'Orçamentos' => 'orcamentos', 'Pedidos / Delivery' => 'delivery'];
 foreach (wa_eventos() as $k => $ev) {
     $g = $ev['grupo'];
     if ($k === 'pedido_cancelado' && !modulo_ativo('delivery') && modulo_ativo('orcamentos')) $g = 'Orçamentos';

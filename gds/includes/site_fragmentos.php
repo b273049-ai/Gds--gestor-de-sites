@@ -126,6 +126,8 @@ function frag_servicos($servicos, $opts = []) {
         $meta = '';
         if (($opts['modo'] ?? 'agendamento') === 'agendamento' && ($d = frag_duracao($s['duracao_minutos'] ?? 0))) $meta .= '<span class="gds-chip">' . frag_icone('relogio') . ' ' . $d . '</span>';
         if (!empty($s['categoria']) && count($categorias) <= 1) $meta .= '<span class="gds-chip">' . e($s['categoria']) . '</span>';
+        if ((int)($s['vagas'] ?? 1) > 1) $meta .= '<span class="gds-chip">' . frag_icone('estrela') . ' Turma · ' . (int)$s['vagas'] . ' vagas</span>';
+        if (pg_bool($s['experimental'] ?? false)) $meta .= '<span class="gds-chip gds-chip-accent">' . ((float)$s['preco'] > 0 ? 'Experimental' : 'Experimental grátis') . '</span>';
         if ($meta) $html .= '<div class="gds-svc-meta">' . $meta . '</div>';
         $html .= '</div><div class="gds-svc-rodape"><div class="gds-preco">' . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de</small>R$ ' . number_format((float)$s['preco'], 2, ',', '.') : frag_preco($s['preco'])) . '</div>';
         $html .= frag_botao_servico($s, $opts) . '</div></article>';
@@ -143,6 +145,8 @@ function frag_servicos_menu($servicos, $opts) {
         foreach ($lista as $s) {
             $aPartir = !empty($s['preco_a_partir']) && $s['preco_a_partir'] !== 'f' && $s['preco_a_partir'] !== false;
             $dur = ($opts['modo'] ?? '') === 'agendamento' ? frag_duracao($s['duracao_minutos'] ?? 0) : '';
+            if ((int)($s['vagas'] ?? 1) > 1) $dur .= ' · Turma · ' . (int)$s['vagas'] . ' vagas';
+            if (pg_bool($s['experimental'] ?? false)) $dur .= ' · ' . ((float)$s['preco'] > 0 ? 'Experimental' : 'Experimental grátis');
             $html .= '<li class="gds-menu-item"><div class="gds-menu-linha"><span class="gds-menu-nome">' . e($s['nome'])
                    . (!empty($s['destaque']) && $s['destaque'] !== 'f' ? ' <span class="gds-menu-selo">★</span>' : '') . '</span><span class="gds-menu-pontos" aria-hidden="true"></span>'
                    . '<span class="gds-menu-preco">' . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de </small>' : '') . e(frag_preco($s['preco'])) . '</span></div>'
@@ -168,8 +172,15 @@ function frag_botao_servico($s, $opts) {
     if (($modo === 'orcamento' || $modo === 'agendamento') && !empty($opts['tem_orcamento'])) {
         return '<a class="gds-btn" href="#gds-orcamento" data-gds-orcar-servico="' . $id . '">Pedir orçamento ' . frag_icone('seta') . '</a>';
     }
-    if ($modo === 'catalogo' && !empty($opts['carrinho']) && (float)$s['preco'] > 0) {
-        return '<button type="button" class="gds-btn" data-gds-add="' . $id . '" data-nome="' . e($s['nome']) . '" data-preco="' . (float)$s['preco'] . '">' . frag_icone('sacola') . ' Adicionar</button>';
+    if ($modo === 'catalogo' && !empty($opts['carrinho'])) {
+        require_once __DIR__ . '/opcoes.php';
+        $grupos = opc_ler($s);
+        if ((float)$s['preco'] > 0 || $grupos) {
+            $obrig = array_filter($grupos, fn($g) => (int)($g['min'] ?? 0) > 0);
+            return '<button type="button" class="gds-btn" data-gds-add="' . $id . '" data-nome="' . e($s['nome']) . '" data-preco="' . (float)$s['preco'] . '"'
+                 . ($grupos ? " data-gds-opcoes='" . htmlspecialchars(json_encode($grupos, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') . "'" : '') . '>'
+                 . frag_icone('sacola') . ($obrig ? ' Escolher' : ' Adicionar') . '</button>';
+        }
     }
     if ($whats) {
         if ($modo === 'catalogo') {
@@ -400,7 +411,7 @@ function frag_orcamento($servicos, $estado = [], $empresa = []) {
     }
     $p = $estado['post'] ?? [];
     $html = '<div class="gds-c gds-orcamento" id="gds-orcamento" style="max-width:720px">' . frag_alerta_erro($estado['erro'] ?? '')
-          . '<form method="post" class="gds-card" novalidate data-gds-form-orcamento>' . frag_honeypot() . '<input type="hidden" name="pedir_orcamento" value="1">';
+          . '<form method="post" class="gds-card" novalidate data-gds-form-orcamento enctype="multipart/form-data">' . frag_honeypot() . '<input type="hidden" name="pedir_orcamento" value="1">';
     if ($servicos) {
         $html .= '<div class="gds-campo"><span class="gds-rotulo">O que você precisa?</span><div class="gds-opcoes" role="radiogroup">';
         foreach ($servicos as $s) {
@@ -413,9 +424,22 @@ function frag_orcamento($servicos, $estado = [], $empresa = []) {
         $outro = (string)($p['orc_servico_id'] ?? '') === 'outro' ? ' checked' : '';
         $html .= '<label class="gds-op"><input type="radio" name="orc_servico_id" value="outro"' . $outro . '><span class="gds-op-txt"><strong>Outro / ainda não sei</strong><small>Conte nos detalhes abaixo</small></span></label></div></div>';
     }
-    $html .= '<div class="gds-linha"><div class="gds-campo"><label for="orc_data">Data (se houver)</label><input type="text" id="orc_data" name="orc_data" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" data-gds-data value="' . e($p['orc_data'] ?? '') . '"></div>'
+    // Perguntas do serviço (aparecem quando o serviço é escolhido)
+    foreach ($servicos as $s) {
+        $pergs = array_values(array_filter(array_map('strval', (array)json_decode((string)($s['perguntas'] ?? ''), true))));
+        if (!$pergs) continue;
+        $sel = (string)($p['orc_servico_id'] ?? '') === (string)$s['id'];
+        $html .= '<div class="gds-orc-perguntas" data-gds-perguntas="' . (int)$s['id'] . '"' . ($sel ? '' : ' hidden') . '>';
+        foreach ($pergs as $i => $q) {
+            $id = 'orc_r' . (int)$s['id'] . '_' . $i;
+            $html .= '<div class="gds-campo"><label for="' . $id . '">' . e($q) . '</label><input type="text" id="' . $id . '" name="orc_resp[' . (int)$s['id'] . '][' . $i . ']" maxlength="300" value="' . e($p['orc_resp'][(int)$s['id']][$i] ?? '') . '"></div>';
+        }
+        $html .= '</div>';
+    }
+    $html .= '<div class="gds-linha"><div class="gds-campo"><label for="orc_data">Data (se houver)</label><input type="text" id="orc_data" name="orc_data" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" data-gds-data' . ((int)($empresa['eventos_por_dia'] ?? 0) > 0 ? ' data-gds-data-livre="' . (int)$empresa['id'] . '"' : '') . ' value="' . e($p['orc_data'] ?? '') . '"><small class="gds-data-livre" data-gds-data-msg aria-live="polite"></small></div>'
            . '<div class="gds-campo"><label for="orc_local">Cidade / local</label><input type="text" id="orc_local" name="orc_local" maxlength="150" value="' . e($p['orc_local'] ?? '') . '"></div></div>'
            . '<div class="gds-campo"><label for="orc_detalhes">Conte os detalhes</label><textarea id="orc_detalhes" name="orc_detalhes" rows="4" maxlength="2000" placeholder="Ex.: tipo de evento, quantidade de pessoas, horário, o que você imagina…">' . e($p['orc_detalhes'] ?? '') . '</textarea></div>'
+           . '<div class="gds-campo"><label for="orc_fotos">Fotos (opcional, até 3)</label><input type="file" id="orc_fotos" name="orc_fotos[]" accept="image/jpeg,image/png,image/webp" multiple data-gds-fotos="3"><small class="gds-mute">Ajuda a fazer o orçamento certo: o local, o defeito, uma referência…</small></div>'
            . '<div class="gds-campo"><label for="orc_nome">Seu nome</label><input type="text" id="orc_nome" name="orc_nome" maxlength="120" required autocomplete="name" value="' . e($p['orc_nome'] ?? '') . '"></div>'
            . '<div class="gds-linha"><div class="gds-campo"><label for="orc_tel">WhatsApp</label><input type="tel" id="orc_tel" name="orc_telefone" maxlength="20" required autocomplete="tel" inputmode="tel" placeholder="(11) 99999-9999" data-gds-tel value="' . e($p['orc_telefone'] ?? '') . '"></div>'
            . '<div class="gds-campo"><label for="orc_email">E-mail (opcional)</label><input type="email" id="orc_email" name="orc_email" maxlength="150" autocomplete="email" value="' . e($p['orc_email'] ?? '') . '"></div></div>'
@@ -476,6 +500,7 @@ function frag_agendamento($servicos, $profissionais, $estado = [], $agenda = [],
         'intervalo' => (int)($agenda['intervalo'] ?? 30),
         'maxDias' => (int)($agenda['antecedencia_dias'] ?? 60),
         'temServicos' => (bool)$servicos,
+        'espera' => !isset($empresa['lista_espera']) || $empresa['lista_espera'] === null || pg_bool($empresa['lista_espera']),
     ];
 
     $html = '<div class="gds-c gds-agendamento" id="gds-agendamento" data-gds-agenda=\'' . e(json_encode($config)) . '\'>';
@@ -553,11 +578,8 @@ function frag_agendamento_confirmado($estado, $empresa) {
     if (!empty($d['link_gerenciar'])) $html .= '<p style="margin-top:16px;font-size:.88rem"><a href="' . e($d['link_gerenciar']) . '">Precisa cancelar? Gerencie seu agendamento aqui</a> — guarde este link.</p>';
     $html .= '</div>';
     if (!empty($estado['pix'])) {
-        $pix = $estado['pix'];
-        $html .= '<div class="gds-pix"><h3>Pague com PIX e garanta seu horário</h3>';
-        if (!empty($pix['qr_base64'])) $html .= '<img src="data:image/png;base64,' . e($pix['qr_base64']) . '" alt="QR Code PIX">';
-        $html .= '<div class="gds-campo"><label for="gds-pix-cod">PIX copia e cola</label><textarea id="gds-pix-cod" readonly rows="3">' . e($pix['qr_code']) . '</textarea></div>'
-               . '<button type="button" class="gds-btn" data-gds-copiar="' . e($pix['qr_code']) . '">Copiar código PIX</button></div>';
+        require_once __DIR__ . '/pagamentos.php';
+        $html .= frag_pix_pagamento($estado['pix'], $estado['pix']['titulo'] ?? 'Pague com Pix e garanta seu horário');
     } elseif (!empty($estado['pix_erro'])) {
         $html .= '<div class="gds-alerta gds-alerta-erro" style="margin-top:14px">Não foi possível gerar o PIX agora. Seu horário está reservado do mesmo jeito.</div>';
     }
@@ -569,10 +591,10 @@ function frag_agendamento_confirmado($estado, $empresa) {
 // ------------------------------------------------------------
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=5">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=7">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
-         . '<script src="/assets/js/gds-site.js?v=5" defer></script>'
+         . '<script src="/assets/js/gds-site.js?v=7" defer></script>'
          . '<script src="/assets/js/gds-motion.js?v=1" defer></script>';
 }
 
@@ -593,13 +615,15 @@ function frag_luminancia($hex) {
 // Barra flutuante + painel com itens, entrega/retirada, pagamento e dados.
 // O total é recalculado no servidor com os preços do banco.
 // ------------------------------------------------------------
-function frag_carrinho($empresa, $estado = []) {
+function frag_carrinho($empresa, $estado = [], $servicos = []) {
     $taxa = (float)($empresa['taxa_entrega'] ?? 0);
     $bairros = delivery_bairros($empresa);
     $minimo = (float)($empresa['pedido_minimo'] ?? 0);
     $entrega = !isset($empresa['aceita_entrega']) || $empresa['aceita_entrega'] === null || pg_bool($empresa['aceita_entrega']);
     $retirada = !isset($empresa['aceita_retirada']) || $empresa['aceita_retirada'] === null || pg_bool($empresa['aceita_retirada']);
     $formas = array_values(array_filter(array_map('trim', explode(',', (string)($empresa['formas_pagamento'] ?? '') ?: 'Pix, Cartão na entrega, Dinheiro'))));
+    require_once __DIR__ . '/pagamentos.php';
+    if (pg_bool($empresa['pix_pedido'] ?? false) && pag_disponivel($empresa)) array_unshift($formas, PIX_ONLINE);
     $p = $estado['post'] ?? [];
     $ok = !empty($estado['ok']);
     $html = '<div class="gds-c gds-carrinho-raiz" data-gds-carrinho data-empresa="' . (int)$empresa['id'] . '" data-taxa="' . $taxa . '" data-minimo="' . $minimo . '"'
@@ -620,6 +644,7 @@ function frag_carrinho($empresa, $estado = []) {
         foreach ($d['itens'] as $i) $html .= '<div><span>' . (int)$i['qtd'] . '× ' . e($i['nome']) . '</span><span>' . e(frag_preco($i['preco'] * $i['qtd'])) . '</span></div>';
         if ($d['taxa'] > 0) $html .= '<div><span>Entrega</span><span>' . e(frag_preco($d['taxa'])) . '</span></div>';
         $html .= '<div class="gds-total"><span>Total</span><span>' . e(frag_preco($d['total'])) . '</span></div></div>'
+               . (!empty($d['pix']) ? frag_pix_pagamento($d['pix'], 'Pague o pedido com Pix') : '')
                . '<div class="gds-acoes">' . (!empty($d['link']) ? '<a class="gds-btn" href="' . e($d['link']) . '">Acompanhar pedido</a>' : '');
         if (empty($d['wa_automatico']) && so_digitos_frag($empresa['whatsapp'] ?? '')) {
             $html .= '<a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="' . e(frag_link_whatsapp($empresa['whatsapp'], $d['msg_whatsapp'] ?? '')) . '">' . frag_icone('whats') . ' Enviar pelo WhatsApp</a>';
@@ -630,18 +655,42 @@ function frag_carrinho($empresa, $estado = []) {
         return '<label class="gds-op gds-op-mini"><input type="radio" name="pd_tipo_entrega" value="' . $valor . '"' . ($checked ? ' checked' : '') . ' required><span class="gds-op-txt"><strong>' . $rotulo . '</strong></span></label>';
     };
     $tipoSel = $p['pd_tipo_entrega'] ?? ($entrega ? 'entrega' : 'retirada');
+    // QR Code da mesa (?mesa=N): pedido para consumir no local, sem entrega nem endereço
+    $mesa = mb_substr(preg_replace('/[^0-9A-Za-z]/', '', (string)($_GET['mesa'] ?? $p['pd_mesa'] ?? '')), 0, 10);
+    // "Peça também": itens marcados para sugerir no carrinho (bebida, sobremesa, batata...)
+    $sug = array_slice(array_filter($servicos, fn($s) => pg_bool($s['sugerir'] ?? false) && !pg_bool($s['esgotado'] ?? false) && (float)$s['preco'] > 0), 0, 6);
+    $sugestoes = '';
+    if ($sug) {
+        $sugestoes = '<div class="gds-sugestoes" data-gds-sugestoes><h4>Peça também</h4><div class="gds-sugestoes-lista">';
+        foreach ($sug as $s) {
+            require_once __DIR__ . '/opcoes.php';
+            $grupos = opc_ler($s);
+            $sugestoes .= '<button type="button" data-gds-add="' . (int)$s['id'] . '" data-nome="' . e($s['nome']) . '" data-preco="' . (float)$s['preco'] . '"'
+                        . ($grupos ? " data-gds-opcoes='" . htmlspecialchars(json_encode($grupos, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') . "'" : '')
+                        . '><strong>+ ' . e($s['nome']) . '</strong><span>' . e(frag_preco($s['preco'])) . '</span></button>';
+        }
+        $sugestoes .= '</div></div>';
+    }
+    // Fora do horário: avisa e o pedido fica para quando abrir
+    $st = function_exists('agenda_status_agora') ? agenda_status_agora($empresa) : ['aberto' => true];
+    $avisoFechado = empty($st['aberto']) && $mesa === '' ? '<p class="gds-loja-fechada">🕒 ' . e($st['texto'] ?? 'Fechado agora') . '. Pode fazer o pedido: ele é preparado assim que abrirmos.</p>'
+        . '<input type="hidden" name="pd_agendado" value="1">' : '';
     $html .= '<form method="post" class="gds-carrinho-corpo" data-gds-carrinho-form novalidate>' . frag_alerta_erro($estado['erro'] ?? '')
            . '<input type="hidden" name="fazer_pedido" value="1"><input type="hidden" name="pd_itens" data-gds-itens value="' . e($p['pd_itens'] ?? '') . '">'
+           . $avisoFechado
            . '<ul class="gds-carrinho-itens" data-gds-lista></ul><p class="gds-mute gds-carrinho-vazio" data-gds-vazio>Seu pedido está vazio. Escolha os itens no cardápio.</p>'
+           . $sugestoes
            . '<div class="gds-carrinho-dados" data-gds-dados>'
-           . '<div class="gds-opcoes gds-opcoes-2">' . ($entrega ? $radio('entrega', '🛵 Entrega' . (!$bairros && $taxa > 0 ? ' (+' . frag_preco($taxa) . ')' : ''), $tipoSel === 'entrega') : '')
-           . ($retirada ? $radio('retirada', '🏪 Retirar no local', $tipoSel === 'retirada' || !$entrega) : '') . '</div>'
-           . ($entrega && $bairros ? '<div class="gds-campo" data-gds-bairro><label for="pd_bairro">Bairro</label><select id="pd_bairro" name="pd_bairro"><option value="">Escolha o bairro…</option>'
+           . ($mesa !== '' ? '<p class="gds-mesa" data-gds-mesa="' . e($mesa) . '">🍽 Pedido na <strong>mesa ' . e($mesa) . '</strong> — levamos até você.</p><input type="hidden" name="pd_mesa" value="' . e($mesa) . '">'
+                . '<label hidden><input type="radio" name="pd_tipo_entrega" value="mesa" checked></label>'
+             : '<div class="gds-opcoes gds-opcoes-2">' . ($entrega ? $radio('entrega', '🛵 Entrega' . (!$bairros && $taxa > 0 ? ' (+' . frag_preco($taxa) . ')' : ''), $tipoSel === 'entrega') : '')
+           . ($retirada ? $radio('retirada', '🏪 Retirar no local', $tipoSel === 'retirada' || !$entrega) : '') . '</div>')
+           . ($entrega && $bairros && $mesa === '' ? '<div class="gds-campo" data-gds-bairro><label for="pd_bairro">Bairro</label><select id="pd_bairro" name="pd_bairro"><option value="">Escolha o bairro…</option>'
                 . implode('', array_map(fn($b) => '<option value="' . e($b['bairro']) . '" data-taxa="' . $b['taxa'] . '"' . (($p['pd_bairro'] ?? '') === $b['bairro'] ? ' selected' : '') . '>' . e($b['bairro']) . ' — ' . ($b['taxa'] > 0 ? e(frag_preco($b['taxa'])) : 'grátis') . '</option>', $bairros))
                 . '</select><small class="gds-mute">Não achou seu bairro? Chame no WhatsApp.</small></div>' : '')
-           . ($entrega ? '<div class="gds-campo" data-gds-endereco><label for="pd_endereco">Endereço de entrega</label><input type="text" id="pd_endereco" name="pd_endereco" maxlength="250" autocomplete="street-address" placeholder="Rua, número, bairro, complemento" value="' . e($p['pd_endereco'] ?? '') . '"></div>' : '')
+           . ($entrega && $mesa === '' ? '<div class="gds-campo" data-gds-endereco><label for="pd_endereco">Endereço de entrega</label><input type="text" id="pd_endereco" name="pd_endereco" maxlength="250" autocomplete="street-address" placeholder="Rua, número, bairro, complemento" value="' . e($p['pd_endereco'] ?? '') . '"></div>' : '')
            . '<div class="gds-linha2"><div class="gds-campo"><label for="pd_nome">Seu nome</label><input type="text" id="pd_nome" name="pd_nome" required maxlength="120" autocomplete="name" value="' . e($p['pd_nome'] ?? '') . '"></div>'
-           . '<div class="gds-campo"><label for="pd_telefone">WhatsApp</label><input type="tel" id="pd_telefone" name="pd_telefone" required inputmode="tel" autocomplete="tel" data-gds-tel placeholder="(00) 00000-0000" value="' . e($p['pd_telefone'] ?? '') . '"></div></div>'
+           . '<div class="gds-campo"><label for="pd_telefone">WhatsApp' . ($mesa !== '' ? ' <small>(opcional: avisamos quando sair)</small>' : '') . '</label><input type="tel" id="pd_telefone" name="pd_telefone"' . ($mesa !== '' ? '' : ' required') . ' inputmode="tel" autocomplete="tel" data-gds-tel placeholder="(00) 00000-0000" value="' . e($p['pd_telefone'] ?? '') . '"></div></div>'
            . '<div class="gds-linha2"><div class="gds-campo"><label for="pd_pagamento">Pagamento</label><select id="pd_pagamento" name="pd_pagamento" data-gds-pagamento>';
     foreach ($formas as $f) $html .= '<option' . (($p['pd_pagamento'] ?? '') === $f ? ' selected' : '') . '>' . e($f) . '</option>';
     $html .= '</select></div><div class="gds-campo" data-gds-troco hidden><label for="pd_troco">Troco para quanto?</label><input type="text" id="pd_troco" name="pd_troco" inputmode="decimal" placeholder="Ex: 100" value="' . e($p['pd_troco'] ?? '') . '"></div></div>'

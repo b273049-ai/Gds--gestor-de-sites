@@ -30,4 +30,8 @@ if ($profissionalId) {
     if (!$p->fetch()) $profissionalId = null;
 }
 
-echo json_encode(agenda_horarios_do_dia($empresa, $data, $duracao, $profissionalId));
+$servico = null;
+if ($sid = (int)($_GET['servico'] ?? 0)) {
+    try { $sv = $pdo->prepare("SELECT id, vagas, duracao_minutos FROM servicos WHERE id=? AND empresa_id=?"); $sv->execute([$sid, $empresaId]); $servico = $sv->fetch() ?: null; } catch (PDOException $e) { $servico = null; }
+}
+echo json_encode(agenda_horarios_do_dia($empresa, $data, $duracao, $profissionalId, $servico));

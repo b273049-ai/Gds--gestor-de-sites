@@ -1,10 +1,11 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/agenda_helper.php';
+require_once __DIR__ . '/../includes/espera.php';
 exigir_login('empresa');
 exigir_modulo('agenda');
 $empresaId = (int)empresa_id_atual();
-$statusAg = ['agendado' => 'Agendado', 'confirmado' => 'Confirmado', 'concluido' => 'Concluído', 'cancelado' => 'Cancelado'];
+$statusAg = ['agendado' => 'Agendado', 'confirmado' => 'Confirmado', 'concluido' => 'Concluído', 'faltou' => 'Faltou', 'cancelado' => 'Cancelado'];
 
 $empresa = $pdo->prepare("SELECT * FROM empresas WHERE id=?");
 $empresa->execute([$empresaId]); $empresa = $empresa->fetch();
@@ -48,6 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['criar_agendamento']))
     flash('erro', $erro);
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['espera_acao'])) {
+    $eid = (int)($_POST['espera_id'] ?? 0);
+    if ($_POST['espera_acao'] === 'remover') $pdo->prepare("DELETE FROM lista_espera WHERE id=? AND empresa_id=?")->execute([$eid, $empresaId]);
+    flash('sucesso', 'Lista de espera atualizada.');
+    header('Location: agenda.php#espera'); exit;
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar_status']) && isset($statusAg[$_POST['status'] ?? ''])) {
     $agId = (int)$_POST['agendamento_id'];
     $antes = $pdo->prepare("SELECT status FROM agendamentos WHERE id=? AND empresa_id=?");
@@ -58,6 +65,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar_status']) &
     if ($antes !== false && $antes !== $_POST['status']) {
         wa_adiar();
         $aviso = wa_resultado_para_tela(wa_avisar_status_agendamento($empresa, $agId, $_POST['status']));
+        if ($_POST['status'] === 'cancelado') {
+            $as = $pdo->prepare("SELECT assinatura_id FROM agendamentos WHERE id=?"); $as->execute([$agId]);
+            if ($asId = (int)$as->fetchColumn()) { require_once __DIR__ . '/../includes/clube.php'; clube_usar($asId, -1); }
+            $dt = $pdo->prepare("SELECT data_hora, servico_id FROM agendamentos WHERE id=?"); $dt->execute([$agId]); $dt = $dt->fetch();
+            if ($dt && ($av = espera_avisar($empresa, $dt['data_hora'], $dt['servico_id']))) $aviso .= ' ' . $av['nome'] . ', da lista de espera, foi avisado(a) da vaga.';
+        }
     }
     flash('sucesso', 'Status atualizado.' . $aviso);
     header('Location: agenda.php?' . http_build_query(array_intersect_key($_GET, ['ver' => 1, 'data' => 1, 'profissional' => 1]))); exit;
@@ -128,6 +141,21 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
         </form>
     </details>
 
+    <?php $espera = []; try { $q = $pdo->prepare("SELECT l.*, s.nome AS servico_nome FROM lista_espera l LEFT JOIN servicos s ON s.id = l.servico_id WHERE l.empresa_id=? AND l.data >= CURRENT_DATE AND l.status IN ('aguardando','avisado') ORDER BY l.data, l.id LIMIT 50"); $q->execute([$empresaId]); $espera = $q->fetchAll(); } catch (PDOException $e) {} ?>
+    <?php if ($espera): ?>
+    <details class="form-box largo" id="espera">
+        <summary>⏳ Lista de espera (<?= count($espera) ?>)</summary>
+        <p class="dica">Quando um horário desses dias é cancelado, o primeiro da lista recebe o aviso no WhatsApp sozinho.</p>
+        <div class="tabela-wrap"><table><thead><tr><th>Dia</th><th>Cliente</th><th>Serviço</th><th>Situação</th><th></th></tr></thead><tbody>
+        <?php foreach ($espera as $l): ?>
+            <tr><td><?= date('d/m', strtotime($l['data'])) ?></td><td><?= e($l['nome']) ?><span class="mini"><a class="link" target="_blank" href="<?= e(link_whatsapp($l['telefone'], 'Olá, ' . explode(' ', $l['nome'])[0] . '! Abriu um horário no dia ' . date('d/m', strtotime($l['data'])) . '. Quer marcar?')) ?>"><?= e($l['telefone']) ?></a></span></td>
+                <td><?= e($l['servico_nome'] ?? '—') ?></td><td><?= $l['status'] === 'avisado' ? '<span class="pill pill-ok">avisado ' . date('d/m H:i', strtotime($l['avisado_em'])) . '</span>' : '<span class="pill pill-neutro">aguardando</span>' ?></td>
+                <td class="acoes"><form method="post"><?= csrf_campo() ?><input type="hidden" name="espera_id" value="<?= (int)$l['id'] ?>"><button class="btn btn-ghost btn-sm" name="espera_acao" value="remover"><?= icone('lixeira', 14) ?></button></form></td></tr>
+        <?php endforeach; ?>
+        </tbody></table></div>
+    </details>
+    <?php endif; ?>
+
     <form class="toolbar" method="get">
         <?php foreach (['grade' => '▦ Grade do dia', 'proximos' => 'Próximos', 'hoje' => 'Hoje', 'semana' => '7 dias', 'passados' => 'Passados', 'todos' => 'Todos'] as $v => $l): ?>
         <a class="btn btn-sm <?= $ver === $v ? '' : 'btn-ghost' ?>" href="?ver=<?= $v ?><?= $filtroProf ? '&profissional=' . $filtroProf : '' ?>"><?= $l ?></a>
@@ -195,7 +223,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
             <td><strong><?= date('d/m/Y', $ts) ?></strong> <?= date('H:i', $ts) ?><span class="mini"><?= $diasSemana[(int)date('w', $ts)] ?><?= $a['duracao_minutos'] ? ' · ' . (int)$a['duracao_minutos'] . ' min' : '' ?></span></td>
             <td><?= e($a['cliente_nome'] ?? '—') ?><?php if ($a['observacoes']): ?><span class="mini" title="<?= e($a['observacoes']) ?>">📝 <?= e(mb_strimwidth($a['observacoes'], 0, 40, '…')) ?></span><?php endif; ?></td>
             <td><?= e($a['servico_nome'] ?? '—') ?><?php if (isset($a['valor']) && $a['valor'] !== null && (float)$a['valor'] > 0): ?><span class="mini">R$ <?= number_format((float)$a['valor'], 2, ',', '.') ?><?= !empty($a['cupom_codigo']) ? ' · cupom ' . e($a['cupom_codigo']) : '' ?></span><?php endif; ?></td>
-            <td><?= e($a['profissional_nome'] ?? '—') ?><?php if (($a['origem'] ?? '') === 'site'): ?><span class="mini">🌐 pelo site</span><?php endif; ?></td>
+            <td><?= e($a['profissional_nome'] ?? '—') ?><?php if (($a['origem'] ?? '') === 'site'): ?><span class="mini">🌐 pelo site</span><?php endif; ?><?php if (pg_bool($a['pago'] ?? false)): ?><span class="mini" style="color:var(--ok)">💰 <?= (float)($a['sinal_valor'] ?? 0) > 0 && (float)$a['sinal_valor'] < (float)($a['valor'] ?? 0) ? 'sinal de R$ ' . number_format((float)$a['sinal_valor'], 2, ',', '.') . ' pago' : 'pago no Pix' ?></span><?php endif; ?></td>
             <td>
                 <form method="post">
                     <?= csrf_campo() ?><input type="hidden" name="agendamento_id" value="<?= $a['id'] ?>"><input type="hidden" name="atualizar_status" value="1">

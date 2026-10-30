@@ -9,6 +9,9 @@ require_once __DIR__ . '/includes/migracoes.php';
 require_once __DIR__ . '/includes/whatsapp.php';
 require_once __DIR__ . '/includes/fotos.php';
 require_once __DIR__ . '/includes/prospeccao.php';
+require_once __DIR__ . '/includes/pagamentos.php';
+require_once __DIR__ . '/includes/clube.php';
+require_once __DIR__ . '/includes/espera.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -24,6 +27,12 @@ gds_garantir_schema();
 $res = ['ok' => true] + wa_rotina(true);
 // Fotos exclusivas por IA para sites sem foto (uma por execução, para não estourar o tempo)
 try { $res += fotos_ia_rotina(); } catch (Throwable $e) { $res['fotos_ia'] = 'erro: ' . mb_substr($e->getMessage(), 0, 160); }
+// Pix pendentes: confirma os que já caíram
+try { $res += pag_rotina(); } catch (Throwable $e) { $res['pix'] = 'erro'; }
+// Lembrete de retorno ("faz X dias do seu último corte")
+try { $res += retorno_rotina(); } catch (Throwable $e) { $res['retorno'] = 'erro'; }
+// Clube: avisa renovação e vence o que passou do prazo
+try { $res += clube_rotina(); } catch (Throwable $e) { $res['clube'] = 'erro'; }
 // Caçadas de prospecção continuam mesmo com a tela fechada
 try { $res += prosp_rotina(); } catch (Throwable $e) { $res['prospeccao'] = 'erro'; }
 echo json_encode($res);

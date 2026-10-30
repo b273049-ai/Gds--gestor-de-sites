@@ -157,7 +157,7 @@ CREATE TABLE agendamentos (
     profissional_id INT REFERENCES profissionais(id) ON DELETE SET NULL,
     servico_id INT REFERENCES servicos(id) ON DELETE SET NULL,
     data_hora TIMESTAMP NOT NULL,
-    status VARCHAR(15) DEFAULT 'agendado' CHECK (status IN ('agendado','confirmado','concluido','cancelado')),
+    status VARCHAR(15) DEFAULT 'agendado' CHECK (status IN ('agendado','confirmado','concluido','cancelado','faltou')),
     observacoes TEXT,
     criado_em TIMESTAMP DEFAULT NOW()
 );

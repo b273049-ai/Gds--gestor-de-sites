@@ -232,6 +232,41 @@ pagamento (com troco) e observações. O pedido chega em **Pedidos/Orçamentos**
 (Confirmar → Saiu para entrega → Entregue) e o cliente acompanha numa página própria (`/site/pedido.php`).
 Configure em **Configurações → Pedidos pelo site**.
 
+## Funções por segmento (inspiradas nas melhores plataformas de cada nicho)
+Tudo entra sozinho no banco (migração 20). Cada empresa liga o que quiser no painel.
+
+**Pagamento Pix com confirmação automática** (Mercado Pago da própria empresa — Configurações → Pagamento online)
+- Agenda: sinal para reservar (valor fixo, % ou total), cobrado de todos, só de clientes novos ou só de quem já faltou.
+  A tela do cliente confirma sozinha quando o Pix cai; o horário só é confirmado depois do pagamento.
+- Delivery: opção "Pix agora pelo site" no carrinho, com QR Code e copia e cola.
+- Orçamento: o cliente aprova pelo link (fica registrado nome, data/hora e IP) e paga o sinal (% configurável).
+- O cron confere os pagamentos pendentes; a agenda ganhou o status **Faltou**.
+
+**Cardápio profissional (delivery)** — em Serviços/Itens, campo "Opções" com uma linha por grupo:
+- `Ponto* (1): Mal passado, Ao ponto, Bem passado` (o `*` torna obrigatório, o número é o máximo)
+- `Adicionais (até 3): Bacon +4, Cheddar +3`
+- `Sabores* (2, maior preço): Calabresa 45, Portuguesa 52` (meio a meio cobrando o maior)
+- "Peça também": itens marcados como sugestão aparecem no carrinho. Fora do horário o site avisa e aceita o pedido
+  "para quando abrir" (ou esconde o carrinho, se você desligar).
+- **QR Code por mesa**: Painel → **QR Code das mesas** gera e imprime um QR por mesa. O cliente aponta a câmera, o
+  carrinho já vem "na mesa 7" (sem entrega nem taxa, WhatsApp opcional) e o pedido chega com o selo da mesa.
+
+**Agenda (barbearia, salão, estética, academia, pilates…)**
+- **Lista de espera**: dia lotado → o cliente entra na lista; quando alguém cancela, o primeiro é avisado no WhatsApp.
+- **Lembrete de retorno**: em cada serviço, "lembrar o cliente depois de X dias" (ex.: corte a cada 21 dias).
+- **Clube de assinatura e pacotes** (Painel → Clube e pacotes): plano mensal com N usos ou pacote de sessões. O cliente
+  assina pelo site com Pix, o uso sai do plano ao agendar (volta se cancelar) e a renovação é avisada 3 dias antes.
+- **Turmas**: serviço com "vagas" vira aula em grupo (o horário mostra quantas vagas restam).
+- **Aula experimental grátis**: botão em destaque no topo do site, uma por cliente.
+
+**Orçamento profissional (eventos, obras, oficinas, assistência técnica)**
+- Perguntas por serviço (ex.: "Quantos convidados?") que aparecem quando o cliente escolhe o serviço.
+- O cliente pode mandar até 3 fotos (re-gravadas como JPEG em `uploads/pedidos/`).
+- **Data livre/ocupada**: em Configurações → Pagamento online, "Eventos por data". Com 1, o site avisa "data já
+  reservada" assim que o cliente digita a data, e o painel alerta se você aprovar dois eventos no mesmo dia.
+- **Atualizar o cliente** (pedido aprovado/em andamento): texto + foto da etapa ("peça chegou", "pintura pronta"). O cliente
+  recebe no WhatsApp e vê a linha do tempo com fotos no link do pedido.
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)
@@ -277,10 +312,9 @@ a IA só decide onde eles ficam. No Estúdio IA, "Cor dos botões" troca a cor d
 - **IA real**: preencha `IA_API_KEY` em `config/db.php`. O arquivo
   `empresa/ia_gerar_texto.php` já mostra uma chamada real e funcional à API
   da Anthropic — é só ligar no seu editor de site.
-- **Mercado Pago**: preencha `MERCADOPAGO_ACCESS_TOKEN`. A tela
-  `admin/financeiro.php` hoje permite marcar pagamento manualmente; a geração
-  automática de cobrança PIX via Mercado Pago precisa da sua conta de vendedor
-  configurada (posso implementar o endpoint assim que você tiver o token).
+- **Mercado Pago**: cada empresa cola o próprio Access Token em Configurações → Pagamento online para receber
+  Pix dos clientes dela (sinal, delivery, orçamento, clube). A mensalidade que as empresas pagam à plataforma
+  ainda é marcada à mão em `admin/financeiro.php`.
 - **WhatsApp automático**: configure um dos serviços em Admin → WhatsApp (veja a seção acima).
 
 ## Segurança

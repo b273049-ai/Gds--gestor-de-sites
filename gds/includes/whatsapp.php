@@ -33,6 +33,14 @@ function wa_eventos() {
             'texto' => "⏰ Lembrete: {nome}, seu horário na *{empresa}* é {data} às {hora} ({servico}).\nSe não puder vir, avise por aqui ou cancele: {link}"],
         'agendamento_cancelado' => ['grupo' => 'Agendamentos', 'rotulo' => 'Agendamento cancelado', 'quando' => 'Quando o agendamento é cancelado',
             'texto' => "{nome}, seu agendamento de {data} às {hora} na *{empresa}* foi *cancelado*.\nQuer marcar outro horário? É só responder esta mensagem."],
+        'lista_espera_vaga' => ['grupo' => 'Agendamentos', 'rotulo' => 'Abriu um horário (lista de espera)', 'quando' => 'Quando alguém cancela e há cliente na lista de espera daquele dia',
+            'texto' => "Boa notícia, {nome}! 🎉 Abriu um horário na *{empresa}* em {data}.\nCorre para garantir: {link}"],
+        'retorno_lembrete' => ['grupo' => 'Agendamentos', 'rotulo' => 'Lembrete de retorno', 'quando' => 'Alguns dias depois do atendimento (você define os dias em cada serviço)',
+            'texto' => "Oi, {nome}! Já faz {dias} dias do seu {servico} na *{empresa}* ✨\nQue tal agendar o próximo? {link}"],
+        'clube_ativo' => ['grupo' => 'Clube e pacotes', 'rotulo' => 'Plano ativado', 'quando' => 'Quando o pagamento do plano/pacote é confirmado',
+            'texto' => "⭐ {nome}, seu *{plano}* na *{empresa}* está ativo até {vencimento}!\nÉ só agendar pelo site com este WhatsApp: {link}"],
+        'clube_renovar' => ['grupo' => 'Clube e pacotes', 'rotulo' => 'Renovação do plano', 'quando' => '3 dias antes de vencer a assinatura',
+            'texto' => "Oi, {nome}! Seu *{plano}* na *{empresa}* vence em {vencimento}. Renove por {valor} sem perder nenhum dia: {link}"],
         'agendamento_concluido' => ['grupo' => 'Agendamentos', 'rotulo' => 'Pedido de avaliação', 'quando' => 'Quando você marca o atendimento como "Concluído"',
             'texto' => "Obrigado pela visita, {nome}! 💙\nComo foi seu atendimento na *{empresa}*? Sua avaliação ajuda muito: {link}"],
 
@@ -42,6 +50,8 @@ function wa_eventos() {
             'texto' => "{nome}, seu orçamento da *{empresa}* está pronto! 📝\n\n{servico}\n💰 Valor: *{valor}*\n{mensagem}\n\nPara aprovar, é só responder *SIM* por aqui. Detalhes: {link}"],
         'orcamento_aprovado' => ['grupo' => 'Orçamentos', 'rotulo' => 'Orçamento aprovado', 'quando' => 'Quando você marca o orçamento como "Aprovado"',
             'texto' => "🎉 Combinado, {nome}! Seu orçamento ({valor}) foi aprovado na *{empresa}*. Qualquer dúvida, fale com a gente por aqui."],
+        'pedido_etapa' => ['grupo' => 'Orçamentos', 'rotulo' => 'Atualização do serviço (etapa com foto)', 'quando' => 'Quando você registra uma etapa no pedido (ex.: "peça chegou", "pintura pronta")',
+            'texto' => "🔧 {nome}, novidade no seu pedido nº {codigo} na *{empresa}*:\n{mensagem}\n\nVeja as fotos e o andamento: {link}"],
 
         'pedido_recebido' => ['grupo' => 'Pedidos / Delivery', 'rotulo' => 'Pedido recebido', 'quando' => 'Assim que o cliente faz o pedido pelo site',
             'texto' => "Olá, {nome}! 🛍️ Recebemos seu pedido nº {codigo} na *{empresa}*:\n\n{itens}\n\n{entrega}\n💰 Total: *{total}* ({pagamento})\n\nAcompanhe: {link}"],
@@ -70,6 +80,7 @@ function wa_texto_aviso_empresa($tipo, $v) {
         'pedido' => "🛍️ *Novo pedido nº {codigo}*\n👤 {nome} · {telefone}\n\n{itens}\n\n{entrega}\n💰 Total: {total} ({pagamento})",
         'contato' => "💬 *Nova mensagem pelo site*\n👤 {nome} · {telefone}\n{mensagem}",
     ][$tipo] ?? '{mensagem}';
+    if (trim((string)($v['telefone'] ?? '')) === '') $t = str_replace(' · {telefone}', '', $t); // pedido da mesa sem WhatsApp
     return wa_aplicar_variaveis($t, $v);
 }
 
@@ -474,8 +485,8 @@ function wa_dinheiro($v) {
 function wa_vars_pedido($p, $empresa) {
     $itens = json_decode((string)($p['itens'] ?? ''), true) ?: [];
     $linhas = array_map(fn($i) => (int)$i['qtd'] . 'x ' . $i['nome'] . ' — ' . wa_dinheiro($i['preco'] * $i['qtd']), $itens);
-    $entrega = ($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local'
-             : (($p['tipo_entrega'] ?? '') === 'entrega' ? '🛵 Entrega em: ' . ($p['endereco_entrega'] ?? '') . ((float)($p['taxa_entrega'] ?? 0) > 0 ? ' (taxa ' . wa_dinheiro($p['taxa_entrega']) . ')' : '') : '');
+    $entrega = !empty($p['mesa']) ? '🍽 Mesa ' . $p['mesa'] : (($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local'
+             : (($p['tipo_entrega'] ?? '') === 'entrega' ? '🛵 Entrega em: ' . ($p['endereco_entrega'] ?? '') . ((float)($p['taxa_entrega'] ?? 0) > 0 ? ' (taxa ' . wa_dinheiro($p['taxa_entrega']) . ')' : '') : ''));
     $servico = $p['servico_nome'] ?? '';
     if ($servico === '' && !empty($p['descricao'])) $servico = strtok($p['descricao'], "\n");
     return [
@@ -504,7 +515,7 @@ function wa_avisar_status_pedido($empresa, $pedidoId, $status) {
     $evento = [
         'orcado' => 'orcamento_enviado', 'aprovado' => 'orcamento_aprovado',
         'em_andamento' => ($p['tipo'] ?? '') === 'delivery' ? 'pedido_confirmado' : null,
-        'pronto' => 'pedido_pronto', 'saiu_entrega' => 'pedido_saiu',
+        'pronto' => empty($p['mesa']) ? 'pedido_pronto' : null, 'saiu_entrega' => 'pedido_saiu',
         'concluido' => ($p['tipo'] ?? '') === 'delivery' ? 'pedido_concluido' : null,
         'cancelado' => 'pedido_cancelado',
     ][$status] ?? null;
