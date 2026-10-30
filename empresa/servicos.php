@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/opcoes.php';
 exigir_login('empresa');
 $empresaId = (int)empresa_id_atual();
 
@@ -22,6 +23,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_servico'])) {
                 ->execute([$empresaId, $nome, trim($_POST['descricao'] ?? ''), $preco, $duracao, ...$extras]);
             flash('sucesso', 'Serviço criado — já aparece no site.');
         }
+    }
+    // Campos novos (opções, sugestão, retorno, turmas, aula experimental, perguntas): salvos à parte
+    $sid = $id ?: (int)($pdo->query("SELECT MAX(id) FROM servicos WHERE empresa_id=" . (int)$empresaId)->fetchColumn());
+    if ($sid && $nome !== '') {
+        try {
+            $ops = opc_de_texto($_POST['opcoes'] ?? '');
+            $perg = array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim($x), 0, 160), preg_split('/\r?\n/', (string)($_POST['perguntas'] ?? ''))))), 0, 8);
+            $pdo->prepare("UPDATE servicos SET opcoes=?, sugerir=?, retorno_dias=?, vagas=?, experimental=?, perguntas=? WHERE id=? AND empresa_id=?")->execute([
+                $ops ? json_encode($ops, JSON_UNESCAPED_UNICODE) : null, isset($_POST['sugerir']) ? 'true' : 'false', max(0, min(365, (int)($_POST['retorno_dias'] ?? 0))),
+                max(1, min(200, (int)($_POST['vagas'] ?? 1))), isset($_POST['experimental']) ? 'true' : 'false', $perg ? json_encode($perg, JSON_UNESCAPED_UNICODE) : null, $sid, $empresaId]);
+        } catch (PDOException $e) { /* banco ainda sem as colunas novas */ }
     }
     header('Location: servicos.php'); exit;
 }
@@ -75,6 +87,24 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <label>Foto (URL, opcional)</label><input type="url" name="imagem" placeholder="https://..." value="<?= e($editando['imagem'] ?? '') ?>">
         <label class="check" style="margin-top:12px"><input type="checkbox" name="destaque" <?= $editando && pg_bool($editando['destaque'] ?? false) ? 'checked' : '' ?>> Destacar no site (aparece primeiro, com selo)</label>
         <label class="check"><input type="checkbox" name="preco_a_partir" <?= $editando && pg_bool($editando['preco_a_partir'] ?? false) ? 'checked' : '' ?>> Mostrar como "a partir de R$ …" (o preço pode variar)</label>
+        <?php $comOrc = modulo_ativo('orcamentos'); ?>
+        <?php if ($ehCatalogo): ?>
+        <label>Opções do item (adicionais, ponto, tamanho, sabores, cor…) — uma linha por grupo</label>
+        <textarea name="opcoes" rows="4" placeholder="Ponto da carne* (1): Mal passado, Ao ponto, Bem passado&#10;Adicionais (até 3): Bacon +4, Cheddar +3,50, Ovo +2&#10;Sabores* (2, maior preço): Calabresa 45, Marguerita 42"><?= e(opc_para_texto(opc_ler($editando ?? []))) ?></textarea>
+        <p class="dica">* = obrigatório · (1) escolhe uma · (até 3) escolhe várias · "+4" soma ao preço · "maior preço" = meio a meio cobra o sabor mais caro. Serve também para tamanho (P, M +5, G +10) e cor.</p>
+        <label class="check"><input type="checkbox" name="sugerir" <?= $editando && pg_bool($editando['sugerir'] ?? false) ? 'checked' : '' ?>> Sugerir no carrinho ("Peça também") — ótimo para bebida, sobremesa e porção</label>
+        <?php endif; ?>
+        <?php if ($comAgenda): ?>
+        <div class="form-row">
+            <div><label>Vagas por horário (1 = individual; 12 = turma)</label><input type="number" name="vagas" min="1" max="200" value="<?= (int)($editando['vagas'] ?? 1) ?: 1 ?>"></div>
+            <div><label>Lembrar o cliente de voltar depois de (dias, 0 = não)</label><input type="number" name="retorno_dias" min="0" max="365" value="<?= (int)($editando['retorno_dias'] ?? 0) ?>" placeholder="Ex: 21"></div>
+        </div>
+        <label class="check"><input type="checkbox" name="experimental" <?= $editando && pg_bool($editando['experimental'] ?? false) ? 'checked' : '' ?>> É uma aula/avaliação experimental (vira botão em destaque no site)</label>
+        <?php endif; ?>
+        <?php if ($comOrc || !$comAgenda && !$ehCatalogo): ?>
+        <label>Perguntas do pedido de orçamento (uma por linha)</label>
+        <textarea name="perguntas" rows="3" placeholder="Quantos convidados?&#10;O local tem energia no palco?&#10;Qual a metragem?"><?= e(implode("\n", (array)json_decode((string)($editando['perguntas'] ?? ''), true))) ?></textarea>
+        <?php endif; ?>
         <button type="submit" name="salvar_servico" value="1"><?= $editando ? 'Salvar alterações' : 'Adicionar ' . $item ?></button>
         <?php if ($editando): ?><a href="servicos.php" class="btn btn-ghost" style="margin-top:18px">Cancelar</a><?php endif; ?>
     </form>

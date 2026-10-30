@@ -354,3 +354,62 @@ html.gds-sem-rolagem { overflow: hidden; }
 .gds-c .gds-esgotado { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: .82rem; font-weight: 700; letter-spacing: .02em;
     color: color-mix(in srgb, currentColor 70%, transparent); background: color-mix(in srgb, currentColor 8%, transparent); }
 .gds-c [data-gds-bairro] small { display: block; margin-top: 4px; font-size: .8rem; }
+.gds-c .gds-pix-status { margin: 12px 0 0; font-size: .9rem; font-weight: 600; }
+.gds-c .gds-pix.gds-pix-pago { border-color: #22c55e; }
+.gds-c .gds-pix.gds-pix-pago .gds-pix-status { color: #15803d; }
+
+/* ---------- janela de opções do item (adicionais, meio a meio, tamanho) ---------- */
+.gds-c .gds-op-fundo { position: fixed; inset: 0; z-index: 9995; background: rgba(10,12,18,.6); }
+.gds-c .gds-op-janela { position: fixed; z-index: 9996; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 24px)); max-height: calc(100vh - 40px); overflow: auto;
+    background: #fff; color: #16181d; border-radius: 20px; padding: 20px; box-shadow: 0 30px 80px -20px rgba(0,0,0,.5); display: grid; gap: 14px; animation: gds-entra .3s cubic-bezier(.16,1,.3,1); }
+.gds-c .gds-op-janela h3 { margin: 0; font-size: 1.2rem; color: inherit; }
+.gds-c .gds-op-grupo { border: 1px solid #e3e5ea; border-radius: 14px; padding: 10px 12px; margin: 0; display: grid; gap: 4px; }
+.gds-c .gds-op-grupo legend { display: flex; gap: 8px; align-items: baseline; font-weight: 700; padding: 0 4px; }
+.gds-c .gds-op-grupo legend small { font-weight: 500; font-size: .78rem; color: #6b7080; }
+.gds-c .gds-op-item { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 4px 6px; border-radius: 10px; cursor: pointer; }
+.gds-c .gds-op-item:hover { background: #f5f6f8; }
+.gds-c .gds-op-item input { width: 18px; height: 18px; accent-color: var(--gds-accent); }
+.gds-c .gds-op-item input:disabled + .gds-op-nome { opacity: .45; }
+.gds-c .gds-op-nome { flex: 1; }
+.gds-c .gds-op-preco { font-size: .9rem; color: #4b5060; font-weight: 600; }
+.gds-c .gds-op-erro { margin: 0; color: #c0262d; font-weight: 600; font-size: .9rem; }
+.gds-c .gds-op-acoes { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; position: sticky; bottom: -20px; background: #fff; padding: 10px 0 0; }
+.gds-c .gds-sugestoes { border-top: 1px dashed #e3e5ea; padding-top: 12px; margin-top: 4px; }
+.gds-c .gds-sugestoes h4 { margin: 0 0 8px; font-size: .95rem; }
+.gds-c .gds-sugestoes-lista { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.gds-c .gds-sugestoes-lista button { flex: none; display: grid; gap: 2px; text-align: left; border: 1px solid #e3e5ea; background: #f5f6f8; border-radius: 12px; padding: 8px 12px; cursor: pointer; font: inherit; color: inherit; }
+.gds-c .gds-sugestoes-lista button strong { font-size: .9rem; } .gds-c .gds-sugestoes-lista button span { font-size: .82rem; color: #4b5060; }
+.gds-c .gds-loja-fechada { background: #fff7e6; border: 1px solid #f5d38a; color: #6b4d00; border-radius: 12px; padding: 10px 12px; font-size: .9rem; margin-bottom: 10px; }
+
+/* ---------- clube de assinatura / pacotes ---------- */
+.gds-c .gds-clube-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; align-items: start; }
+.gds-c .gds-plano { position: relative; display: grid; gap: 8px; padding: 22px; border-radius: 20px; background: var(--gds-soft); box-shadow: inset 0 0 0 1px var(--gds-line); }
+.gds-c .gds-plano-destaque { box-shadow: inset 0 0 0 2px var(--gds-accent), 0 24px 50px -30px var(--gds-accent); }
+.gds-c .gds-plano h3 { margin: 0; font-size: 1.25rem; }
+.gds-c .gds-plano-preco { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+.gds-c .gds-plano-preco small { font-size: .9rem; font-weight: 600; opacity: .7; }
+.gds-c .gds-plano-inclui { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: .92rem; }
+.gds-c .gds-plano-inclui svg { width: 18px; height: 18px; flex: none; color: var(--gds-accent); }
+.gds-c .gds-plano-form { display: grid; gap: 8px; margin-top: 6px; }
+.gds-c .gds-espera { margin-top: 16px; padding: 14px; border-radius: 14px; background: var(--gds-soft, #f5f6f8); }
+.gds-c .gds-hora.gds-hora-turma { display: inline-grid; line-height: 1.15; padding-block: 6px; }
+.gds-c .gds-hora small { font-size: .7rem; font-weight: 600; opacity: .75; }
+.gds-c .gds-hora.gds-hora-turma { display: inline-grid; line-height: 1.15; padding-block: 6px; }
+.gds-c .gds-hora small { font-size: .7rem; font-weight: 600; opacity: .75; }
+
+/* Orçamento profissional: perguntas, data livre, fotos, etapas */
+.gds-orc-perguntas{border-left:3px solid var(--gds-accent,#2563eb);padding:2px 0 2px 14px;margin:0 0 14px}
+.gds-data-livre{display:block;font-size:.82rem;min-height:1.1em;margin-top:4px}
+.gds-data-livre.gds-ok{color:#15803d}.gds-data-livre.gds-ruim{color:#b91c1c;font-weight:600}
+.gds-anexos{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.gds-anexos img{width:88px;height:88px;object-fit:cover;border-radius:10px;display:block}
+.gds-etapas{margin-top:18px}
+.gds-etapas h4{margin:0 0 10px;font-size:1rem}
+.gds-etapas ol{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.gds-etapas li{border-left:3px solid var(--gds-tema-accent,var(--gds-accent,#2563eb));padding:2px 0 2px 12px}
+.gds-etapas time{font-size:.78rem;opacity:.65}
+.gds-etapas p{margin:2px 0 6px}
+.gds-etapas img{max-width:100%;max-height:260px;border-radius:10px;display:block}
+
+/* Pedido pela mesa (QR Code) */
+.gds-mesa{margin:0 0 12px;padding:10px 14px;border-radius:12px;background:var(--gds-accent-soft,#eef2ff);font-size:.95rem}

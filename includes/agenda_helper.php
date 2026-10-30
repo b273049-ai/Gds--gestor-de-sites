@@ -54,7 +54,8 @@ function agenda_dias_fechados($empresaId, $de, $ate) {
 function agenda_ocupacoes_do_dia($empresaId, $dataYmd) {
     global $pdo;
     $st = $pdo->prepare("
-        SELECT a.data_hora, a.profissional_id, COALESCE(NULLIF(s.duracao_minutos, 0), 30) AS dur
+        SELECT DISTINCT ON (CASE WHEN COALESCE(s.vagas, 1) > 1 THEN a.data_hora::text || '-' || a.servico_id ELSE a.id::text END)
+            a.data_hora, a.profissional_id, COALESCE(NULLIF(s.duracao_minutos, 0), 30) AS dur
         FROM agendamentos a LEFT JOIN servicos s ON s.id = a.servico_id
         WHERE a.empresa_id = ? AND a.status <> 'cancelado' AND a.data_hora::date = ?::date");
     $st->execute([$empresaId, $dataYmd]);
@@ -101,10 +102,31 @@ function agenda_bate_na_pausa($cfg, $ini, $dur) {
     return $pIni < $ini + $dur && $ini < $pFim;
 }
 
-// Todos os horários do dia, com a situação de cada um
-function agenda_horarios_do_dia($empresa, $dataYmd, $duracao, $profissionalId = null) {
+// Turma (serviço com várias vagas no mesmo horário): quantos já reservaram cada horário
+function agenda_turma_ocupadas($empresaId, $dataYmd, $servicoId) {
+    global $pdo;
+    $st = $pdo->prepare("SELECT to_char(data_hora, 'HH24:MI') h, COUNT(*) c FROM agendamentos WHERE empresa_id=? AND servico_id=? AND status <> 'cancelado' AND data_hora::date = ?::date GROUP BY 1");
+    $st->execute([$empresaId, $servicoId, $dataYmd]);
+    $r = []; foreach ($st->fetchAll() as $l) $r[$l['h']] = (int)$l['c'];
+    return $r;
+}
+
+// Todos os horários do dia, com a situação de cada um. $servico com vagas > 1 = turma.
+function agenda_horarios_do_dia($empresa, $dataYmd, $duracao, $profissionalId = null, $servico = null) {
     $cfg = agenda_config($empresa);
     if (in_array($dataYmd, agenda_dias_fechados($empresa['id'], $dataYmd, $dataYmd), true)) return ['fechado' => true, 'livres' => [], 'ocupados' => []];
+    if ($servico && (int)($servico['vagas'] ?? 1) > 1) {
+        $vagas = (int)$servico['vagas'];
+        $ocup = agenda_turma_ocupadas($empresa['id'], $dataYmd, $servico['id']);
+        $livres = []; $ocupados = []; $restam = [];
+        for ($m = agenda_hm_para_min($cfg['abertura']); $m + $duracao <= agenda_hm_para_min($cfg['fechamento']); $m += $cfg['intervalo']) {
+            $h = sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
+            if (agenda_bate_na_pausa($cfg, $m, $duracao)) continue;
+            $r = $vagas - ($ocup[$h] ?? 0);
+            if ($r > 0) { $livres[] = $h; $restam[$h] = $r; } else $ocupados[] = $h;
+        }
+        return ['fechado' => false, 'livres' => $livres, 'ocupados' => $ocupados, 'vagas' => $restam, 'turma' => $vagas];
+    }
     $oc = agenda_ocupacoes_do_dia($empresa['id'], $dataYmd);
     $qtd = agenda_qtd_profissionais($empresa['id']);
     $livres = []; $ocupados = [];
@@ -122,7 +144,7 @@ function agenda_horarios_ocupados($empresa, $dataYmd, $duracao, $profissionalId 
 }
 
 // Validação completa de um pedido de agendamento. Retorna '' se ok, ou a mensagem de erro.
-function agenda_validar($empresa, $dataHora, $duracao, $profissionalId = null, $ignorarAgendamentoId = null) {
+function agenda_validar($empresa, $dataHora, $duracao, $profissionalId = null, $ignorarAgendamentoId = null, $servico = null) {
     $dt = DateTime::createFromFormat('Y-m-d\TH:i', (string)$dataHora) ?: DateTime::createFromFormat('Y-m-d H:i', (string)$dataHora);
     if (!$dt) return 'Data/hora inválida. Escolha o dia e o horário no calendário.';
     if ($dt->getTimestamp() < time()) return 'Esse horário já passou. Escolha outro.';
@@ -138,6 +160,10 @@ function agenda_validar($empresa, $dataHora, $duracao, $profissionalId = null, $
         return 'Fora do horário de atendimento (' . $cfg['abertura'] . ' às ' . $cfg['fechamento'] . ').';
     }
     if (agenda_bate_na_pausa($cfg, $ini, $duracao)) return 'Esse horário cai na pausa (' . $cfg['pausa_inicio'] . ' às ' . $cfg['pausa_fim'] . '). Escolha outro.';
+    if ($servico && (int)($servico['vagas'] ?? 1) > 1) {
+        $ocup = agenda_turma_ocupadas($empresa['id'], $dt->format('Y-m-d'), $servico['id']);
+        return ($ocup[$dt->format('H:i')] ?? 0) >= (int)$servico['vagas'] ? 'Esta turma lotou agora há pouco. Escolha outro horário.' : '';
+    }
     $oc = agenda_ocupacoes_do_dia($empresa['id'], $dt->format('Y-m-d'));
     if ($ignorarAgendamentoId) {
         // (usado ao remarcar: o próprio agendamento não conta como conflito)

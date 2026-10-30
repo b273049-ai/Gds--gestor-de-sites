@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
 exigir_modulo('orcamentos', 'delivery');
+require_once __DIR__ . '/../includes/orcamento.php';
 $empresaId = (int)empresa_id_atual();
 $empresa = $pdo->prepare("SELECT * FROM empresas WHERE id=?");
 $empresa->execute([$empresaId]); $empresa = $empresa->fetch();
@@ -63,6 +64,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['responder_orcamento']
     header('Location: ' . $voltar()); exit;
 }
 
+// Atualizar o cliente: etapa com foto (vai para o WhatsApp e para a página do pedido)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_etapa'])) {
+    $st = $pdo->prepare("SELECT p.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone FROM pedidos p LEFT JOIN clientes c ON c.id = p.cliente_id WHERE p.id=? AND p.empresa_id=?");
+    $st->execute([(int)$_POST['pedido_id'], $empresaId]);
+    $p = $st->fetch();
+    if (!$p) flash('erro', 'Pedido não encontrado.');
+    else {
+        if (empty($p['token'])) { $p['token'] = bin2hex(random_bytes(16)); $pdo->prepare("UPDATE pedidos SET token=? WHERE id=?")->execute([$p['token'], $p['id']]); }
+        wa_adiar();
+        $r = orc_adicionar_etapa($empresa, $p, (string)($_POST['etapa_texto'] ?? ''));
+        if (!$r['ok']) flash('erro', $r['erro']);
+        else flash('sucesso', 'Atualização registrada no pedido nº ' . $p['id'] . ($r['foto'] ? ' (com foto)' : '') . '.' . ($r['avisado'] ? ' O cliente recebe no WhatsApp com o link para acompanhar.' : ' O cliente vê no link do pedido.'));
+    }
+    header('Location: ' . $voltar() . '#pedido-' . (int)($_POST['pedido_id'] ?? 0)); exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mudar_status']) && isset($statusNomes[$_POST['status'] ?? ''])) {
     $p = pedido_da_empresa((int)$_POST['pedido_id'], $empresaId);
     if ($p && $p['status'] !== $_POST['status']) {
@@ -70,7 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mudar_status']) && is
         $pdo->prepare("UPDATE pedidos SET status=?, atualizado_em=NOW()" . ($_POST['status'] === 'cancelado' && $motivo !== '' ? ', resposta=?' : '') . " WHERE id=?")
             ->execute($_POST['status'] === 'cancelado' && $motivo !== '' ? [$_POST['status'], $motivo, $p['id']] : [$_POST['status'], $p['id']]);
         wa_adiar();
-        flash('sucesso', 'Pedido nº ' . $p['id'] . ': ' . $nomeStatus(['tipo' => $p['tipo'] ?? '', 'status' => $_POST['status']]) . '.' . wa_resultado_para_tela(wa_avisar_status_pedido($empresa, $p['id'], $_POST['status'])));
+        // Data de evento já com outro evento fechado: avisa (não bloqueia — a empresa decide)
+        $conflito = $_POST['status'] === 'aprovado' && !empty($p['data_evento']) && (int)($empresa['eventos_por_dia'] ?? 0) > 0
+            && orc_eventos_na_data($empresaId, $p['data_evento'], $p['id']) >= (int)$empresa['eventos_por_dia'];
+        flash('sucesso', 'Pedido nº ' . $p['id'] . ': ' . $nomeStatus(['tipo' => $p['tipo'] ?? '', 'status' => $_POST['status']]) . '.' . wa_resultado_para_tela(wa_avisar_status_pedido($empresa, $p['id'], $_POST['status']))
+            . ($conflito ? ' ⚠ Atenção: você já tinha evento fechado em ' . date('d/m/Y', strtotime($p['data_evento'])) . '.' : ''));
     }
     header('Location: ' . $voltar()); exit;
 }
@@ -91,6 +112,9 @@ $temDelivery = (bool)array_filter($pedidos, fn($p) => ($p['tipo'] ?? '') === 'de
 // Próximos passos de cada pedido (botões)
 function pedido_proximos($p) {
     $s = $p['status'];
+    if (($p['tipo'] ?? '') === 'delivery' && !empty($p['mesa'])) {
+        return match ($s) { 'novo' => [['em_andamento', 'Confirmar e preparar', true]], 'em_andamento', 'pronto' => [['concluido', 'Servido na mesa', true]], default => [] };
+    }
     if (($p['tipo'] ?? '') === 'delivery') {
         $final = ($p['tipo_entrega'] ?? '') === 'retirada' ? ['pronto', 'Pronto para retirada'] : ['saiu_entrega', 'Saiu para entrega'];
         return match ($s) {
@@ -112,7 +136,12 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
-<head><?= painel_head(($novos ? "($novos) " : '') . modulos_rotulo_pedidos() . ' - Meu Negócio') ?></head>
+<head><?= painel_head(($novos ? "($novos) " : '') . modulos_rotulo_pedidos() . ' - Meu Negócio') ?>
+<style>
+.gds-anexos{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.gds-anexos img{width:72px;height:72px;object-fit:cover;border-radius:8px;display:block}
+.pedido-etapas summary{cursor:pointer;font-size:.85rem;color:var(--muted,#667)}.gds-etapas h4{display:none}.gds-etapas ol{list-style:none;padding:0;margin:8px 0;display:grid;gap:8px}
+.gds-etapas li{border-left:3px solid var(--primary,#2563eb);padding-left:10px}.gds-etapas time{font-size:.75rem;opacity:.7}.gds-etapas p{margin:2px 0}.gds-etapas img{max-width:160px;border-radius:8px}
+</style></head>
 <body>
 <div class="layout">
 <?php include '_sidebar.php'; ?>
@@ -162,7 +191,10 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
         <article class="pedido-card status-<?= e($p['status']) ?>" id="pedido-<?= (int)$p['id'] ?>">
             <header>
                 <div><strong>nº <?= (int)$p['id'] ?></strong> <span class="badge badge-<?= $tipo === 'delivery' ? 'novo' : 'site' ?>"><?= $tipos[$tipo] ?? $tipo ?></span>
-                    <?php if (($p['origem'] ?? '') === 'site'): ?><span class="badge badge-site">pelo site</span><?php endif; ?></div>
+                    <?php if (($p['origem'] ?? '') === 'site'): ?><span class="badge badge-site">pelo site</span><?php endif; ?>
+                    <?php if (pg_bool($p['pago'] ?? false)): ?><span class="pill pill-ok">💰 Pago no Pix</span><?php endif; ?>
+                    <?php if (!empty($p['mesa'])): ?><span class="pill pill-aviso">🍽 Mesa <?= e($p['mesa']) ?></span><?php endif; ?>
+                    <?php if (!empty($p['aceite_em'])): ?><span class="pill pill-neutro" title="Aceite registrado: <?= e($p['aceite_nome']) ?> · IP <?= e($p['aceite_ip']) ?>">✔ aceite <?= date('d/m H:i', strtotime($p['aceite_em'])) ?></span><?php endif; ?></div>
                 <span class="pill <?= $p['status'] === 'novo' ? 'pill-aviso' : ($p['status'] === 'concluido' ? 'pill-ok' : 'pill-neutro') ?>"><?= e($nomeStatus($p)) ?></span>
             </header>
             <div class="pedido-corpo">
@@ -175,7 +207,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                 <div class="pedido-detalhe">
                     <?php if ($itens): ?>
                         <ul class="pedido-itens"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul>
-                        <p><?= ($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local' : '🛵 Entrega: ' . e($p['endereco_entrega']) ?><?= (float)$p['taxa_entrega'] > 0 ? ' (taxa R$ ' . number_format((float)$p['taxa_entrega'], 2, ',', '.') . ')' : '' ?></p>
+                        <p><?= !empty($p['mesa']) ? '🍽 Consumo no local — mesa ' . e($p['mesa']) : (($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local' : '🛵 Entrega: ' . e($p['endereco_entrega'])) ?><?= (float)$p['taxa_entrega'] > 0 ? ' (taxa R$ ' . number_format((float)$p['taxa_entrega'], 2, ',', '.') . ')' : '' ?></p>
                         <p>💳 <?= e($p['forma_pagamento']) ?><?= $p['troco_para'] ? ' — troco para R$ ' . number_format((float)$p['troco_para'], 2, ',', '.') : '' ?></p>
                     <?php else: ?>
                         <?php if (!empty($p['servico_nome'])): ?><strong><?= e($p['servico_nome']) ?></strong><br><?php endif; ?><?= nl2br(e($p['descricao'])) ?>
@@ -185,6 +217,8 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                     <?php endif; ?>
                     <?php if (!empty($p['observacoes'])): ?><p class="pedido-obs">📝 <?= e($p['observacoes']) ?></p><?php endif; ?>
                     <?php if (!empty($p['resposta'])): ?><p class="pedido-obs">💬 <?= nl2br(e($p['resposta'])) ?></p><?php endif; ?>
+                    <?= frag_anexos($p['anexos'] ?? '') ?>
+                    <?php if ($tipo !== 'delivery' && ($etapas = orc_etapas($p['id']))): ?><details class="pedido-etapas"><summary><?= count($etapas) ?> atualização(ões) enviada(s) ao cliente</summary><?= frag_etapas($etapas) ?></details><?php endif; ?>
                 </div>
                 <div class="pedido-valor"><small><?= $tipo === 'orcamento' && $p['status'] === 'novo' ? 'Referência' : 'Valor' ?></small>R$ <?= number_format((float)$p['valor'], 2, ',', '.') ?></div>
             </div>
@@ -218,6 +252,18 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                         <button type="submit" name="mudar_status" value="1" class="btn btn-ghost btn-sm">Salvar</button>
                     </form>
                 </details>
+                <?php if ($tipo !== 'delivery' && in_array($p['status'], ['aprovado', 'em_andamento'], true)): ?>
+                <details class="pedido-responder">
+                    <summary class="btn btn-sm">📸 Atualizar o cliente</summary>
+                    <form method="post" enctype="multipart/form-data">
+                        <?= csrf_campo() ?><input type="hidden" name="pedido_id" value="<?= (int)$p['id'] ?>">
+                        <label>O que foi feito / próxima etapa</label>
+                        <textarea name="etapa_texto" rows="2" maxlength="500" required placeholder="Ex: Peça nova chegou e já foi instalada. Amanhã fazemos o teste final."></textarea>
+                        <label>Foto (opcional)</label><input type="file" name="etapa_foto" accept="image/jpeg,image/png,image/webp">
+                        <button type="submit" name="registrar_etapa" value="1" class="btn btn-sm">Enviar ao cliente</button>
+                    </form>
+                </details>
+                <?php endif; ?>
                 <a class="btn btn-ghost btn-sm" target="_blank" href="pedido_imprimir.php?id=<?= (int)$p['id'] ?>">🖨 Imprimir</a>
                 <?php if (!empty($p['token'])): ?><a class="btn btn-ghost btn-sm" target="_blank" href="/site/pedido.php?t=<?= e($p['token']) ?>"><?= icone('olho', 14) ?> Ver como o cliente</a><?php endif; ?>
             </footer>

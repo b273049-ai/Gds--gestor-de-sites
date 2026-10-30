@@ -41,7 +41,7 @@ $subtotal = array_sum(array_map(fn($i) => $i['preco'] * $i['qtd'], $itens));
     <hr>
     <div><strong><?= e($p['cliente_nome'] ?? '—') ?></strong><?= $p['telefone'] ? '<br>' . e($p['telefone']) : '' ?></div>
     <?php if (($p['tipo'] ?? '') === 'delivery'): ?>
-        <div style="margin-top:6px"><strong><?= ($p['tipo_entrega'] ?? '') === 'retirada' ? 'RETIRADA NO LOCAL' : 'ENTREGA' ?></strong><?= ($p['tipo_entrega'] ?? '') !== 'retirada' && $p['endereco_entrega'] ? '<br>' . e($p['endereco_entrega']) : '' ?></div>
+        <div style="margin-top:6px"><strong><?= !empty($p['mesa']) ? 'MESA ' . e($p['mesa']) : (($p['tipo_entrega'] ?? '') === 'retirada' ? 'RETIRADA NO LOCAL' : 'ENTREGA') ?></strong><?= ($p['tipo_entrega'] ?? '') !== 'retirada' && $p['endereco_entrega'] ? '<br>' . e($p['endereco_entrega']) : '' ?></div>
     <?php endif; ?>
     <hr>
     <?php if ($itens): ?>

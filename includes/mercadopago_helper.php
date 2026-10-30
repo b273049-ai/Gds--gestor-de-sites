@@ -14,7 +14,7 @@ function gerar_cobranca_pix($token, $valor, $descricao, $emailPagador = 'cliente
         return ['ok' => false, 'erro' => 'Nenhum Access Token do Mercado Pago configurado.'];
     }
 
-    $ch = curl_init('https://api.mercadopago.com/v1/payments');
+    $ch = curl_init(rtrim(getenv('GDS_MP_BASE_URL') ?: 'https://api.mercadopago.com', '/') . '/v1/payments');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
@@ -56,4 +56,14 @@ function gerar_cobranca_pix($token, $valor, $descricao, $emailPagador = 'cliente
     }
 
     return ['ok' => true, 'qr_base64' => $qrBase64, 'qr_code' => $qrCode, 'mp_id' => $mpId];
+}
+
+// Consulta um pagamento no Mercado Pago. Retorna o status (approved, pending, rejected, cancelled...) ou null.
+function consultar_pagamento_mp($token, $mpId) {
+    if (trim((string)$token) === '' || !$mpId || !function_exists('curl_init')) return null;
+    $ch = curl_init(rtrim(getenv('GDS_MP_BASE_URL') ?: 'https://api.mercadopago.com', '/') . '/v1/payments/' . rawurlencode((string)$mpId));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token]]);
+    $r = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code !== 200) return null;
+    return json_decode((string)$r, true)['status'] ?? null;
 }

@@ -4,6 +4,8 @@ session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_S
 session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/site_render.php';
+require_once __DIR__ . '/../includes/pagamentos.php';
+require_once __DIR__ . '/../includes/orcamento.php';
 if (!function_exists('e')) { function e($s) { return htmlspecialchars((string)($s ?? ''), ENT_QUOTES, 'UTF-8'); } }
 header('X-Robots-Tag: noindex');
 
@@ -12,6 +14,7 @@ $p = false;
 if (strlen($token) === 32) {
     try {
         $st = $pdo->prepare("SELECT p.*, c.nome AS cliente_nome, sv.nome AS servico_nome, e.nome AS empresa_nome, e.slug, e.whatsapp, e.endereco, e.id AS emp_id,
+                e.pix_ativo, e.mercadopago_access_token, e.orc_sinal_percentual,
                 si.cor_primaria, si.ia_tema, si.html_gerado, si.ia_modo_total
             FROM pedidos p JOIN empresas e ON e.id = p.empresa_id JOIN sites si ON si.empresa_id = e.id
             LEFT JOIN clientes c ON c.id = p.cliente_id LEFT JOIN servicos sv ON sv.id = p.servico_id
@@ -27,8 +30,16 @@ if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['aprovar
     if (!hash_equals($_SESSION['gds_pedido_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
     elseif ($p['status'] !== 'orcado') $msg = 'Este orçamento não pode mais ser aprovado por aqui.';
     else {
-        $pdo->prepare("UPDATE pedidos SET status='aprovado', atualizado_em=NOW() WHERE id=?")->execute([$p['id']]);
-        $p['status'] = 'aprovado';
+        // Aceite registrado (vale como comprovante: nome, data, hora e IP)
+        $nomeAceite = mb_substr(trim(strip_tags((string)($_POST['aceite_nome'] ?? ''))), 0, 150) ?: $p['cliente_nome'];
+        $pdo->prepare("UPDATE pedidos SET status='aprovado', aceite_em=NOW(), aceite_ip=?, aceite_nome=?, atualizado_em=NOW() WHERE id=?")
+            ->execute([mb_substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 60), $nomeAceite, $p['id']]);
+        $p['status'] = 'aprovado'; $p['aceite_em'] = date('Y-m-d H:i:s'); $p['aceite_nome'] = $nomeAceite;
+        // Sinal pelo Pix para reservar (ex.: 30% para reservar a data do evento)
+        $perc = (int)($p['orc_sinal_percentual'] ?? 0);
+        if ($perc > 0 && (float)$p['valor'] > 0 && pag_disponivel(['id' => $p['emp_id']] + $p)) {
+            pag_criar(['id' => $p['emp_id']] + $p, round((float)$p['valor'] * $perc / 100, 2), "Sinal ($perc%) do orçamento nº {$p['id']} - {$p['empresa_nome']}", 'sinal', ['pedido_id' => $p['id']], $p['cliente_id']);
+        }
         if ($emp = wa_carregar_empresa($p['emp_id'])) {
             wa_adiar();
             wa_notificar_empresa($emp, 'orcamento', ['nome' => $p['cliente_nome'], 'codigo' => $p['id'], 'telefone' => '', 'servico' => '✅ O cliente APROVOU o orçamento de ' . wa_dinheiro($p['valor']) . ' pelo site.'], 'pedido', $p['id']);
@@ -40,11 +51,21 @@ if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['aprovar
 }
 $_SESSION['gds_pedido_csrf'] = bin2hex(random_bytes(16));
 
+$pixPendente = null;
+if ($p) {
+    try {
+        $st = $pdo->prepare("SELECT * FROM pagamentos_clientes WHERE pedido_id=? AND token IS NOT NULL ORDER BY id DESC LIMIT 1"); $st->execute([$p['id']]);
+        $pixPendente = $st->fetch() ?: null;
+    } catch (PDOException $e) {}
+}
 $tema = $p ? site_tema($p) : ['accent' => '#2563eb'];
 $delivery = $p && ($p['tipo'] ?? '') === 'delivery';
 $itens = $p ? (json_decode((string)($p['itens'] ?? ''), true) ?: []) : [];
 // Linha do tempo
-if ($delivery) {
+if ($delivery && !empty($p['mesa'])) {
+    $etapas = ['novo' => 'Pedido recebido', 'em_andamento' => 'Em preparo', 'concluido' => 'Servido na mesa ' . $p['mesa']];
+    if ($p['status'] === 'pronto') $p['status'] = 'em_andamento';
+} elseif ($delivery) {
     $etapas = ['novo' => 'Pedido recebido', 'em_andamento' => 'Em preparo', ($p['tipo_entrega'] === 'retirada' ? 'pronto' : 'saiu_entrega') => $p['tipo_entrega'] === 'retirada' ? 'Pronto para retirar' : 'Saiu para entrega', 'concluido' => $p['tipo_entrega'] === 'retirada' ? 'Retirado' : 'Entregue'];
 } else {
     $etapas = ['novo' => 'Pedido recebido', 'orcado' => 'Orçamento enviado', 'aprovado' => 'Aprovado', 'em_andamento' => 'Em andamento', 'concluido' => 'Concluído'];
@@ -61,7 +82,7 @@ $idxAtual = array_search($statusAtual, $ordem, true);
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title><?= $p ? 'Pedido nº ' . (int)$p['id'] . ' — ' . e($p['empresa_nome']) : 'Pedido não encontrado' ?></title>
 <?= frag_css_apoio($tema) ?>
-<?php if ($p && !in_array($p['status'], ['concluido', 'cancelado'], true)): ?><meta http-equiv="refresh" content="60"><?php endif; ?>
+<?php if ($p && !in_array($p['status'], ['concluido', 'cancelado', 'orcado'], true) && !($pixPendente && $pixPendente['status'] === 'pendente')): ?><meta http-equiv="refresh" content="60"><?php endif; ?>
 <style>
 body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f4f5f8;color:#1c1f2b;display:flex;justify-content:center;padding:32px 16px}
 main{width:100%;max-width:520px}
@@ -102,17 +123,24 @@ main{width:100%;max-width:520px}
                 <div><span>Pedido</span><span style="white-space:pre-line;text-align:right"><?= e($p['servico_nome'] ?: $p['descricao']) ?></span></div>
             <?php endif; ?>
             <?php if ($delivery && (float)$p['taxa_entrega'] > 0): ?><div><span>Entrega</span><span>R$ <?= number_format((float)$p['taxa_entrega'], 2, ',', '.') ?></span></div><?php endif; ?>
-            <?php if ($delivery): ?><div><span><?= $p['tipo_entrega'] === 'retirada' ? 'Retirada' : 'Entrega em' ?></span><span><?= e($p['tipo_entrega'] === 'retirada' ? ($p['endereco'] ?: 'no local') : $p['endereco_entrega']) ?></span></div>
-            <div><span>Pagamento</span><span><?= e($p['forma_pagamento']) ?><?= $p['troco_para'] ? ' (troco p/ R$ ' . number_format((float)$p['troco_para'], 2, ',', '.') . ')' : '' ?></span></div><?php endif; ?>
+            <?php if ($delivery && !empty($p['mesa'])): ?><div><span>Consumo no local</span><span>Mesa <?= e($p['mesa']) ?></span></div>
+            <?php elseif ($delivery): ?><div><span><?= $p['tipo_entrega'] === 'retirada' ? 'Retirada' : 'Entrega em' ?></span><span><?= e($p['tipo_entrega'] === 'retirada' ? ($p['endereco'] ?: 'no local') : $p['endereco_entrega']) ?></span></div><?php endif; ?>
+            <?php if ($delivery): ?><div><span>Pagamento</span><span><?= e($p['forma_pagamento']) ?><?= $p['troco_para'] ? ' (troco p/ R$ ' . number_format((float)$p['troco_para'], 2, ',', '.') . ')' : '' ?></span></div><?php endif; ?>
             <?php if ($delivery || in_array($p['status'], ['orcado', 'aprovado', 'em_andamento', 'concluido'], true)): ?>
             <div class="gds-total"><span><?= $delivery ? 'Total' : 'Valor' ?></span><span><?= (float)$p['valor'] > 0 ? 'R$ ' . number_format((float)$p['valor'], 2, ',', '.') : 'a combinar' ?></span></div>
             <?php endif; ?>
         </div>
         <?php if (!empty($p['resposta'])): ?><p style="margin-top:14px;white-space:pre-line"><?= e($p['resposta']) ?></p><?php endif; ?>
+        <?php if (!$delivery): ?><?= frag_anexos($p['anexos'] ?? '') ?><?= frag_etapas(orc_etapas($p['id'])) ?><?php endif; ?>
+        <?php if (!empty($p['aceite_em'])): ?><p class="gds-mute" style="font-size:.82rem;margin-top:10px">✔ Aprovado por <?= e($p['aceite_nome']) ?> em <?= date('d/m/Y \à\s H:i', strtotime($p['aceite_em'])) ?>.</p><?php endif; ?>
+        <?php if ($pixPendente && $pixPendente['status'] === 'pendente'): ?><?= frag_pix_pagamento($pixPendente, $pixPendente['tipo'] === 'sinal' ? 'Pague o sinal para reservar' : 'Pague com Pix') ?>
+        <?php elseif ($pixPendente && $pixPendente['status'] === 'pago'): ?><div class="gds-alerta gds-alerta-ok" style="margin-top:12px">💰 Pagamento de <?= e(frag_preco($pixPendente['valor'])) ?> confirmado.</div><?php endif; ?>
 
         <div class="gds-acoes">
             <?php if ($p['status'] === 'orcado'): ?>
-            <form method="post" style="margin:0"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_pedido_csrf']) ?>">
+            <form method="post" style="margin:0;display:grid;gap:8px;width:100%"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_pedido_csrf']) ?>">
+                <div class="gds-campo" style="margin:0"><label for="aceite_nome">Seu nome completo (fica registrado como aceite)</label><input type="text" id="aceite_nome" name="aceite_nome" required maxlength="150" value="<?= e($p['cliente_nome']) ?>"></div>
+                <?php if ((int)($p['orc_sinal_percentual'] ?? 0) > 0 && (float)$p['valor'] > 0 && pag_disponivel(['id' => $p['emp_id']] + $p)): ?><p class="gds-mute" style="font-size:.85rem;margin:0">Para reservar, o sinal de <?= (int)$p['orc_sinal_percentual'] ?>% (<?= e(frag_preco(round((float)$p['valor'] * (int)$p['orc_sinal_percentual'] / 100, 2))) ?>) é pago por Pix logo depois de aprovar.</p><?php endif; ?>
                 <button type="submit" name="aprovar" value="1" class="gds-btn"><?= frag_icone('check') ?> Aprovar orçamento</button></form>
             <?php endif; ?>
             <?php if ($p['whatsapp']): ?><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="<?= e(frag_link_whatsapp($p['whatsapp'], 'Olá! Sobre o meu ' . ($delivery ? 'pedido' : 'orçamento') . ' nº ' . $p['id'] . ':')) ?>"><?= frag_icone('whats') ?> Falar com a empresa</a><?php endif; ?>

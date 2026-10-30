@@ -92,6 +92,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_pagamento'])) 
     if (isset($_POST['limpar_token'])) $pdo->prepare("UPDATE empresas SET mercadopago_access_token=NULL WHERE id=?")->execute([$empresaId]);
     elseif ($token !== '') $pdo->prepare("UPDATE empresas SET mercadopago_access_token=? WHERE id=?")->execute([$token, $empresaId]);
     $pdo->prepare("UPDATE empresas SET pix_ativo=? WHERE id=?")->execute([isset($_POST['pix_ativo']) ? 'true' : 'false', $empresaId]);
+    try {
+        $pdo->prepare("UPDATE empresas SET sinal_modo=?, sinal_valor=?, sinal_quem=?, pix_pedido=?, orc_sinal_percentual=? WHERE id=?")->execute([
+            in_array($_POST['sinal_modo'] ?? '', ['nenhum', 'fixo', 'percentual', 'total'], true) ? $_POST['sinal_modo'] : 'total',
+            max(0, valor_decimal($_POST['sinal_valor'] ?? '0')), in_array($_POST['sinal_quem'] ?? '', ['todos', 'novos', 'faltosos'], true) ? $_POST['sinal_quem'] : 'todos',
+            isset($_POST['pix_pedido']) ? 'true' : 'false', max(0, min(100, (int)($_POST['orc_sinal_percentual'] ?? 0))), $empresaId]);
+        if (isset($_POST['eventos_por_dia'])) $pdo->prepare("UPDATE empresas SET eventos_por_dia=? WHERE id=?")->execute([max(0, min(50, (int)$_POST['eventos_por_dia'])), $empresaId]);
+    } catch (PDOException $e) { /* banco ainda sem as colunas novas */ }
     flash('sucesso', 'Pagamento online atualizado.'); $voltar('pix'); exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['trocar_senha'])) {
@@ -288,6 +295,20 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
         <label>Access Token do Mercado Pago</label>
         <input type="password" name="mercadopago_access_token" autocomplete="off" placeholder="<?= $tokenSalvo !== '' ? 'Salvo: ' . e(substr($tokenSalvo, 0, 8)) . '•••••••• — cole outro para trocar' : 'APP_USR-...' ?>">
         <?php if ($tokenSalvo !== ''): ?><label class="check" style="font-size:12px;margin-top:6px"><input type="checkbox" name="limpar_token"> remover token salvo</label><?php endif; ?>
+        <h3 style="margin-top:18px">O que cobrar pelo Pix</h3>
+        <?php if (modulo_ativo('agenda')): ?>
+        <div class="form-row">
+            <div><label>No agendamento</label><select name="sinal_modo">
+                <?php foreach (['total' => 'Valor total do serviço', 'percentual' => 'Sinal em % do serviço', 'fixo' => 'Sinal de valor fixo', 'nenhum' => 'Não cobrar no agendamento'] as $k => $v): ?><option value="<?= $k ?>" <?= ($empresa['sinal_modo'] ?? 'total') === $k || (($empresa['sinal_modo'] ?? '') === '' && $k === 'total') ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></div>
+            <div><label>Valor do sinal (R$ ou %)</label><input type="text" inputmode="decimal" name="sinal_valor" value="<?= number_format((float)($empresa['sinal_valor'] ?? 0), 2, ',', '') ?>"></div>
+        </div>
+        <label>Cobrar de quem</label><select name="sinal_quem">
+            <?php foreach (['todos' => 'De todos os clientes', 'novos' => 'Só de clientes novos (primeira vez)', 'faltosos' => 'Só de quem já faltou sem avisar'] as $k => $v): ?><option value="<?= $k ?>" <?= ($empresa['sinal_quem'] ?? 'todos') === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select>
+        <p class="dica">O sinal reduz as faltas: o horário só fica confirmado quando o Pix cai (a confirmação é automática). Marque "faltou" na Agenda para quem não aparecer.</p>
+        <?php endif; ?>
+        <?php if (modulo_ativo('delivery')): ?><label class="check"><input type="checkbox" name="pix_pedido" <?= pg_bool($empresa['pix_pedido'] ?? false) ? 'checked' : '' ?>> Pedidos do site: oferecer "Pix agora pelo site" (o pedido aparece como pago quando o Pix cai)</label><?php endif; ?>
+        <?php if (modulo_ativo('orcamentos')): ?><label>Orçamento aprovado: sinal de quantos % para reservar (0 = não cobra)</label><input type="number" name="orc_sinal_percentual" min="0" max="100" value="<?= (int)($empresa['orc_sinal_percentual'] ?? 0) ?>" style="max-width:140px">
+        <label>Eventos por data (0 = não controla). Com 1, o site avisa "data já reservada" quando você já fechou um evento naquele dia</label><input type="number" name="eventos_por_dia" min="0" max="50" value="<?= (int)($empresa['eventos_por_dia'] ?? 0) ?>" style="max-width:140px"><?php endif; ?>
         <button type="submit" name="salvar_pagamento" value="1">Salvar</button>
     </form>
     <?php endif; ?>
