@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
-    $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'evolution', 'wppconnect', 'zapi', 'ultramsg', 'cloud', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
+    $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'gds', 'evolution', 'wppconnect', 'zapi', 'ultramsg', 'cloud', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
     set_config('wa_api_tipo', $tipo);
     set_config('wa_api_url', url_valida_ou_vazia($_POST['wa_api_url'] ?? ''));
     if (trim($_POST['wa_api_chave'] ?? '') !== '') set_config('wa_api_chave', trim($_POST['wa_api_chave']));
@@ -103,19 +103,20 @@ $chaveSalva = $a['chave'] !== '';
         <h3>1. Integração</h3>
         <label>Serviço de WhatsApp</label>
         <select name="wa_api_tipo" id="tipo" onchange="mostrarTipo()">
-            <option value="" <?= $a['tipo'] === '' ? 'selected' : '' ?>>Nenhum (só envio manual pelo painel)</option>
-            <option value="evolution" <?= $a['tipo'] === 'evolution' ? 'selected' : '' ?>>Evolution API — gratuita, conecta por QR code (recomendado)</option>
+            <option value="" <?= $a['tipo_salvo'] === '' ? 'selected' : '' ?>>Nenhum (só envio manual pelo painel)</option>
+            <option value="gds" <?= $a['tipo_salvo'] === 'gds' ? 'selected' : '' ?>>Conector GDS — grátis, leve, conecta por QR code (recomendado)</option>
+            <option value="evolution" <?= $a['tipo_salvo'] === 'evolution' ? 'selected' : '' ?>>Evolution API — gratuita, conecta por QR code</option>
             <option value="wppconnect" <?= $a['tipo'] === 'wppconnect' ? 'selected' : '' ?>>WPPConnect — gratuita, código aberto, conecta por QR code</option>
             <option value="cloud" <?= $a['tipo'] === 'cloud' ? 'selected' : '' ?>>WhatsApp Cloud API OFICIAL (Meta) — sem risco de bloqueio</option>
             <option value="zapi" <?= $a['tipo'] === 'zapi' ? 'selected' : '' ?>>Z-API — paga, brasileira</option>
             <option value="ultramsg" <?= $a['tipo'] === 'ultramsg' ? 'selected' : '' ?>>UltraMsg — paga, simples</option>
             <option value="webhook" <?= $a['tipo'] === 'webhook' ? 'selected' : '' ?>>Webhook (n8n, Make ou outro gateway)</option>
         </select>
-        <div data-tipo="evolution wppconnect webhook">
+        <div data-tipo="gds evolution wppconnect webhook">
             <label id="rotUrl">URL do servidor</label>
             <input type="url" name="wa_api_url" value="<?= e($a['url']) ?>" placeholder="https://evolution.seudominio.com.br">
         </div>
-        <div data-tipo="evolution wppconnect zapi webhook">
+        <div data-tipo="gds evolution wppconnect zapi webhook">
             <label id="rotChave">Chave</label>
             <input type="password" name="wa_api_chave" autocomplete="off" placeholder="<?= $chaveSalva ? 'Salva — cole outra para trocar' : '' ?>">
             <?php if ($chaveSalva): ?><label class="check" style="font-size:12px"><input type="checkbox" name="limpar_chave"> remover a chave salva</label><?php endif; ?>
@@ -123,7 +124,7 @@ $chaveSalva = $a['chave'] !== '';
 
         <h3 style="margin-top:22px">2. Número da plataforma</h3>
         <p class="dica">Um número que envia para os clientes das empresas que não conectaram o próprio. A mensagem vai assinada com o nome da empresa.</p>
-        <div data-tipo="evolution wppconnect zapi ultramsg cloud webhook">
+        <div data-tipo="gds evolution wppconnect zapi ultramsg cloud webhook">
             <label id="rotInst">Nome da instância</label>
             <input type="text" name="wa_plataforma_instancia" value="<?= e($a['plat_instancia']) ?>" placeholder="gds-plataforma">
         </div>
@@ -134,13 +135,13 @@ $chaveSalva = $a['chave'] !== '';
         <p class="dica" data-tipo="cloud">Na Meta, crie um modelo da categoria <strong>Utilidade</strong> com o corpo: <code>Olá! Mensagem de {{1}}: {{2}}</code>. Ele é usado quando o cliente não falou com o número nas últimas 24h (regra da Meta).</p>
         <div data-tipo="zapi ultramsg cloud"><label id="rotToken">Token da instância</label><input type="password" name="wa_plataforma_token" autocomplete="off" placeholder="<?= $a['plat_token'] !== '' ? 'Salvo — cole outro para trocar' : '' ?>"></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" name="wa_plataforma_ativo" <?= $a['plat_ativo'] ? 'checked' : '' ?>> Usar o número da plataforma para as empresas</label>
-        <label class="check" data-tipo="evolution wppconnect zapi ultramsg"><input type="checkbox" name="wa_empresas_conectar" <?= $a['empresas_conectar'] ? 'checked' : '' ?>> Deixar cada empresa conectar o próprio WhatsApp (QR code no painel dela)</label>
+        <label class="check" data-tipo="gds evolution wppconnect zapi ultramsg"><input type="checkbox" name="wa_empresas_conectar" <?= $a['empresas_conectar'] ? 'checked' : '' ?>> Deixar cada empresa conectar o próprio WhatsApp (QR code no painel dela)</label>
         <button type="submit" name="salvar" value="1">Salvar</button>
     </form>
 
     <section class="form-box largo">
         <h3>3. Conectar e testar</h3>
-        <div data-tipo="evolution wppconnect">
+        <div data-tipo="gds evolution wppconnect">
             <p class="dica">Conecte o número da plataforma lendo o QR code com o WhatsApp do celular (Aparelhos conectados → Conectar um aparelho).</p>
             <button type="button" class="btn" onclick="conectar(this)"><?= icone('celular', 16) ?> Gerar QR code</button>
             <div id="qrArea" hidden style="margin-top:14px"><div class="wa-qr"><img id="qrImg" alt="QR code"><span id="qrInfo">Aguardando leitura…</span></div></div>
@@ -156,7 +157,16 @@ $chaveSalva = $a['chave'] !== '';
         <code style="display:block;word-break:break-all;padding:10px;background:var(--surface-3);border-radius:8px">curl -s "<?= e($cronUrl) ?>" &gt;/dev/null</code>
         <button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="rotina(this)">Rodar agora</button>
 
-        <details style="margin-top:18px" open><summary class="link" style="cursor:pointer">Passo a passo: Evolution API na Hostinger (recomendado)</summary>
+        <details style="margin-top:18px" open data-tipo="gds"><summary class="link" style="cursor:pointer">Passo a passo: Conector GDS (grátis)</summary>
+            <ol class="dica" style="line-height:1.8">
+                <li>Pegue a pasta <code>whatsapp-conector</code> que vem junto com o GDS.</li>
+                <li>Ligue em um lugar que fique <strong>sempre ligado</strong>: app Node.js da Hostinger (plano Business ou maior), um VPS, ou o computador do escritório. Comando: <code>npm install</code> e depois <code>npm start</code>.</li>
+                <li>Ao ligar, ele mostra a <strong>chave</strong>. Abra o endereço dele no navegador: tem que aparecer "Conector WhatsApp GDS no ar".</li>
+                <li>Aqui: Serviço <strong>Conector GDS</strong>, cole o endereço e a chave, instância <code>gds-plataforma</code>, marque as opções e salve.</li>
+                <li>Clique em <strong>Gerar QR code</strong>, leia com o WhatsApp do chip (Aparelhos conectados → Conectar um aparelho) e use <strong>Enviar teste</strong>.</li>
+            </ol>
+            <p class="dica">Ele não é da Meta: use um chip só para isso e mande só as mensagens que o cliente pediu (confirmações, lembretes, pedidos). Disparo em massa faz o WhatsApp bloquear o número.</p></details>
+        <details style="margin-top:18px" data-tipo="evolution"><summary class="link" style="cursor:pointer">Passo a passo: Evolution API na Hostinger</summary>
             <ol class="dica" style="line-height:1.8">
                 <li>No hPanel, contrate um <strong>VPS</strong> (o mais simples serve) e escolha o aplicativo <strong>Evolution API</strong> (instalação em 1 clique).</li>
                 <li>Anote o <strong>IP do VPS</strong> e a <strong>AUTHENTICATION_API_KEY</strong> (no Docker Manager, nas variáveis do projeto da Evolution API).</li>
@@ -188,6 +198,7 @@ $chaveSalva = $a['chave'] !== '';
 <script>
 const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 const ROT = {
+    gds: ['Endereço do Conector GDS (ex.: https://whats.seudominio.com.br)', 'Chave do conector (aparece no log ao ligar, ou em dados/chave.txt)', 'Nome da instância'],
     evolution: ['URL do servidor da Evolution API', 'Chave global (AUTHENTICATION_API_KEY)', 'Nome da instância'],
     zapi: ['', 'Client-Token da conta (Segurança, opcional)', 'ID da instância'],
     wppconnect: ['URL do servidor WPPConnect', 'SECRET_KEY do servidor (config)', 'Nome da sessão'],
