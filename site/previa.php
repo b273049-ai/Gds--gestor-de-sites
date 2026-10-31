@@ -50,17 +50,19 @@ if (!$ehAdmin && !$robo) {
 $seg = null;
 try { $st = $pdo->prepare("SELECT * FROM segmentos WHERE slug=?"); $st->execute([$p['segmento_slug'] ?: '']); $seg = $st->fetch() ?: null; } catch (PDOException $e) {}
 $fotos = prosp_fotos_previa($p);
+$corMarca = prosp_cor_marca($p);     // logo do WhatsApp/Instagram > cor no nome > fotos reais
+$logoMarca = prosp_logo_local($p);
 $reviews = (array)json_decode((string)($p['avaliacoes_texto'] ?? ''), true);
 $horario = (array)json_decode((string)($p['horario'] ?? ''), true);
 $bairro = $p['bairro'] ?: $p['cidade'];
 $sobre = "A {$p['nome']} atende em " . ($bairro ?: 'sua região') . ($p['nota'] && $p['avaliacoes'] ? ", com nota " . number_format((float)$p['nota'], 1, ',', '') . " no Google e {$p['avaliacoes']} avaliações de clientes" : '') . ".\n\n"
        . "Este é um exemplo de como o site de vocês pode ficar: com " . prosp_recurso(($p['categoria'] ?? '') . ' ' . $p['nome']) . ", confirmação automática no WhatsApp e tudo que o cliente precisa para escolher vocês.";
 $empresa = [
-    'id' => 0, 'nome' => $p['nome'], 'slug' => 'previa', 'logo' => null, 'email' => null, 'instagram' => null, 'status' => 'ativo', 'publicado' => true,
+    'id' => 0, 'nome' => $p['nome'], 'slug' => 'previa', 'logo' => $logoMarca, 'email' => null, 'instagram' => null, 'status' => 'ativo', 'publicado' => true,
     'segmento_slug' => $p['segmento_slug'], 'segmento_nome' => $seg['nome'] ?? $p['categoria'], 'segmento_grupo' => $seg['grupo'] ?? null, 'segmento_descricao' => $p['categoria'],
     'modo_segmento' => $seg['modo_atendimento'] ?? null, 'segmento_cta' => $seg['cta'] ?? null, 'modo_atendimento' => null, 'modulos' => null,
     'endereco' => $p['endereco'], 'whatsapp' => $p['whatsapp'] ? substr($p['whatsapp'], 2) : '', 'telefone' => $p['telefone'], 'whatsapp_mensagem' => '', 'whatsapp_flutuante' => true,
-    'titulo' => null, 'subtitulo' => null, 'sobre' => $sobre, 'seo_titulo' => $p['nome'], 'seo_descricao' => '', 'cor_primaria' => null, 'cor_secundaria' => null,
+    'titulo' => null, 'subtitulo' => null, 'sobre' => $sobre, 'seo_titulo' => $p['nome'], 'seo_descricao' => '', 'cor_primaria' => $corMarca, 'cor_secundaria' => null,
     'estilo' => null, 'animacoes' => 'cinema', 'secoes' => null, 'layout' => null, 'banner_imagem' => $fotos[0] ?? null, 'galeria_imagens' => implode(',', array_slice($fotos, 1)),
     'fotos_banco' => null, 'html_gerado' => null, 'ia_modo_total' => false, 'ia_tema' => null, 'wa_modo' => 'plataforma', 'pedido_online' => true,
     'aceita_entrega' => true, 'aceita_retirada' => true, 'taxa_entrega' => 0, 'pedido_minimo' => 0, 'formas_pagamento' => 'Pix, Cartão, Dinheiro', 'tempo_entrega' => null,
@@ -74,7 +76,9 @@ $dados = [
 ];
 $dados['agenda'] = agenda_config($empresa) + ['tem_cupons' => false];
 $dados['status'] = agenda_status_agora($empresa);
-$dados['tema'] = ['accent' => '#2563eb'];
+// A cor da marca precisa aparecer bem no fundo da identidade do nicho
+if ($corMarca) $empresa['cor_primaria'] = prosp_cor_para_fundo($corMarca, site_identidade($empresa)[1]['bg']);
+$dados['tema'] = ['accent' => $empresa['cor_primaria'] ?: '#2563eb'];
 $dados['modo'] = atendimento_modo_da_linha($empresa);
 $dados['modulos'] = modulos_da_empresa($empresa)['ativos'];
 
