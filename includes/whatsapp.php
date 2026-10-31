@@ -11,6 +11,8 @@
 //      que abre o WhatsApp com o texto pronto.
 //
 // Integrações suportadas (o admin escolhe em Configurações):
+//   ponte     → Conector GDS num celular Android ou computador: ELE busca as mensagens no site
+//               (funciona em hospedagem compartilhada, sem servidor/domínio/túnel) — whatsapp_ponte.php
 //   gds       → Conector GDS (grátis, pasta whatsapp-conector; usa as mesmas rotas da Evolution)
 //   evolution → Evolution API (gratuita, você hospeda; conecta por QR code)
 //   zapi      → Z-API (paga, brasileira)
@@ -139,7 +141,7 @@ function wa_api() {
         'tipo_salvo' => $tipo,
         'url' => rtrim(get_config('wa_api_url', ''), '/'),
         'chave' => get_config('wa_api_chave', ''),
-        'plat_instancia' => get_config('wa_plataforma_instancia', ''),
+        'plat_instancia' => get_config('wa_plataforma_instancia', '') ?: ($tipo === 'ponte' ? 'gds-plataforma' : ''),
         'plat_token' => get_config('wa_plataforma_token', ''),
         'plat_ativo' => get_config('wa_plataforma_ativo', '0') === '1',
         'empresas_conectar' => get_config('wa_empresas_conectar', '1') === '1',
@@ -151,6 +153,7 @@ function wa_api() {
 function wa_api_configurada() {
     $a = wa_api();
     if ($a['tipo'] === 'evolution') return $a['url'] !== '' && $a['chave'] !== '';
+    if ($a['tipo'] === 'ponte') return $a['chave'] !== '';
     if ($a['tipo'] === 'zapi') return true;
     if ($a['tipo'] === 'wppconnect') return $a['url'] !== '' && $a['chave'] !== '';
     if ($a['tipo'] === 'ultramsg') return true;
@@ -162,7 +165,7 @@ function wa_api_configurada() {
 // A empresa pode conectar o próprio número por QR code?
 function wa_pode_conectar_proprio() {
     $a = wa_api();
-    return $a['empresas_conectar'] && in_array($a['tipo'], ['evolution', 'zapi', 'wppconnect', 'ultramsg'], true) && wa_api_configurada();
+    return $a['empresas_conectar'] && in_array($a['tipo'], ['evolution', 'zapi', 'wppconnect', 'ultramsg', 'ponte'], true) && wa_api_configurada();
 }
 
 function wa_plataforma_disponivel() {
@@ -336,6 +339,7 @@ function wa_adiar() {
 
 function wa_tentar_envio($id, $rem, $num, $texto, $extra = []) {
     global $pdo;
+    if ($rem['tipo'] === 'ponte') return ['ok' => true, 'fila' => true, 'erro' => '']; // o conector busca e envia em segundos
     $r = wa_enviar_agora($rem, $num, $texto, $extra);
     if ($r['ok']) {
         $pdo->prepare("UPDATE whatsapp_mensagens SET status='enviado', enviado_em=NOW(), tentativas=tentativas+1, erro=NULL WHERE id=?")->execute([$id]);
@@ -383,6 +387,7 @@ function wa_resultado_para_tela($msgId) {
 // Reenvia pendentes (chamado pela rotina automática)
 function wa_processar_fila($limite = 20) {
     global $pdo;
+    if (wa_api()['tipo'] === 'ponte') return 0; // na ponte quem envia é o conector
     $st = $pdo->query("SELECT e.*, m.id AS msg_id, m.telefone AS msg_telefone, m.texto AS msg_texto FROM whatsapp_mensagens m JOIN empresas e ON e.id = m.empresa_id
         WHERE m.status='pendente' AND m.tentativas < 3 AND m.criado_em > NOW() - INTERVAL '1 day' ORDER BY m.id LIMIT " . (int)$limite);
     $n = 0;
@@ -548,6 +553,12 @@ function wa_avisar_status_agendamento($empresa, $agId, $status) {
 function wa_conexao_criar($empresa) {
     global $pdo;
     $a = wa_api();
+    if ($a['tipo'] === 'ponte') {
+        $nome = $empresa['wa_instancia'] ?: 'gds-' . (int)$empresa['id'] . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
+        $pdo->prepare("UPDATE empresas SET wa_instancia=?, wa_status='aguardando' WHERE id=?")->execute([$nome, $empresa['id']]);
+        wa_ponte_pedir($nome);
+        return wa_ponte_situacao($nome);
+    }
     if ($a['tipo'] === 'wppconnect') {
         $nome = $empresa['wa_instancia'] ?: 'gds-' . (int)$empresa['id'] . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
         $pdo->prepare("UPDATE empresas SET wa_instancia=?, wa_status='aguardando' WHERE id=?")->execute([$nome, $empresa['id']]);
@@ -574,6 +585,10 @@ function wa_conexao_criar($empresa) {
 
 function wa_conexao_qr($empresa, $numeroPareamento = '') {
     $a = wa_api();
+    if ($a['tipo'] === 'ponte') {
+        if ($numeroPareamento !== '' || !wa_ponte_ler($empresa['wa_instancia'])) wa_ponte_pedir($empresa['wa_instancia'], $numeroPareamento);
+        return wa_ponte_situacao($empresa['wa_instancia']);
+    }
     if ($a['tipo'] === 'wppconnect') {
         $r = wa_wpp('POST', $empresa['wa_instancia'], 'start-session', ['waitQrCode' => true]);
         if (!$r['ok']) return ['ok' => false, 'erro' => $r['erro']];
@@ -606,6 +621,7 @@ function wa_conexao_estado($empresa) {
     global $pdo;
     $a = wa_api();
     if (empty($empresa['wa_instancia'])) return ['ok' => true, 'conectado' => false];
+    if ($a['tipo'] === 'ponte') return wa_ponte_situacao($empresa['wa_instancia']); // o status da empresa é atualizado pela própria ponte
     if ($a['tipo'] === 'zapi') {
         $r = wa_http('GET', wa_zapi_base($empresa['wa_instancia'], $empresa['wa_instancia_token']) . '/status', null, $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
         $conectado = $r['ok'] && !empty($r['dados']['connected']);
@@ -644,7 +660,10 @@ function wa_conexao_desconectar($empresa) {
     global $pdo;
     $a = wa_api();
     if (!empty($empresa['wa_instancia'])) {
-        if ($a['tipo'] === 'evolution') {
+        if ($a['tipo'] === 'ponte') {
+            wa_ponte_desconectar($empresa['wa_instancia']);
+            $pdo->prepare("UPDATE empresas SET wa_instancia=NULL WHERE id=?")->execute([$empresa['id']]);
+        } elseif ($a['tipo'] === 'evolution') {
             wa_http('DELETE', $a['url'] . '/instance/logout/' . rawurlencode($empresa['wa_instancia']), null, ['apikey: ' . $a['chave']]);
             wa_http('DELETE', $a['url'] . '/instance/delete/' . rawurlencode($empresa['wa_instancia']), null, ['apikey: ' . $a['chave']]);
             $pdo->prepare("UPDATE empresas SET wa_instancia=NULL, wa_instancia_token=NULL WHERE id=?")->execute([$empresa['id']]);
@@ -660,3 +679,5 @@ function wa_conexao_desconectar($empresa) {
     $pdo->prepare("UPDATE empresas SET wa_status='desconectado', wa_numero_conectado=NULL WHERE id=?")->execute([$empresa['id']]);
     return ['ok' => true];
 }
+
+require_once __DIR__ . '/whatsapp_ponte.php';

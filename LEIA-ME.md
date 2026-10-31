@@ -215,9 +215,10 @@ em preparo, **saiu para entrega** / pronto para retirada, entregue. A empresa ta
 a cada agendamento, orçamento ou pedido novo.
 
 0. **Mais simples e grátis: Conector GDS.** A pasta `whatsapp-conector` (ao lado da pasta `gds`) é um programa
-   pequeno, sem Docker e sem banco, que liga os números por QR code. Deixe-o ligado num app Node.js da Hostinger,
-   num VPS ou num computador sempre ligado (passo a passo em `whatsapp-conector/LEIA-ME.md`) e, em
-   **Admin → WhatsApp**, escolha **Conector GDS** e cole o endereço e a chave.
+   pequeno que liga os números por QR code. **Funciona em hospedagem compartilhada**: rode-o num celular Android
+   (Termux) ou num computador sempre ligado e ele **busca** as mensagens no site. Em **Admin → WhatsApp**,
+   escolha **Conector GDS no celular ou computador**, salve e copie o endereço e a chave para o `ponte.txt`.
+   Também roda em servidor (app Node.js ou VPS). Passo a passo em `whatsapp-conector/LEIA-ME.md`.
 1. **Admin → WhatsApp**: escolha o serviço — **Evolution API** ou **WPPConnect** (gratuitas; rodam num VPS à parte,
    ex.: Hostinger VPS), **WhatsApp Cloud API oficial da Meta** (sem risco de bloqueio; usa um modelo "Utilidade"
    quando o cliente não falou com o número nas últimas 24h), **Z-API** ou **UltraMsg** (pagas, sem servidor) ou

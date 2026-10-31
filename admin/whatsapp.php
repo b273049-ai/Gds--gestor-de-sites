@@ -17,9 +17,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             if (!wa_api_configurada()) responder_json(['ok' => false, 'erro' => 'Configure e salve a integração primeiro.']);
             $num = trim($_POST['numero'] ?? '');
             if (wa_numero($num) === '') responder_json(['ok' => false, 'erro' => 'Informe um número com DDD.']);
+            if ($a['tipo'] === 'ponte') {
+                if (!wa_ponte_online()) responder_json(['ok' => false, 'erro' => 'O conector está desligado. Ligue o celular/computador com o conector.']);
+                $p = wa_ponte_ler($a['plat_instancia']);
+                if (!$p || $p['estado'] !== 'open') responder_json(['ok' => false, 'erro' => 'Conecte o número da plataforma primeiro (Gerar QR code).']);
+                wa_ponte_enfileirar_teste($num, "✅ Teste do WhatsApp da plataforma GDS. Está funcionando!");
+                responder_json(['ok' => true, 'msg' => 'Na fila: o conector envia para ' . wa_numero($num) . ' em alguns segundos.']);
+            }
             $r = wa_enviar_agora(['canal' => 'plataforma', 'tipo' => $a['tipo'], 'instancia' => $a['plat_instancia'], 'token' => $a['plat_token']], $num, "✅ Teste do WhatsApp da plataforma GDS. Está funcionando!");
             responder_json($r['ok'] ? ['ok' => true, 'msg' => 'Mensagem enviada para ' . wa_numero($num) . '!'] : ['ok' => false, 'erro' => $r['erro']]);
         case 'conectar':
+            if ($a['tipo'] === 'ponte') { $nome = adm_wa_instancia(); wa_ponte_pedir($nome); responder_json(wa_ponte_situacao($nome)); }
             if (!in_array($a['tipo'], ['evolution', 'wppconnect'], true) || !wa_api_configurada()) responder_json(['ok' => false, 'erro' => 'Disponível com Evolution API ou WPPConnect configurados.']);
             $nome = adm_wa_instancia();
             if ($a['tipo'] === 'wppconnect') {
@@ -35,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             responder_json(['ok' => true, 'qr' => $q['dados']['base64'] ?? null, 'codigo' => $q['dados']['pairingCode'] ?? null, 'conectado' => ($q['dados']['instance']['state'] ?? '') === 'open']);
         case 'estado':
             $nome = adm_wa_instancia();
+            if ($a['tipo'] === 'ponte') responder_json(wa_ponte_situacao($nome));
             if ($a['tipo'] === 'zapi') {
                 $r = wa_http('GET', wa_zapi_base($a['plat_instancia'], $a['plat_token']) . '/status', null, $a['chave'] !== '' ? ['Client-Token: ' . $a['chave']] : []);
                 responder_json(['ok' => $r['ok'], 'conectado' => !empty($r['dados']['connected']), 'erro' => $r['erro']]);
@@ -52,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
-    $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'gds', 'evolution', 'wppconnect', 'zapi', 'ultramsg', 'cloud', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
+    $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'ponte', 'gds', 'evolution', 'wppconnect', 'zapi', 'ultramsg', 'cloud', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
     set_config('wa_api_tipo', $tipo);
     set_config('wa_api_url', url_valida_ou_vazia($_POST['wa_api_url'] ?? ''));
     if (trim($_POST['wa_api_chave'] ?? '') !== '') set_config('wa_api_chave', trim($_POST['wa_api_chave']));
@@ -63,6 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
     set_config('wa_empresas_conectar', isset($_POST['wa_empresas_conectar']) ? '1' : '0');
     set_config('wa_cloud_modelo', preg_replace('/[^a-z0-9_]/', '', strtolower(trim($_POST['wa_cloud_modelo'] ?? ''))));
     set_config('wa_cloud_idioma', preg_replace('/[^A-Za-z_]/', '', trim($_POST['wa_cloud_idioma'] ?? '')) ?: 'pt_BR');
+    // Ponte: a chave é gerada aqui e colada no conector
+    if ($tipo === 'ponte' && (get_config('wa_api_chave', '') === '' || isset($_POST['nova_chave_ponte']))) set_config('wa_api_chave', bin2hex(random_bytes(16)));
     flash('sucesso', 'Integração do WhatsApp salva.');
     header('Location: whatsapp.php'); exit;
 }
@@ -104,7 +115,8 @@ $chaveSalva = $a['chave'] !== '';
         <label>Serviço de WhatsApp</label>
         <select name="wa_api_tipo" id="tipo" onchange="mostrarTipo()">
             <option value="" <?= $a['tipo_salvo'] === '' ? 'selected' : '' ?>>Nenhum (só envio manual pelo painel)</option>
-            <option value="gds" <?= $a['tipo_salvo'] === 'gds' ? 'selected' : '' ?>>Conector GDS — grátis, leve, conecta por QR code (recomendado)</option>
+            <option value="ponte" <?= $a['tipo_salvo'] === 'ponte' ? 'selected' : '' ?>>Conector GDS no celular ou computador — grátis, funciona em qualquer hospedagem (recomendado)</option>
+            <option value="gds" <?= $a['tipo_salvo'] === 'gds' ? 'selected' : '' ?>>Conector GDS em servidor (app Node.js ou VPS) — grátis, conecta por QR code</option>
             <option value="evolution" <?= $a['tipo_salvo'] === 'evolution' ? 'selected' : '' ?>>Evolution API — gratuita, conecta por QR code</option>
             <option value="wppconnect" <?= $a['tipo'] === 'wppconnect' ? 'selected' : '' ?>>WPPConnect — gratuita, código aberto, conecta por QR code</option>
             <option value="cloud" <?= $a['tipo'] === 'cloud' ? 'selected' : '' ?>>WhatsApp Cloud API OFICIAL (Meta) — sem risco de bloqueio</option>
@@ -112,6 +124,18 @@ $chaveSalva = $a['chave'] !== '';
             <option value="ultramsg" <?= $a['tipo'] === 'ultramsg' ? 'selected' : '' ?>>UltraMsg — paga, simples</option>
             <option value="webhook" <?= $a['tipo'] === 'webhook' ? 'selected' : '' ?>>Webhook (n8n, Make ou outro gateway)</option>
         </select>
+        <div data-tipo="ponte" class="ponte-box">
+            <?php $ponteOn = $a['tipo'] === 'ponte' && wa_ponte_online(); ?>
+            <p style="margin:12px 0 6px"><span class="pill <?= $ponteOn ? 'pill-ok' : 'pill-aviso' ?>"><?= $ponteOn ? 'Conector ligado' : 'Conector desligado' ?></span>
+                <?php if (!$ponteOn && get_config('wa_ponte_visto', '') !== ''): ?><span class="dica">visto pela última vez em <?= date('d/m H:i', (int)get_config('wa_ponte_visto')) ?></span><?php endif; ?></p>
+            <?php if ($a['tipo'] === 'ponte' && $chaveSalva): ?>
+            <label>Endereço do site (cole no conector)</label>
+            <input type="text" readonly value="<?= e((get_config('plataforma_url', '') ?: site_url_base_admin())) ?>" onclick="this.select()">
+            <label>Chave do conector (cole no conector)</label>
+            <input type="text" readonly value="<?= e($a['chave']) ?>" onclick="this.select()">
+            <label class="check" style="font-size:12px"><input type="checkbox" name="nova_chave_ponte"> gerar uma chave nova (o conector precisa da nova)</label>
+            <?php else: ?><p class="dica">Salve para gerar a chave do conector.</p><?php endif; ?>
+        </div>
         <div data-tipo="gds evolution wppconnect webhook">
             <label id="rotUrl">URL do servidor</label>
             <input type="url" name="wa_api_url" value="<?= e($a['url']) ?>" placeholder="https://evolution.seudominio.com.br">
@@ -124,7 +148,7 @@ $chaveSalva = $a['chave'] !== '';
 
         <h3 style="margin-top:22px">2. Número da plataforma</h3>
         <p class="dica">Um número que envia para os clientes das empresas que não conectaram o próprio. A mensagem vai assinada com o nome da empresa.</p>
-        <div data-tipo="gds evolution wppconnect zapi ultramsg cloud webhook">
+        <div data-tipo="ponte gds evolution wppconnect zapi ultramsg cloud webhook">
             <label id="rotInst">Nome da instância</label>
             <input type="text" name="wa_plataforma_instancia" value="<?= e($a['plat_instancia']) ?>" placeholder="gds-plataforma">
         </div>
@@ -135,13 +159,13 @@ $chaveSalva = $a['chave'] !== '';
         <p class="dica" data-tipo="cloud">Na Meta, crie um modelo da categoria <strong>Utilidade</strong> com o corpo: <code>Olá! Mensagem de {{1}}: {{2}}</code>. Ele é usado quando o cliente não falou com o número nas últimas 24h (regra da Meta).</p>
         <div data-tipo="zapi ultramsg cloud"><label id="rotToken">Token da instância</label><input type="password" name="wa_plataforma_token" autocomplete="off" placeholder="<?= $a['plat_token'] !== '' ? 'Salvo — cole outro para trocar' : '' ?>"></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" name="wa_plataforma_ativo" <?= $a['plat_ativo'] ? 'checked' : '' ?>> Usar o número da plataforma para as empresas</label>
-        <label class="check" data-tipo="gds evolution wppconnect zapi ultramsg"><input type="checkbox" name="wa_empresas_conectar" <?= $a['empresas_conectar'] ? 'checked' : '' ?>> Deixar cada empresa conectar o próprio WhatsApp (QR code no painel dela)</label>
+        <label class="check" data-tipo="ponte gds evolution wppconnect zapi ultramsg"><input type="checkbox" name="wa_empresas_conectar" <?= $a['empresas_conectar'] ? 'checked' : '' ?>> Deixar cada empresa conectar o próprio WhatsApp (QR code no painel dela)</label>
         <button type="submit" name="salvar" value="1">Salvar</button>
     </form>
 
     <section class="form-box largo">
         <h3>3. Conectar e testar</h3>
-        <div data-tipo="gds evolution wppconnect">
+        <div data-tipo="ponte gds evolution wppconnect">
             <p class="dica">Conecte o número da plataforma lendo o QR code com o WhatsApp do celular (Aparelhos conectados → Conectar um aparelho).</p>
             <button type="button" class="btn" onclick="conectar(this)"><?= icone('celular', 16) ?> Gerar QR code</button>
             <div id="qrArea" hidden style="margin-top:14px"><div class="wa-qr"><img id="qrImg" alt="QR code"><span id="qrInfo">Aguardando leitura…</span></div></div>
@@ -157,6 +181,18 @@ $chaveSalva = $a['chave'] !== '';
         <code style="display:block;word-break:break-all;padding:10px;background:var(--surface-3);border-radius:8px">curl -s "<?= e($cronUrl) ?>" &gt;/dev/null</code>
         <button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="rotina(this)">Rodar agora</button>
 
+        <details style="margin-top:18px" open data-tipo="ponte"><summary class="link" style="cursor:pointer">Passo a passo: conector no celular Android ou no computador (grátis)</summary>
+            <p class="dica">O conector fica num aparelho sempre ligado e <strong>busca</strong> as mensagens aqui no site a cada poucos segundos. Não precisa de outra hospedagem.</p>
+            <p class="dica"><strong>Celular Android</strong> (um aparelho antigo serve, sempre no carregador e no Wi-Fi):</p>
+            <ol class="dica" style="line-height:1.8">
+                <li>Instale o <strong>Termux</strong> pelo F-Droid (f-droid.org). A versão da Play Store é antiga.</li>
+                <li>No Termux, cole: <code>pkg update -y && pkg install -y nodejs-lts unzip</code></li>
+                <li>Copie a pasta <code>whatsapp-conector</code> para o celular (ou baixe o zip) e entre nela: <code>cd whatsapp-conector && npm install</code></li>
+                <li>Ligue: <code>termux-wake-lock; GDS_SITE=<?= e((get_config('plataforma_url', '') ?: site_url_base_admin())) ?> GDS_CHAVE=<?= e($a['tipo'] === 'ponte' ? $a['chave'] : 'SUA_CHAVE') ?> npm start</code></li>
+                <li>Aqui em cima deve aparecer <strong>Conector ligado</strong>. Clique em <strong>Gerar QR code</strong> e leia com o WhatsApp do chip.</li>
+            </ol>
+            <p class="dica"><strong>Computador (Windows):</strong> instale o Node.js (nodejs.org, versão LTS), abra a pasta <code>whatsapp-conector</code>, edite o arquivo <code>ponte.txt</code> com o endereço e a chave acima e dê dois cliques em <code>ligar-windows.bat</code>.</p>
+            <p class="dica">Use um chip só para isso e envie só o que o cliente pediu: disparo em massa faz o WhatsApp bloquear o número.</p></details>
         <details style="margin-top:18px" open data-tipo="gds"><summary class="link" style="cursor:pointer">Passo a passo: Conector GDS (grátis)</summary>
             <ol class="dica" style="line-height:1.8">
                 <li>Pegue a pasta <code>whatsapp-conector</code> que vem junto com o GDS.</li>
@@ -203,6 +239,7 @@ const ROT = {
     zapi: ['', 'Client-Token da conta (Segurança, opcional)', 'ID da instância'],
     wppconnect: ['URL do servidor WPPConnect', 'SECRET_KEY do servidor (config)', 'Nome da sessão'],
     ultramsg: ['', '', 'ID da instância (ex.: instance12345)'],
+    ponte: ['', '', 'Nome da instância'],
     cloud: ['', '', 'Phone Number ID (Meta → WhatsApp → Configuração da API)'],
     webhook: ['URL que recebe o POST (JSON com numero e texto)', 'Token enviado no cabeçalho X-GDS-Token (opcional)', 'Identificador (opcional)'],
 };
@@ -227,9 +264,11 @@ async function conectar(b) {
     if (!r.ok) { alert(r.erro); return; }
     document.getElementById('qrArea').hidden = false;
     if (r.qr) document.getElementById('qrImg').src = r.qr.startsWith('data:') ? r.qr : 'data:image/png;base64,' + r.qr;
+    else if (r.aguardando) document.getElementById('qrInfo').textContent = 'Pedindo o QR ao conector…';
     const t = setInterval(async () => {
         const e = await post({ acao: 'estado' });
         if (e.conectado) { clearInterval(t); document.getElementById('qrInfo').textContent = '✅ Conectado!'; }
+        else if (e.qr) { document.getElementById('qrImg').src = e.qr; document.getElementById('qrInfo').textContent = 'Aguardando leitura…'; }
     }, 3000);
     setTimeout(() => clearInterval(t), 180000);
 }
