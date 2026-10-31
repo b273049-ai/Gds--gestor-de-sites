@@ -18,6 +18,7 @@ function prosp_site_proprio($url) {
     $url = strtolower(trim((string)$url));
     if ($url === '') return false;
     $host = parse_url(str_contains($url, '://') ? $url : 'http://' . $url, PHP_URL_HOST) ?: '';
+    if ($host === '' || filter_var($host, FILTER_VALIDATE_IP)) return false; // site de empresa não é um IP solto
     $redes = ['instagram.com', 'facebook.com', 'fb.com', 'linktr.ee', 'wa.me', 'whatsapp.com', 'api.whatsapp.com', 'ifood.com.br', 'business.site',
               'goo.gl', 'g.page', 'bit.ly', 'beacons.ai', 'linkbio', 'tiktok.com', 'youtube.com', 'twitter.com', 'x.com', 'linkedin.com',
               'booksy.com', 'trinks.com', 'anota.ai', 'goomer.app', 'aiqfome.com', 'cardapioweb.com', 'menudino.com', 'olaclick.com', 'sites.google.com',
@@ -326,7 +327,17 @@ function prosp_rotina($limite = 6) {
     try {
         for ($i = 0; $i < $limite; $i++) { $r = prosp_processar_proxima(); if (!empty($r['fim'])) break; $feitas++; }
     } catch (Throwable $e) { return ['prospeccao' => 'erro']; }
-    return ['prospeccao' => $feitas ? "$feitas busca(s)" : 'nada a fazer'];
+    // Verificação de site dos próximos da fila (no modo ponte quem faz é o conector, a cada volta)
+    $verificados = 0;
+    if (get_config('prosp_verificar', '1') === '1' && prosp_verif_modo() !== 'ponte') {
+        global $pdo;
+        try {
+            $st = $pdo->query("SELECT * FROM prospects WHERE NOT tem_site AND verificado_em IS NULL AND status NOT IN ('fechado','descartado','tem_site')
+                AND COALESCE(whatsapp,'') <> '' ORDER BY (passo = 0 AND status='novo') DESC, pontuacao DESC LIMIT 8");
+            foreach ($st->fetchAll() as $p) { prosp_verificar_lead($p); $verificados++; }
+        } catch (Throwable $e) { error_log('GDS verificação: ' . $e->getMessage()); }
+    }
+    return ['prospeccao' => ($feitas ? "$feitas busca(s)" : 'nada a fazer') . ($verificados ? ", $verificados verificado(s)" : '')];
 }
 
 // ---------- CONCORRÊNCIA ----------
@@ -404,44 +415,155 @@ function prosp_servicos_exemplo($slug, $categoria) {
 }
 
 // ---------- MENSAGENS (cadência de 3 toques) ----------
+// O que mais faz o dono responder "não, obrigado": mensagem longa, link de número
+// desconhecido logo de cara, cara de vendedor e afirmar que ele "não tem site".
+// Por isso a abertura é curta, se apresenta, NÃO tem link e termina com uma pergunta
+// fácil de responder. O link só vai quando ele disser "pode mandar" (ou no 2º toque).
 function prosp_mensagens_padrao() {
     return [
-        1 => "Oi! Tudo bem? Encontrei a {nome} no Google{avaliacoes_txt} 👏\n\n{concorrentes_txt}\n\nMontei uma prévia de como ficaria o site de vocês, com {recurso} e confirmação automática no WhatsApp:\n{previa}\n\nO que acharam?",
-        2 => "Oi! Conseguiram ver a prévia do site da {nome}? {previa}\n\nSe quiserem, eu ajusto cores, fotos e textos do jeito de vocês, sem compromisso.",
-        3 => "Oi! Última mensagem sobre o site da {nome}, prometo 🙂\n\nA prévia continua no ar por mais alguns dias: {previa}\n\nSe não for o momento, sem problema — é só me avisar que eu não mando mais.",
+        1 => "Oi, tudo bem? É da {nome}? 😊\n{vendedor_txt}Vi vocês no Google aqui {bairro_em}{nota_txt} e montei, por conta própria, uma página de demonstração com o nome e as fotos de vocês.\n\nPosso te mandar o link pra dar uma olhada? Não precisa comprar nada.",
+        '1b' => "Oi, tudo bem? É da {nome}?\n{vendedor_txt}Uma pergunta rápida: hoje os clientes de vocês {acao_cliente} só pelo WhatsApp, ou tem algum link onde dá pra ver {o_que} e {verbo} sozinho?",
+        2 => "Oi! Passando só pra deixar o link da demonstração que montei pra {nome}, caso queira ver quando tiver um tempinho:\n{previa}\n\nSe não fizer sentido pra vocês, tudo bem também 🙂",
+        3 => "Oi! Última mensagem, prometo 🙂\nSe um dia quiserem {recurso} sem precisar responder um por um no WhatsApp, é só me chamar aqui. Boa semana pra vocês!",
     ];
 }
 
+// Textos antigos que ficaram salvos no banco: viram o padrão novo sozinhos
+function prosp_mensagens_antigas() {
+    return [
+        "Oi! Tudo bem? Encontrei a {nome} no Google{avaliacoes_txt} 👏\n\n{concorrentes_txt}\n\nMontei uma prévia de como ficaria o site de vocês, com {recurso} e confirmação automática no WhatsApp:\n{previa}\n\nO que acharam?",
+        "Oi! Conseguiram ver a prévia do site da {nome}? {previa}\n\nSe quiserem, eu ajusto cores, fotos e textos do jeito de vocês, sem compromisso.",
+        "Oi! Última mensagem sobre o site da {nome}, prometo 🙂\n\nA prévia continua no ar por mais alguns dias: {previa}\n\nSe não for o momento, sem problema — é só me avisar que eu não mando mais.",
+    ];
+}
+
+// Respostas prontas para o que o dono costuma responder
+function prosp_respostas_padrao() {
+    return [
+        'link' => ['rotulo' => '👍 "Pode mandar"', 'texto' => "Aqui está 👇\n{previa}\n\nFiz com as fotos e as avaliações de vocês do Google, abre no celular mesmo. O que você mudaria nela?"],
+        'ja_tenho' => ['rotulo' => '🌐 "Já tenho site"', 'texto' => "Ah, que bom! Não apareceu no Google pra mim — vale colocar o link no perfil de vocês lá, ajuda muito a ser encontrado.\nSe um dia quiser comparar, essa versão já vem com {recurso}: {previa} 🙂"],
+        'preco' => ['rotulo' => '💰 "Quanto custa?"', 'texto' => "{preco_txt}Antes de falar de valor, vê se faz sentido pra vocês: {previa}\nQuer que eu te mostre rapidinho como funciona {recurso}?"],
+        'quem' => ['rotulo' => '🤔 "Quem é você?"', 'texto' => "Desculpa, nem me apresentei direito! Sou {vendedor_nome}, da {marca} — a gente faz sites pra negócios aqui da região. Achei vocês no Google e montei a demonstração por conta própria, sem compromisso: {previa}"],
+        'depois' => ['rotulo' => '⏳ "Agora não"', 'texto' => "Sem problema! Te chamo daqui a uns dias então. A demonstração fica no ar: {previa}"],
+        'nao' => ['rotulo' => '🙅 "Não tenho interesse"', 'texto' => "Tranquilo, obrigado por responder! Não vou mais te mandar mensagem. Sucesso aí pra vocês 🙌"],
+    ];
+}
+
+function prosp_normalizar_texto($t) { return trim(preg_replace("/\r\n?/", "\n", (string)$t)); }
+
+// $passo: 1, '1b', 2 ou 3
 function prosp_modelo($passo) {
-    $passo = max(1, min(3, (int)$passo));
-    return get_config('prosp_mensagem_' . $passo, '') ?: (($passo === 1 ? get_config('prosp_mensagem', '') : '') ?: prosp_mensagens_padrao()[$passo]);
+    $chave = $passo === '1b' ? '1b' : max(1, min(3, (int)$passo));
+    $salvo = prosp_normalizar_texto(get_config('prosp_mensagem_' . $chave, '') ?: ($chave === 1 ? get_config('prosp_mensagem', '') : ''));
+    if ($salvo !== '' && in_array($salvo, array_map('prosp_normalizar_texto', prosp_mensagens_antigas()), true)) $salvo = '';
+    return $salvo !== '' ? $salvo : prosp_mensagens_padrao()[$chave];
+}
+
+function prosp_resposta_modelo($chave) {
+    $padrao = prosp_respostas_padrao();
+    if (!isset($padrao[$chave])) return '';
+    return prosp_normalizar_texto(get_config('prosp_resposta_' . $chave, '')) ?: $padrao[$chave]['texto'];
+}
+
+// Versão da 1ª mensagem (teste A/B): alterna entre as duas, a não ser que uma esteja vazia/desligada
+function prosp_variante($p) {
+    if (!empty($p['variante'])) return $p['variante'];
+    if (get_config('prosp_ab', '1') !== '1') return 'a';
+    return ((int)($p['id'] ?? 0)) % 2 === 0 ? 'a' : 'b';
+}
+
+// Modo do negócio → como o cliente dele compra
+function prosp_modo_negocio($texto) {
+    $t = mb_strtolower((string)$texto);
+    if (preg_match('/hamburg|pizz|a[cç]a[ií]|lanch|marmit|restaur|delivery|padaria|confeit|doce|bolo|sorvet|pastel|espetinho|japon|sushi/u', $t)) return 'pedido';
+    if (preg_match('/fot[oó]graf|dj|buffet|decora|eventos|mec[aâ]nic|oficina|advog|reforma|pintor|eletric|encanad|marcen|serralher|vidra|gráfica|grafica|contab/u', $t)) return 'orcamento';
+    return 'agenda';
 }
 
 function prosp_recurso($texto) {
-    $t = mb_strtolower((string)$texto);
-    if (preg_match('/hamburg|pizz|a[cç]a[ií]|lanch|marmit|restaur|delivery|padaria|confeit|doce|bolo/u', $t)) return 'cardápio online e pedido pelo site';
-    if (preg_match('/fot[oó]graf|dj|buffet|decora|eventos|mec[aâ]nic|oficina|advog|reforma|pintor|eletric|encanad|marcen|tatu/u', $t)) return 'pedido de orçamento online';
-    return 'agendamento online';
+    return ['pedido' => 'cardápio online e pedido pelo site', 'orcamento' => 'pedido de orçamento online', 'agenda' => 'agendamento online'][prosp_modo_negocio($texto)];
+}
+
+// "Centro" → "no Centro", "Vila Mariana" → "na Vila Mariana", "Moema" → "em Moema"
+function prosp_no_lugar($lugar) {
+    $lugar = trim((string)$lugar);
+    if ($lugar === '') return 'na região';
+    $l = mb_strtolower($lugar);
+    if (preg_match('/^(centro|jardim|parque|bairro|recreio|setor|distrito|bosque|morro|alto|portal|residencial|conjunto|núcleo|nucleo)\b/u', $l)) return 'no ' . $lugar;
+    if (preg_match('/^(vila|cidade|chácara|chacara|colônia|colonia|praia|serra|ilha|barra|lagoa|zona|região|regiao)\b/u', $l)) return 'na ' . $lugar;
+    return 'em ' . $lugar;
+}
+
+function prosp_variaveis($p) {
+    $av = (int)($p['avaliacoes'] ?? 0); $nota = (float)($p['nota'] ?? 0);
+    $txtNicho = ($p['categoria'] ?? '') . ' ' . ($p['nome'] ?? '') . ' ' . ($p['busca'] ?? '');
+    $modo = prosp_modo_negocio($txtNicho);
+    $vendNome = trim(get_config('prosp_vendedor', ''));
+    $marca = get_config('mkt_marca', '') ?: 'GDS Sites';
+    $preco = trim(get_config('mkt_preco', ''));
+    return [
+        '{nome}' => $p['nome'] ?? '', '{nicho}' => mb_strtolower(trim((string)($p['categoria'] ?? '')) ?: 'negócios como o seu'),
+        '{cidade}' => $p['cidade'] ?? '', '{bairro}' => ($p['bairro'] ?? '') ?: ($p['cidade'] ?? 'na região'),
+        '{bairro_em}' => prosp_no_lugar(($p['bairro'] ?? '') ?: ($p['cidade'] ?? '')),
+        '{nota}' => $nota ? number_format($nota, 1, ',', '') : '', '{avaliacoes}' => (string)$av,
+        '{avaliacoes_txt}' => $av >= 5 ? ' — ' . ($nota ? number_format($nota, 1, ',', '') . ' estrelas com ' : '') . $av . ' avaliações, parabéns' : '',
+        '{nota_txt}' => $av >= 5 && $nota >= 4 ? ' (' . number_format($nota, 1, ',', '') . ' estrelas com ' . $av . ' avaliações, parabéns)' : '',
+        '{recurso}' => prosp_recurso($txtNicho),
+        '{acao_cliente}' => ['pedido' => 'fazem pedido', 'orcamento' => 'pedem orçamento', 'agenda' => 'marcam horário'][$modo],
+        '{o_que}' => ['pedido' => 'o cardápio', 'orcamento' => 'os serviços', 'agenda' => 'os horários livres'][$modo],
+        '{verbo}' => ['pedido' => 'pedir', 'orcamento' => 'pedir orçamento', 'agenda' => 'marcar'][$modo],
+        '{vendedor_nome}' => $vendNome ?: 'eu', '{marca}' => $marca,
+        '{vendedor_txt}' => $vendNome ? "Aqui é $vendNome, da $marca.\n" : '',
+        '{preco_txt}' => $preco ? "Fica $preco. " : '',
+        '{link}' => prosp_url_base(),
+    ];
+}
+
+function prosp_aplicar($modelo, $p) {
+    $vars = prosp_variaveis($p);
+    $vars['{concorrentes_txt}'] = !empty($p['id']) && str_contains($modelo, '{concorrentes_txt}') ? prosp_concorrencia($p)['texto'] : '';
+    $vars['{previa}'] = !empty($p['id']) && str_contains($modelo, '{previa}') ? prosp_link_previa($p) : '';
+    $txt = strtr($modelo, $vars);
+    $txt = preg_replace("/[ \t]+\n/", "\n", $txt);
+    return trim(preg_replace("/\n{3,}/", "\n\n", $txt));
 }
 
 function prosp_mensagem($p, $passo = null, $modelo = null) {
     $passo = $passo ?: min(3, (int)($p['passo'] ?? 0) + 1);
-    $modelo = $modelo ?: prosp_modelo($passo);
-    $av = (int)($p['avaliacoes'] ?? 0); $nota = (float)($p['nota'] ?? 0);
-    $avTxt = $av >= 5 ? ' — ' . ($nota ? number_format($nota, 1, ',', '') . ' estrelas com ' : '') . $av . ' avaliações, parabéns' : '';
-    $nicho = trim((string)($p['categoria'] ?? '')) ?: 'negócios como o seu';
-    $conc = !empty($p['id']) && str_contains($modelo, '{concorrentes_txt}') ? prosp_concorrencia($p)['texto'] : '';
-    $previa = !empty($p['id']) && str_contains($modelo, '{previa}') ? prosp_link_previa($p) : '';
-    $txt = strtr($modelo, ['{nome}' => $p['nome'], '{nicho}' => mb_strtolower($nicho), '{cidade}' => $p['cidade'] ?? '', '{bairro}' => ($p['bairro'] ?? '') ?: ($p['cidade'] ?? ''),
-        '{nota}' => $nota ? number_format($nota, 1, ',', '') : '', '{avaliacoes}' => (string)$av, '{avaliacoes_txt}' => $avTxt,
-        '{recurso}' => prosp_recurso(($p['categoria'] ?? '') . ' ' . ($p['nome'] ?? '') . ' ' . ($p['busca'] ?? '')), '{concorrentes_txt}' => $conc,
-        '{previa}' => $previa, '{link}' => prosp_url_base()]);
-    return trim(preg_replace("/\n{3,}/", "\n\n", $txt));
+    if (!$modelo) $modelo = prosp_modelo((int)$passo === 1 && prosp_variante($p) === 'b' ? '1b' : $passo);
+    return prosp_aplicar($modelo, $p);
+}
+
+// O dono respondeu: guarda (conta para o teste A/B) e aplica o efeito da resposta pronta
+function prosp_registrar_resposta($id, $chave) {
+    global $pdo;
+    $pdo->prepare("UPDATE prospects SET respondeu_em=COALESCE(respondeu_em, NOW()), atualizado_em=NOW(),
+            status = CASE WHEN status IN ('novo','contatado') THEN 'respondeu' ELSE status END WHERE id=?")->execute([$id]);
+    if ($chave === 'nao') $pdo->prepare("UPDATE prospects SET status='descartado', proximo_contato=NULL WHERE id=?")->execute([$id]);
+    elseif ($chave === 'depois') $pdo->prepare("UPDATE prospects SET proximo_contato=CURRENT_DATE + 7, passo=LEAST(passo, 2) WHERE id=?")->execute([$id]);
+    elseif ($chave === 'ja_tenho') $pdo->prepare("UPDATE prospects SET tem_site=true, site_fonte=COALESCE(site_fonte, 'cliente'), proximo_contato=NULL WHERE id=?")->execute([$id]);
+    elseif (in_array($chave, ['link', 'preco', 'quem'], true)) $pdo->prepare("UPDATE prospects SET proximo_contato=CURRENT_DATE + 2, passo=GREATEST(passo, 2) WHERE id=?")->execute([$id]);
+}
+
+// Resultado do teste A/B da 1ª mensagem
+function prosp_resultado_ab() {
+    global $pdo;
+    try {
+        $r = $pdo->query("SELECT variante, COUNT(*) enviados, COUNT(*) FILTER (WHERE respondeu_em IS NOT NULL) responderam,
+                COUNT(*) FILTER (WHERE status IN ('negociando','fechado')) avancaram
+            FROM prospects WHERE passo > 0 AND variante IN ('a','b') GROUP BY variante")->fetchAll();
+    } catch (PDOException $e) { return []; }
+    $out = [];
+    foreach ($r as $l) $out[$l['variante']] = ['enviados' => (int)$l['enviados'], 'responderam' => (int)$l['responderam'], 'avancaram' => (int)$l['avancaram'],
+        'taxa' => $l['enviados'] ? round(100 * $l['responderam'] / $l['enviados']) : 0];
+    return $out;
 }
 
 // Depois de mandar a mensagem do passo N: agenda o próximo toque (dia 2 e dia 5)
 function prosp_registrar_envio($id) {
     global $pdo;
+    $st = $pdo->prepare("SELECT * FROM prospects WHERE id=?"); $st->execute([$id]);
+    if (($p = $st->fetch()) && (int)$p['passo'] === 0 && empty($p['variante'])) $pdo->prepare("UPDATE prospects SET variante=? WHERE id=?")->execute([prosp_variante($p), $id]);
     $pdo->prepare("UPDATE prospects SET passo = LEAST(passo + 1, 3),
             status = CASE WHEN status IN ('novo') THEN 'contatado' ELSE status END,
             contatado_em = COALESCE(contatado_em, NOW()), ultimo_envio_em = NOW(),
@@ -457,3 +579,5 @@ function prosp_alertar($texto) {
     if (!$rem) return false;
     try { return (bool)(wa_enviar_agora($rem, $numero, $texto)['ok'] ?? false); } catch (Throwable $e) { return false; }
 }
+
+require_once __DIR__ . '/prospeccao_verificacao.php';

@@ -148,6 +148,28 @@ function enviarTexto(inst, numero, texto) {
     return tarefa;
 }
 
+// ---------- Verificação de lead para a prospecção ----------
+// Pergunta ao WhatsApp, como qualquer contato faria no app: o número existe? É uma conta
+// comercial? Que site e descrição a própria empresa publicou no perfil? Qual a foto (logo)?
+async function verificarLead(inst, d) {
+    const out = { id: d.id, wa: null, erros: [] };
+    const numero = String(d.numero || '').replace(/\D/g, '');
+    if (!inst || inst.estado !== 'open' || !inst.sock) { out.erros.push('whatsapp da plataforma não conectado'); return out; }
+    if (numero.length < 12) { out.erros.push('número inválido'); return out; }
+    try {
+        const [a] = (await inst.sock.onWhatsApp(numero)) || [];
+        out.wa = { existe: !!a?.exists };
+        if (a?.exists) {
+            try {
+                const bp = await inst.sock.getBusinessProfile(a.jid);
+                if (bp) Object.assign(out.wa, { comercial: true, sites: bp.website || [], descricao: String(bp.description || '').slice(0, 600), categoria: bp.category || '', email: bp.email || '' });
+            } catch { /* conta pessoal */ }
+            try { out.wa.foto = await inst.sock.profilePictureUrl(a.jid, 'image'); } catch { /* sem foto pública */ }
+        }
+    } catch (e) { out.erros.push('whatsapp: ' + e.message); }
+    return out;
+}
+
 function respostaInstancia(inst) {
     return { instanceName: inst.nome, state: inst.estado, status: inst.estado };
 }
@@ -199,6 +221,10 @@ const servidor = http.createServer(async (req, res) => {
             const inst = await iniciar(nome);
             await aguardarQr(inst);
             return responder(res, 201, { instance: respostaInstancia(inst), hash: { apikey: CHAVE }, qrcode: inst.qrBase64 ? { base64: inst.qrBase64, code: inst.qr, pairingCode: inst.pareamento } : null });
+        }
+        if (grupo === 'gds' && acao === 'verificar' && req.method === 'POST' && nomeValido(nomeUrl || '')) {
+            const corpo = await lerCorpo(req);
+            return responder(res, 200, await verificarLead(instancias.get(nomeUrl), corpo));
         }
         if (grupo === 'instance' && acao === 'fetchInstances' && req.method === 'GET') {
             const filtro = url.searchParams.get('instanceName');
@@ -268,6 +294,8 @@ function lerPonte() {
 }
 
 const resultados = [];          // resultados de envio para contar ao site na próxima volta
+const verificacoes = [];        // leads verificados (prospecção) para contar ao site
+let verificando = Promise.resolve();
 const removidas = new Set();    // números desconectados, para avisar o site uma vez
 let ultimoAviso = '';
 const avisar = (msg) => { if (msg !== ultimoAviso) { log(msg); ultimoAviso = msg; } };
@@ -280,16 +308,18 @@ async function voltaPonte(p) {
     for (const n of removidas) if (!instancias.has(n)) estados.push({ instancia: n, estado: 'close' });
     removidas.clear();
     const lote = resultados.splice(0);
+    const loteVerif = verificacoes.splice(0);
     let r;
     try {
         const resp = await fetch(p.url, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-GDS-Chave': p.chave },
-            body: JSON.stringify({ chave: p.chave, estados, resultados: lote }), signal: AbortSignal.timeout(25000),
+            body: JSON.stringify({ chave: p.chave, estados, resultados: lote, verificacoes: loteVerif }), signal: AbortSignal.timeout(25000),
         });
         r = await resp.json().catch(() => null);
-        if (!resp.ok || !r || !r.ok) { resultados.unshift(...lote); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
+        if (!resp.ok || !r || !r.ok) { resultados.unshift(...lote); verificacoes.unshift(...loteVerif); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
     } catch (e) {
         resultados.unshift(...lote);
+        verificacoes.unshift(...loteVerif);
         avisar('⚠ Sem conexão com o site (' + e.message + '). Tentando de novo…');
         return 10;
     }
@@ -317,6 +347,14 @@ async function voltaPonte(p) {
         enviarTexto(inst, String(m.numero || '').replace(/\D/g, ''), String(m.texto || ''))
             .then(() => resultados.push({ id: m.id, ok: true }))
             .catch((e) => resultados.push({ id: m.id, ok: false, erro: e.message }));
+    }
+    // Prospecção: confere os leads um por vez, com pausa entre um e outro
+    for (const v of r.verificar || []) {
+        verificando = verificando.then(async () => {
+            const res = await verificarLead(v.instancia ? instancias.get(v.instancia) : null, v).catch((e) => ({ id: v.id, erros: [e.message] }));
+            verificacoes.push(res);
+            await esperar(3000 + Math.random() * 3000);
+        });
     }
     return Math.max(2, Math.min(30, Number(r.intervalo) || 4));
 }

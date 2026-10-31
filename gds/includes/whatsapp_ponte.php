@@ -141,5 +141,30 @@ function wa_ponte_sincronizar($dados) {
     // De carona: lembretes e rotinas (no máximo a cada 5 min) — dispensa o Cron Job
     try { wa_rotina(); } catch (Throwable $e) { error_log('GDS ponte rotina: ' . $e->getMessage()); }
 
-    return ['ok' => true, 'instancias' => $instancias, 'mensagens' => $mensagens, 'intervalo' => $mensagens ? 2 : 4];
+    // 5) Prospecção: leads para o conector verificar (WhatsApp comercial, busca, Instagram)
+    $verificar = [];
+    $resultadosVerif = array_slice(array_filter((array)($dados['verificacoes'] ?? []), fn($v) => is_array($v) && (int)($v['id'] ?? 0) > 0), 0, 10);
+    if (is_file(__DIR__ . '/prospeccao.php') && get_config('prosp_verificar', '1') === '1') {
+        require_once __DIR__ . '/prospeccao.php';
+        // Só com o WhatsApp da plataforma conectado (é por ele que o perfil é consultado)
+        if (!empty($abertas[$a['plat_instancia']])) {
+            $verificar = prosp_verificacoes_para_ponte(2);
+            foreach ($verificar as &$v) $v['instancia'] = $a['plat_instancia'];
+            unset($v);
+        }
+    }
+    // A conferência dos sites candidatos é lenta: roda depois de responder ao conector
+    if ($resultadosVerif && is_file(__DIR__ . '/prospeccao.php')) {
+        register_shutdown_function(function () use ($resultadosVerif) {
+            ignore_user_abort(true);
+            if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+            elseif (function_exists('litespeed_finish_request')) litespeed_finish_request();
+            require_once __DIR__ . '/prospeccao.php';
+            foreach ($resultadosVerif as $v) {
+                try { prosp_concluir_verificacao((int)$v['id'], $v); } catch (Throwable $e) { error_log('GDS verificação: ' . $e->getMessage()); }
+            }
+        });
+    }
+
+    return ['ok' => true, 'instancias' => $instancias, 'mensagens' => $mensagens, 'verificar' => $verificar, 'intervalo' => $mensagens || $verificar ? 2 : 4];
 }

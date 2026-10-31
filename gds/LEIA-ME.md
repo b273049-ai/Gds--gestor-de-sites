@@ -200,6 +200,18 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   avaliações do Google (custa um pouco mais por busca na API do Google).
 - Chave: **Places API (New)** no Google Cloud, em Admin → Configurações → Mapas. Sem chave, usa o OpenStreetMap (grátis).
 
+### Abordagem que faz o dono responder (em vez de "não, obrigado")
+- A **1ª mensagem não tem link**: se apresenta (seu nome em Prospecção → Mensagens), mostra que você olhou a
+  empresa e pede permissão para mandar a demonstração, ou faz uma pergunta fácil. Nunca diz "vocês não têm site".
+- Duas versões da abertura (**teste A/B**). A tela mostra qual recebe mais respostas.
+- **Respostas prontas** em cada lead: "Pode mandar" (vai o link), "Já tenho site", "Quanto custa?", "Quem é você?",
+  "Agora não" e "Não tenho interesse". Elas abrem o WhatsApp com o texto e já anotam que ele respondeu.
+- **Verificação de site antes de chamar**: confere o perfil do WhatsApp da empresa (o número tem WhatsApp? tem
+  site ou Linktree no perfil?) e domínios com o nome dela. Quem já tem site sai da fila sozinho. Para olhar
+  no Google ou no Instagram, use os botões 🔎 e 📸. A conferência do WhatsApp usa o número da plataforma
+  conectado (Admin → WhatsApp).
+- A **prévia usa a cor e o logo da empresa** (foto do perfil do WhatsApp, cor no nome ou cor das fotos do Google).
+
 ## E-mail e senhas
 - **Admin → Configurações → E-mail (SMTP)**: na Hostinger, crie um e-mail em "E-mails" e use `smtp.hostinger.com`,
   porta 465, o e-mail completo e a senha dele. Use **Enviar teste**. Sem isso, a recuperação de senha e os avisos por
