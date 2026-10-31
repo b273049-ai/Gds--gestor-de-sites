@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             $texto = "✅ Teste do WhatsApp automático da *{$empresa['nome']}*.\nSe você recebeu esta mensagem, está tudo funcionando!";
             $id = wa_enfileirar($empresa, $num, $texto, 'teste', 'empresa');
             $st = $pdo->prepare("SELECT status, erro FROM whatsapp_mensagens WHERE id=?"); $st->execute([$id]); $m = $st->fetch();
+            if ($m && $rem['tipo'] === 'ponte' && in_array($m['status'], ['pendente', 'enviando'], true)) responder_json(['ok' => true, 'msg' => 'Na fila: chega em ' . wa_numero($num) . ' em alguns segundos.']);
             responder_json($m && $m['status'] === 'enviado' ? ['ok' => true, 'msg' => 'Mensagem de teste enviada para ' . wa_numero($num) . '!']
                                                            : ['ok' => false, 'erro' => 'Não foi possível enviar: ' . ($m['erro'] ?? 'erro desconhecido')]);
         case 'reenviar':
@@ -97,7 +98,7 @@ foreach (wa_eventos() as $k => $ev) {
     if (isset($modGrupo[$g]) && !modulo_ativo($modGrupo[$g])) continue;
     $grupos[$g][$k] = $ev;
 }
-$statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pill-neutro'], 'erro' => ['Falhou', 'pill-aviso'], 'manual' => ['Envio manual', 'pill-neutro']];
+$statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pill-neutro'], 'enviando' => ['Enviando', 'pill-neutro'], 'erro' => ['Falhou', 'pill-aviso'], 'manual' => ['Envio manual', 'pill-neutro']];
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -260,13 +261,15 @@ const WA = (() => {
             voltas++;
             const e = await api('estado');
             if (e.ok && e.conectado) { clearInterval(timer); $('qrInfo').textContent = '✅ Conectado!'; toast('WhatsApp conectado!', 'sucesso'); setTimeout(() => location.reload(), 1200); return; }
+            if (e.ok && e.qr) mostrarQr(e); // conector no celular/computador: o QR chega alguns segundos depois
             if (voltas % 10 === 0) { const q = await api('qr'); if (q.ok) mostrarQr(q); } // o QR expira: renova a cada ~30s
             if (voltas > 100) { clearInterval(timer); $('qrInfo').textContent = 'O QR code expirou. Clique em gerar de novo.'; }
         }, 3000);
     }
     function mostrarQr(r) {
         $('qrArea').hidden = false;
-        if (r.qr) $('qrImg').src = r.qr.startsWith('data:') ? r.qr : 'data:image/png;base64,' + r.qr;
+        if (r.qr) { $('qrImg').src = r.qr.startsWith('data:') ? r.qr : 'data:image/png;base64,' + r.qr; $('qrInfo').textContent = 'Aguardando leitura…'; }
+        else if (r.aguardando) $('qrInfo').textContent = 'Gerando o QR code…';
         if (r.conectado) { $('qrInfo').textContent = '✅ Conectado!'; setTimeout(() => location.reload(), 1000); }
         if (r.codigo) { $('qrCodigo').hidden = false; $('qrCodigo').textContent = 'Ou digite este código no celular (Conectar com número de telefone): ' + r.codigo; }
     }

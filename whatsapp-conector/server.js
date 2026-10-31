@@ -2,10 +2,17 @@
 // CONECTOR WHATSAPP DO GDS — grátis, sem Docker e sem banco de dados
 //
 // Liga números de WhatsApp por QR code (ou código de pareamento) e envia as
-// mensagens automáticas da plataforma. Fala o mesmo "idioma" da Evolution API,
-// então no GDS basta escolher "Conector GDS" em Admin → WhatsApp e colar a URL e a chave.
+// mensagens automáticas da plataforma. Dois jeitos de usar:
+//
+//  1) PONTE (celular Android ou computador, qualquer hospedagem): defina GDS_SITE e GDS_CHAVE
+//     (ou preencha o arquivo ponte.txt). O conector BUSCA as mensagens no site a cada
+//     poucos segundos — não precisa de servidor, domínio nem túnel.
+//  2) SERVIDOR (app Node.js ou VPS): sem GDS_SITE, ele abre uma porta HTTP com as mesmas
+//     rotas da Evolution API; no GDS escolha "Conector GDS em servidor" e cole a URL e a chave.
 //
 // Variáveis de ambiente (todas opcionais):
+//   GDS_SITE   endereço do site do GDS (modo ponte), ex.: https://meusite.com.br
+//   GDS_CHAVE  chave do conector mostrada em Admin → WhatsApp (modo ponte)
 //   PORT       porta HTTP (padrão 8080; Hostinger/Render/Railway definem sozinhos)
 //   API_KEY    chave secreta; se não existir, é gerada e salva em dados/chave.txt
 //   DATA_DIR   onde ficam as sessões (padrão ./dados) — NÃO apague: é o "login" dos números
@@ -235,17 +242,103 @@ const servidor = http.createServer(async (req, res) => {
     }
 });
 
-// Reconecta sozinho os números que já estavam logados
+// Reconecta sozinho os números que já estavam logados (só os que chegaram a ler o QR)
+function jaLogado(nome) {
+    try { return !!JSON.parse(fs.readFileSync(path.join(pastaDe(nome), 'creds.json'), 'utf8')).me; } catch { return false; }
+}
 for (const nome of fs.readdirSync(SESSOES)) {
-    if (nomeValido(nome) && fs.existsSync(path.join(pastaDe(nome), 'creds.json'))) {
-        iniciar(nome).catch((e) => log(nome, 'não reconectou:', e.message));
+    if (nomeValido(nome) && jaLogado(nome)) iniciar(nome).catch((e) => log(nome, 'não reconectou:', e.message));
+}
+
+// ---------- Modo PONTE: o conector busca o que fazer no site ----------
+function lerPonte() {
+    let site = process.env.GDS_SITE || '', chave = process.env.GDS_CHAVE || '';
+    const arq = path.join(RAIZ, 'ponte.txt');
+    if ((!site || !chave) && fs.existsSync(arq)) {
+        for (const linha of fs.readFileSync(arq, 'utf8').split(/\r?\n/)) {
+            const m = linha.match(/^\s*(SITE|CHAVE)\s*=\s*(\S+)\s*$/i);
+            if (!m) continue;
+            if (m[1].toUpperCase() === 'SITE') site ||= m[2]; else chave ||= m[2];
+        }
+    }
+    if (!site || !chave || /COLE|SEU-SITE/i.test(site + chave)) return null;
+    site = site.replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(site)) site = 'https://' + site;
+    return { url: site + '/api/whatsapp_ponte.php', chave };
+}
+
+const resultados = [];          // resultados de envio para contar ao site na próxima volta
+const removidas = new Set();    // números desconectados, para avisar o site uma vez
+let ultimoAviso = '';
+const avisar = (msg) => { if (msg !== ultimoAviso) { log(msg); ultimoAviso = msg; } };
+
+async function voltaPonte(p) {
+    const estados = [...instancias.values()].map((i) => ({
+        instancia: i.nome, estado: i.estado, qr: i.estado !== 'open' ? i.qrBase64 : null, pareamento: i.pareamento,
+        numero: i.dono ? i.dono.split(':')[0].split('@')[0] : '',
+    }));
+    for (const n of removidas) if (!instancias.has(n)) estados.push({ instancia: n, estado: 'close' });
+    removidas.clear();
+    const lote = resultados.splice(0);
+    let r;
+    try {
+        const resp = await fetch(p.url, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-GDS-Chave': p.chave },
+            body: JSON.stringify({ chave: p.chave, estados, resultados: lote }), signal: AbortSignal.timeout(25000),
+        });
+        r = await resp.json().catch(() => null);
+        if (!resp.ok || !r || !r.ok) { resultados.unshift(...lote); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
+    } catch (e) {
+        resultados.unshift(...lote);
+        avisar('⚠ Sem conexão com o site (' + e.message + '). Tentando de novo…');
+        return 10;
+    }
+    avisar('✅ Conectado ao site. Pode gerar o QR code no painel do GDS.');
+
+    for (const it of r.instancias || []) {
+        if (!nomeValido(it.nome)) continue;
+        const inst = instancias.get(it.nome);
+        if (it.acao === 'conectar') {
+            const num = String(it.numero_pareamento || '').replace(/\D/g, '');
+            if (inst && inst.estado !== 'open' && num && inst.numeroPareamento !== num) await encerrar(it.nome, false);
+            const atual = instancias.get(it.nome);
+            if (!atual || atual.estado === 'close' || atual.parado) iniciar(it.nome, num).catch((e) => log(it.nome, 'erro:', e.message));
+        } else if (it.acao === 'manter') {
+            if ((!inst || inst.estado === 'close') && jaLogado(it.nome)) iniciar(it.nome).catch((e) => log(it.nome, 'erro:', e.message));
+        } else if (it.acao === 'parar') {
+            if (inst && inst.estado !== 'open' && !inst.parado) await encerrar(it.nome, false);
+        } else if (it.acao === 'desconectar') {
+            if (inst || fs.existsSync(pastaDe(it.nome))) { await encerrar(it.nome, true); removidas.add(it.nome); log(it.nome, 'desconectado pelo painel'); }
+        }
+    }
+    for (const m of r.mensagens || []) {
+        const inst = instancias.get(m.instancia);
+        if (!inst) { resultados.push({ id: m.id, ok: false, erro: 'Este número não está ligado no conector.' }); continue; }
+        enviarTexto(inst, String(m.numero || '').replace(/\D/g, ''), String(m.texto || ''))
+            .then(() => resultados.push({ id: m.id, ok: true }))
+            .catch((e) => resultados.push({ id: m.id, ok: false, erro: e.message }));
+    }
+    return Math.max(2, Math.min(30, Number(r.intervalo) || 4));
+}
+
+async function rodarPonte(p) {
+    log('Conector WhatsApp GDS no modo ponte →', p.url);
+    for (;;) {
+        const seg = await voltaPonte(p).catch((e) => { log('erro:', e.message); return 10; });
+        await esperar(seg * 1000);
     }
 }
 
-servidor.listen(PORTA, () => {
-    log(`Conector WhatsApp GDS ouvindo na porta ${PORTA}`);
-    log(`Chave (cole no GDS): ${CHAVE}`);
-});
+const ponte = lerPonte();
+if (ponte) {
+    rodarPonte(ponte);
+} else {
+    if (fs.existsSync(path.join(RAIZ, 'ponte.txt'))) log('Dica: para usar no celular ou computador, preencha SITE e CHAVE no arquivo ponte.txt (GDS → Admin → WhatsApp).');
+    servidor.listen(PORTA, () => {
+        log(`Conector WhatsApp GDS ouvindo na porta ${PORTA}`);
+        log(`Chave (cole no GDS): ${CHAVE}`);
+    });
+}
 
 for (const sinal of ['SIGINT', 'SIGTERM']) {
     process.on(sinal, () => { for (const i of instancias.values()) { i.parado = true; try { i.sock?.end(undefined); } catch { /* ignore */ } } process.exit(0); });

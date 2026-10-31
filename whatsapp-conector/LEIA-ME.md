@@ -5,14 +5,47 @@ e envia as mensagens automáticas: agendamento, lembrete, pedido, orçamento...
 
 - **Não tem mensalidade.** Não precisa de Docker, banco de dados nem conta na Meta.
 - É um programa pequeno (Node.js) que precisa ficar **ligado o tempo todo** em algum lugar.
-- No GDS: **Admin → WhatsApp → Serviço: Conector GDS**, cole o endereço e a chave.
+- Funciona em qualquer hospedagem: no celular Android ou no computador ele **busca** as mensagens no site.
 
 > ⚠️ Ele não é da Meta (funciona como o WhatsApp Web). Use **um chip só para isso** e envie só
 > mensagens que o cliente pediu. Disparo em massa ou propaganda para quem não pediu faz o
 > WhatsApp bloquear o número. Para zero risco de bloqueio existe a opção oficial
 > "WhatsApp Cloud API (Meta)", que cobra alguns centavos por aviso.
 
-## Onde deixar ligado (escolha UM)
+## O jeito mais fácil: no celular Android ou no computador (funciona em QUALQUER hospedagem)
+Nesse modo o conector **busca** as mensagens no site a cada poucos segundos. O site não precisa
+chamar o conector, então não precisa de outra hospedagem, domínio, porta nem túnel.
+
+1. GDS → **Admin → WhatsApp** → Serviço: **Conector GDS no celular ou computador** → Salvar.
+   Aparecem o **endereço do site** e a **chave do conector**.
+
+### Celular Android (um aparelho antigo serve)
+Deixe-o no carregador e no Wi-Fi. Pode ser outro celular, não precisa ser o do chip.
+1. Instale o **Termux** pelo F-Droid (https://f-droid.org). A versão da Play Store é antiga.
+2. No Termux: `pkg update -y && pkg install -y nodejs-lts unzip`
+3. Coloque a pasta `whatsapp-conector` no celular. Por exemplo, baixe o zip e rode
+   `termux-setup-storage` e depois `cp -r ~/storage/downloads/whatsapp-conector ~/`.
+4. `cd ~/whatsapp-conector`, edite o `ponte.txt` com `nano ponte.txt` (SITE e CHAVE) e rode
+   `bash ligar-android.sh`.
+5. Nas configurações do Android, tire o Termux da **economia de bateria** ("Sem restrições"),
+   senão o sistema desliga o conector.
+
+### Computador (Windows)
+1. Instale o Node.js (https://nodejs.org, versão LTS).
+2. Na pasta `whatsapp-conector`, abra o `ponte.txt` no Bloco de Notas e cole SITE e CHAVE.
+3. Dê dois cliques em **`ligar-windows.bat`**. Deixe a janela aberta (pode minimizar).
+   Para ligar sozinho com o Windows, coloque um atalho do .bat em `shell:startup`.
+
+### Depois de ligado (celular ou computador)
+No Admin aparece **Conector ligado**. Clique em **Gerar QR code**, leia com o WhatsApp do chip
+(Aparelhos conectados → Conectar um aparelho) e use **Enviar teste**. As empresas conectam o
+número delas pelo painel delas, do mesmo jeito. De carona, o conector também dispara os
+lembretes: não precisa do Cron Job.
+
+## Modo servidor: deixar ligado num servidor (escolha UM)
+No GDS escolha **Conector GDS em servidor** e cole a URL e a chave. Sem `ponte.txt` preenchido,
+o conector abre uma porta HTTP.
+
 
 ### A) Hostinger — app Node.js (planos Business ou Cloud)
 1. hPanel → **Sites → Adicionar site → Node.js** (ou "Node.js Apps").
@@ -41,10 +74,10 @@ Coloque um subdomínio com HTTPS na frente (ex.: `whats.seudominio.com.br`) ou u
    `https://....trycloudflare.com`. Esse endereço muda quando o túnel reinicia: para um fixo,
    crie um túnel com nome no painel da Cloudflare (também grátis, precisa de um domínio lá).
 
-## Depois de ligado
+## Depois de ligado (modo servidor)
 1. Copie a **chave**: aparece no log quando o conector liga ("Chave (cole no GDS)") ou no
    arquivo `dados/chave.txt` (se você não definiu `API_KEY`).
-2. GDS → **Admin → WhatsApp**: Serviço **Conector GDS**, endereço, chave, instância
+2. GDS → **Admin → WhatsApp**: Serviço **Conector GDS em servidor**, endereço, chave, instância
    `gds-plataforma`. Marque "Usar o número da plataforma" e "Deixar cada empresa conectar o
    próprio WhatsApp". Salve.
 3. **Gerar QR code** → no celular: WhatsApp → Aparelhos conectados → Conectar um aparelho.
