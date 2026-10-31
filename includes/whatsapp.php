@@ -11,6 +11,7 @@
 //      que abre o WhatsApp com o texto pronto.
 //
 // Integrações suportadas (o admin escolhe em Configurações):
+//   gds       → Conector GDS (grátis, pasta whatsapp-conector; usa as mesmas rotas da Evolution)
 //   evolution → Evolution API (gratuita, você hospeda; conecta por QR code)
 //   zapi      → Z-API (paga, brasileira)
 //   wppconnect→ WPPConnect Server (grátis, código aberto; conecta por QR code)
@@ -131,8 +132,11 @@ function wa_link_manual($tel, $texto) {
 
 // ---------- Configuração da integração (admin) ----------
 function wa_api() {
+    $tipo = get_config('wa_api_tipo', '');
     return [
-        'tipo' => get_config('wa_api_tipo', ''),
+        // O Conector GDS (pasta whatsapp-conector) fala o mesmo idioma da Evolution API
+        'tipo' => $tipo === 'gds' ? 'evolution' : $tipo,
+        'tipo_salvo' => $tipo,
         'url' => rtrim(get_config('wa_api_url', ''), '/'),
         'chave' => get_config('wa_api_chave', ''),
         'plat_instancia' => get_config('wa_plataforma_instancia', ''),
