@@ -423,7 +423,7 @@ function prosp_mensagens_padrao() {
     return [
         1 => "Oi, tudo bem? É da {nome}? 😊\n{vendedor_txt}Vi vocês no Google aqui {bairro_em}{nota_txt} e montei, por conta própria, uma página de demonstração com o nome e as fotos de vocês.\n\nPosso te mandar o link pra dar uma olhada? Não precisa comprar nada.",
         '1b' => "Oi, tudo bem? É da {nome}?\n{vendedor_txt}Uma pergunta rápida: hoje os clientes de vocês {acao_cliente} só pelo WhatsApp, ou tem algum link onde dá pra ver {o_que} e {verbo} sozinho?",
-        2 => "Oi! Passando só pra deixar o link da demonstração que montei pra {nome}, caso queira ver quando tiver um tempinho:\n{previa}\n\nSe não fizer sentido pra vocês, tudo bem também 🙂",
+        2 => "Oi! Passando só pra deixar o link da demonstração que montei pra {nome}{elogio_txt}, caso queira ver quando tiver um tempinho:\n{previa}\n\nSe não fizer sentido pra vocês, tudo bem também 🙂",
         3 => "Oi! Última mensagem, prometo 🙂\nSe um dia quiserem {recurso} sem precisar responder um por um no WhatsApp, é só me chamar aqui. Boa semana pra vocês!",
     ];
 }
@@ -484,6 +484,20 @@ function prosp_recurso($texto) {
     return ['pedido' => 'cardápio online e pedido pelo site', 'orcamento' => 'pedido de orçamento online', 'agenda' => 'agendamento online'][prosp_modo_negocio($texto)];
 }
 
+// O que os clientes mais elogiam nas avaliações reais do Google ("o atendimento", "o ambiente"...)
+function prosp_elogio($p) {
+    $revs = (array)json_decode((string)($p['avaliacoes_texto'] ?? ''), true);
+    $txt = mb_strtolower(implode(' ', array_map(fn($r) => (string)($r['texto'] ?? ''), $revs)));
+    if ($txt === '') return '';
+    $temas = ['o atendimento' => '/atendiment|atencios|educad|simpati|acolhed/u', 'o ambiente' => '/ambiente|aconcheg|lugar (lindo|incr|agrad)|espaço/u',
+        'a pontualidade' => '/pontual|no horário|sem atraso/u', 'o preço justo' => '/preço (justo|bom|ótimo)|barato|custo.benef/u',
+        'a limpeza' => '/limp[oa]|higien/u', 'o sabor' => '/sabor|delicios|gostos|saboros/u', 'a entrega rápida' => '/entrega rápida|chegou rápido|entregou rápido/u',
+        'o capricho no serviço' => '/capricho|caprich|detalhist|perfeit|impecáve/u', 'os profissionais' => '/profission|competent|experient/u'];
+    $melhor = ''; $max = 0;
+    foreach ($temas as $tema => $re) { $n = preg_match_all($re, $txt); if ($n > $max) { $max = $n; $melhor = $tema; } }
+    return $melhor;
+}
+
 // "Centro" → "no Centro", "Vila Mariana" → "na Vila Mariana", "Moema" → "em Moema"
 function prosp_no_lugar($lugar) {
     $lugar = trim((string)$lugar);
@@ -505,6 +519,8 @@ function prosp_variaveis($p) {
         '{nome}' => $p['nome'] ?? '', '{nicho}' => mb_strtolower(trim((string)($p['categoria'] ?? '')) ?: 'negócios como o seu'),
         '{cidade}' => $p['cidade'] ?? '', '{bairro}' => ($p['bairro'] ?? '') ?: ($p['cidade'] ?? 'na região'),
         '{bairro_em}' => prosp_no_lugar(($p['bairro'] ?? '') ?: ($p['cidade'] ?? '')),
+        '{elogio}' => ($el = prosp_elogio($p)),
+        '{elogio_txt}' => $el ? " (coloquei as avaliações em que os clientes elogiam $el de vocês)" : '',
         '{nota}' => $nota ? number_format($nota, 1, ',', '') : '', '{avaliacoes}' => (string)$av,
         '{avaliacoes_txt}' => $av >= 5 ? ' — ' . ($nota ? number_format($nota, 1, ',', '') . ' estrelas com ' : '') . $av . ' avaliações, parabéns' : '',
         '{nota_txt}' => $av >= 5 && $nota >= 4 ? ' (' . number_format($nota, 1, ',', '') . ' estrelas com ' . $av . ' avaliações, parabéns)' : '',
@@ -543,6 +559,37 @@ function prosp_registrar_resposta($id, $chave) {
     elseif ($chave === 'depois') $pdo->prepare("UPDATE prospects SET proximo_contato=CURRENT_DATE + 7, passo=LEAST(passo, 2) WHERE id=?")->execute([$id]);
     elseif ($chave === 'ja_tenho') $pdo->prepare("UPDATE prospects SET tem_site=true, site_fonte=COALESCE(site_fonte, 'cliente'), proximo_contato=NULL WHERE id=?")->execute([$id]);
     elseif (in_array($chave, ['link', 'preco', 'quem'], true)) $pdo->prepare("UPDATE prospects SET proximo_contato=CURRENT_DATE + 2, passo=GREATEST(passo, 2) WHERE id=?")->execute([$id]);
+}
+
+// O que está funcionando: taxa de resposta por segmento, por horário e por dia da semana.
+// Precisa de histórico (quem recebeu mensagem e se respondeu) — fica mais certeiro a cada semana.
+function prosp_aprendizado() {
+    global $pdo;
+    $out = ['segmentos' => [], 'horas' => [], 'dias' => [], 'dica' => '', 'base' => 0];
+    try {
+        $out['base'] = (int)$pdo->query("SELECT COUNT(*) FROM prospects WHERE contatado_em IS NOT NULL")->fetchColumn();
+        $out['segmentos'] = $pdo->query("SELECT COALESCE(s.nome, p.categoria, 'Outros') seg, COUNT(*) enviados, COUNT(*) FILTER (WHERE p.respondeu_em IS NOT NULL) responderam,
+                COUNT(*) FILTER (WHERE p.status IN ('negociando','fechado')) avancaram
+            FROM prospects p LEFT JOIN segmentos s ON s.slug = p.segmento_slug WHERE p.contatado_em IS NOT NULL GROUP BY 1 HAVING COUNT(*) >= 3
+            ORDER BY (COUNT(*) FILTER (WHERE p.respondeu_em IS NOT NULL))::float / COUNT(*) DESC, COUNT(*) DESC LIMIT 12")->fetchAll();
+        $out['horas'] = $pdo->query("SELECT (EXTRACT(HOUR FROM contatado_em)::int / 2) * 2 faixa, COUNT(*) enviados, COUNT(*) FILTER (WHERE respondeu_em IS NOT NULL) responderam
+            FROM prospects WHERE contatado_em IS NOT NULL GROUP BY 1 ORDER BY 1")->fetchAll();
+        $out['dias'] = $pdo->query("SELECT EXTRACT(ISODOW FROM contatado_em)::int dia, COUNT(*) enviados, COUNT(*) FILTER (WHERE respondeu_em IS NOT NULL) responderam
+            FROM prospects WHERE contatado_em IS NOT NULL GROUP BY 1 ORDER BY 1")->fetchAll();
+    } catch (PDOException $e) { return $out; }
+    $taxa = fn($l) => $l['enviados'] ? $l['responderam'] / $l['enviados'] : 0;
+    $boasHoras = array_values(array_filter($out['horas'], fn($h) => $h['enviados'] >= 5));
+    usort($boasHoras, fn($a, $b) => $taxa($b) <=> $taxa($a));
+    $nomesDia = [1 => 'segunda', 2 => 'terça', 3 => 'quarta', 4 => 'quinta', 5 => 'sexta', 6 => 'sábado', 7 => 'domingo'];
+    $bonsDias = array_values(array_filter($out['dias'], fn($d) => $d['enviados'] >= 5));
+    usort($bonsDias, fn($a, $b) => $taxa($b) <=> $taxa($a));
+    $partes = [];
+    if ($boasHoras && $taxa($boasHoras[0]) > 0) $partes[] = 'entre ' . $boasHoras[0]['faixa'] . 'h e ' . ($boasHoras[0]['faixa'] + 2) . 'h (' . round(100 * $taxa($boasHoras[0])) . '% respondem)';
+    if ($bonsDias && $taxa($bonsDias[0]) > 0) $partes[] = 'na ' . $nomesDia[$bonsDias[0]['dia']];
+    $segBom = array_values(array_filter($out['segmentos'], fn($s) => $s['enviados'] >= 5 && $s['responderam'] > 0));
+    if ($partes) $out['dica'] = 'Seus leads respondem mais ' . implode(', ', $partes) . '.' . ($segBom ? ' O segmento que mais responde é ' . $segBom[0]['seg'] . ' (' . round(100 * $taxa($segBom[0])) . '%).' : '');
+    elseif ($out['base'] < 20) $out['dica'] = 'Com umas 20 mensagens enviadas (e as respostas marcadas), aparece aqui o melhor horário, dia e segmento para chamar.';
+    return $out;
 }
 
 // Resultado do teste A/B da 1ª mensagem

@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
                     . "- NUNCA diga que a empresa não tem site (ela pode ter). Fale do que você fez: uma página de demonstração com o nome e as fotos deles.\n"
                     . ($passoIa === 1 ? "- NÃO coloque link nesta primeira mensagem. Termine pedindo permissão para mandar o link, ou com uma pergunta fácil de responder.\n"
                                      : "- Inclua o link da demonstração exatamente assim: " . prosp_link_previa($p) . "\n")
-                    . "- Use no máximo um detalhe real (bairro, nota ou número de avaliações) para mostrar que não é mensagem em massa.\n"
+                    . "- Use no máximo um detalhe real (bairro, nota, número de avaliações" . (($el = prosp_elogio($p)) ? " ou o que os clientes mais elogiam nas avaliações: $el" : '') . ") para mostrar que não é mensagem em massa.\n"
                     . "- Português do Brasil, no máximo 1 emoji, sem inventar números ou promessas. Responda só com a mensagem.\n\n"
                     . "Empresa: {$p['nome']}\nRamo: {$p['categoria']}\nBairro/cidade: " . ($p['bairro'] ?: '-') . " / {$p['cidade']}\nNota: " . ($p['nota'] ?: 'sem nota') . " · {$p['avaliacoes']} avaliações\n"
                     . 'Site atual: ' . ($p['site'] ?: 'nenhum') . "\nQuem envia: " . get_config('mkt_marca', 'GDS Sites');
@@ -208,6 +208,7 @@ $filaJson = array_map(fn($p) => ['id' => (int)$p['id'], 'nome' => $p['nome'], 'c
     'whatsapp' => $p['whatsapp'], 'pontuacao' => (int)$p['pontuacao'], 'passo' => (int)$p['passo'], 'abriu' => (bool)$p['previa_aberta_em'], 'visitas' => (int)$p['previa_visitas'],
     'motivos' => (array)json_decode((string)$p['motivos'], true), 'maps' => $p['maps_url'], 'cidade' => $p['cidade'], 'verif' => $verifInfo($p)], $fila);
 $ab = prosp_resultado_ab();
+$aprendeu = prosp_aprendizado();
 $respostas = prosp_respostas_padrao();
 ?>
 <!DOCTYPE html>
@@ -301,6 +302,7 @@ $respostas = prosp_respostas_padrao();
         <div class="form-box largo" style="margin-bottom:14px">
             <div class="barra-linha"><div class="rotulo"><span>Meta do dia: <strong id="feitosHoje"><?= $enviadosHoje ?></strong> de <?= $limiteDia ?> mensagens</span><span class="muted">acima disso o WhatsApp pode bloquear o número</span></div>
             <div class="barra-meta"><div id="barraMeta" style="width:<?= min(100, $pct($enviadosHoje, $limiteDia)) ?>%"></div></div></div>
+            <?php if ($aprendeu['dica']): ?><p class="dica">🧠 <strong><?= e($aprendeu['dica']) ?></strong></p><?php endif; ?>
             <p class="dica">A fila mostra primeiro quem <strong>abriu a prévia</strong>, depois os retornos marcados para hoje (2º toque no dia 2, 3º no dia 5) e então os novos mais quentes. Clique em <strong>Enviar e próximo</strong>: o WhatsApp abre com a mensagem pronta e a fila anda.</p>
         </div>
         <div class="sprint" id="sprint" <?= $fila ? '' : 'hidden' ?>>
@@ -460,6 +462,20 @@ $respostas = prosp_respostas_padrao();
     <!-- ================= FUNIL ================= -->
     <section class="aba-p" id="aba-funil">
         <div class="form-box largo">
+            <h3>🧠 O que está funcionando</h3>
+            <p class="dica"><?= e($aprendeu['dica'] ?: 'Marque quem respondeu (respostas prontas ou situação "Respondeu") para o sistema aprender.') ?></p>
+            <?php if ($aprendeu['segmentos']): ?>
+            <div class="tabela-wrap"><table><thead><tr><th>Segmento</th><th>Mensagens</th><th>Responderam</th><th>Taxa</th><th>Negociando/fechados</th></tr></thead><tbody>
+            <?php foreach ($aprendeu['segmentos'] as $sg): ?><tr><td><?= e($sg['seg']) ?></td><td><?= (int)$sg['enviados'] ?></td><td><?= (int)$sg['responderam'] ?></td><td><strong><?= $pct($sg['responderam'], $sg['enviados']) ?>%</strong></td><td><?= (int)$sg['avancaram'] ?></td></tr><?php endforeach; ?>
+            </tbody></table></div>
+            <?php endif; ?>
+            <?php if ($aprendeu['horas']): $maxH = max(1, ...array_map(fn($h) => $h['enviados'] ? $h['responderam'] / $h['enviados'] : 0, $aprendeu['horas'])) ?>
+            <h4 style="margin:14px 0 6px">Respostas por horário do envio</h4>
+            <?php foreach ($aprendeu['horas'] as $h): $tx = $h['enviados'] ? $h['responderam'] / $h['enviados'] : 0; ?>
+            <div class="barra-linha"><div class="rotulo"><span><?= (int)$h['faixa'] ?>h–<?= (int)$h['faixa'] + 2 ?>h</span><span><?= round($tx * 100) ?>% · <?= (int)$h['enviados'] ?> envios</span></div><div class="progresso"><div style="width:<?= $maxH > 0 ? round($tx / $maxH * 100) : 0 ?>%"></div></div></div>
+            <?php endforeach; endif; ?>
+        </div>
+        <div class="form-box largo">
             <h3>Funil geral</h3>
             <?php foreach ([['Empresas vistas', $f['total'], $f['total']], ['Sem site (oportunidades)', $f['leads'], $f['total']], ['Contatadas', $f['contatados'], $f['leads']], ['Abriram a prévia', $f['abriram'], $f['contatados']], ['Responderam', $f['responderam'] + $f['negociando'] + $f['fechados'], $f['contatados']], ['Fechadas', $f['fechados'], $f['contatados']]] as [$rot, $v, $base]): ?>
             <div class="barra-linha"><div class="rotulo"><span><?= $rot ?></span><span><?= (int)$v ?> · <?= $pct($v, $base) ?>%</span></div><div class="progresso"><div style="width:<?= $pct($v, $base) ?>%"></div></div></div>
@@ -495,7 +511,7 @@ $respostas = prosp_respostas_padrao();
             </div>
             <p class="dica">Marque quem respondeu (pelas respostas prontas ou mudando a situação para "Respondeu"). Com umas 30 mensagens de cada, dá para ver qual funciona melhor na sua região.</p>
             <?php endif; ?>
-            <p class="dica">Variáveis: {nome} {bairro} {cidade} {nota_txt} {vendedor_txt} {acao_cliente} {o_que} {verbo} {recurso} {previa} {nota} {avaliacoes} {nicho} {marca} {vendedor_nome} {preco_txt}. Apague o texto de um campo para voltar ao padrão.</p>
+            <p class="dica">Variáveis: {nome} {bairro} {cidade} {nota_txt} {vendedor_txt} {acao_cliente} {o_que} {verbo} {recurso} {previa} {nota} {avaliacoes} {nicho} {marca} {vendedor_nome} {preco_txt} {elogio} {elogio_txt}. Apague o texto de um campo para voltar ao padrão.</p>
             <?php foreach ([1 => '1ª mensagem — versão A (sem link, pede permissão)', '1b' => '1ª mensagem — versão B (sem link, pergunta sobre o negócio)', 2 => '2ª mensagem — dia 2, para quem não respondeu (com o link)', 3 => '3ª mensagem — dia 5, despedida'] as $n => $rot): ?>
             <label><?= $rot ?></label><textarea name="msg<?= $n ?>" rows="5" style="width:100%"><?= e(prosp_modelo($n)) ?></textarea>
             <?php endforeach; ?>
