@@ -26,6 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             }
             $pdo->prepare("UPDATE empresas SET wa_modo='proprio' WHERE id=?")->execute([$empresaId]);
             $r = wa_conexao_criar(wa_empresa_atual($empresaId));
+            // Sem câmera: pede o código de pareamento para o número informado
+            $numPar = wa_numero($_POST['numero'] ?? '');
+            if ($r['ok'] && $numPar !== '') $r = wa_conexao_qr(wa_empresa_atual($empresaId), $numPar);
             responder_json($r);
         case 'qr':
             $r = wa_conexao_qr($empresa, trim($_POST['numero'] ?? ''));
@@ -162,9 +165,22 @@ $statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pi
             </div>
             <?php endif; ?>
             <button type="button" class="btn" id="btnConectar" onclick="WA.conectar()"><?= icone('celular', 16) ?> Gerar QR code</button>
+            <?php if (!in_array($api['tipo'], ['zapi', 'ultramsg'], true)): ?>
+            <details class="wa-sem-camera"><summary class="link">📱 Sem câmera? Conectar com o número de telefone (código)</summary>
+                <p class="dica">Serve para conectar no <strong>mesmo celular</strong>. Digite o número do WhatsApp que vai enviar as mensagens, com DDD.</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+                    <div style="flex:1;min-width:180px"><label>Número do WhatsApp</label><input type="tel" id="numPareamento" placeholder="(11) 99999-9999" value="<?= e($empresa['whatsapp'] ?? '') ?>"></div>
+                    <button type="button" class="btn" id="btnCodigo" onclick="WA.conectarCodigo()">Receber código</button>
+                </div>
+            </details>
+            <?php endif; ?>
             <div id="qrArea" hidden style="margin-top:16px">
-                <div class="wa-qr"><img id="qrImg" alt="QR code para conectar o WhatsApp"><span id="qrInfo">Aguardando leitura…</span></div>
-                <p class="dica" id="qrCodigo" hidden></p>
+                <div class="wa-qr" id="qrBox"><img id="qrImg" alt="QR code para conectar o WhatsApp"><span id="qrInfo">Aguardando leitura…</span></div>
+                <div class="wa-codigo" id="qrCodigo" hidden>
+                    <strong id="codigoTexto"></strong>
+                    <ol class="dica"><li>No celular, abra o WhatsApp → <strong>⋮ / Configurações → Aparelhos conectados → Conectar um aparelho</strong>.</li>
+                        <li>Toque em <strong>Conectar com número de telefone</strong> (embaixo da câmera).</li><li>Digite este código. Ele vale por alguns minutos.</li></ol>
+                </div>
             </div>
         <?php endif; ?>
     </section>
@@ -248,9 +264,17 @@ const WA = (() => {
     document.querySelectorAll('textarea[data-previa]').forEach(ta => { previa(ta); ta.addEventListener('input', () => previa(ta)); });
     function padrao(btn) { const ta = btn.parentElement.querySelector('textarea'); ta.value = ta.dataset.padrao; previa(ta); }
 
-    async function conectar() {
+    let modoCodigo = false;
+    async function conectarCodigo() {
+        const num = $('numPareamento').value.replace(/\D/g, '');
+        if (num.length < 10) { toast('Digite o número com DDD.', 'erro'); return; }
+        modoCodigo = true; $('qrCodigo').hidden = false; $('codigoTexto').textContent = 'Gerando o código…';
+        await conectar({ numero: num });
+    }
+    async function conectar(extraCodigo) {
+        if (!extraCodigo) modoCodigo = false;
         const b = $('btnConectar'); b.disabled = true; b.textContent = 'Gerando…';
-        const extra = $('zapiInst') ? { zapi_instancia: $('zapiInst').value, zapi_token: $('zapiTok').value } : {};
+        const extra = Object.assign($('zapiInst') ? { zapi_instancia: $('zapiInst').value, zapi_token: $('zapiTok').value } : {}, extraCodigo || {});
         const r = await api('conectar', extra);
         b.disabled = false; b.textContent = 'Gerar novo QR code';
         if (!r.ok) { toast(r.erro, 'erro'); return; }
@@ -261,7 +285,7 @@ const WA = (() => {
             voltas++;
             const e = await api('estado');
             if (e.ok && e.conectado) { clearInterval(timer); $('qrInfo').textContent = '✅ Conectado!'; toast('WhatsApp conectado!', 'sucesso'); setTimeout(() => location.reload(), 1200); return; }
-            if (e.ok && e.qr) mostrarQr(e); // conector no celular/computador: o QR chega alguns segundos depois
+            if (e.ok && (e.qr || e.codigo)) mostrarQr(e); // conector no celular/computador: o QR/código chega alguns segundos depois
             if (voltas % 10 === 0) { const q = await api('qr'); if (q.ok) mostrarQr(q); } // o QR expira: renova a cada ~30s
             if (voltas > 100) { clearInterval(timer); $('qrInfo').textContent = 'O QR code expirou. Clique em gerar de novo.'; }
         }, 3000);
@@ -271,7 +295,8 @@ const WA = (() => {
         if (r.qr) { $('qrImg').src = r.qr.startsWith('data:') ? r.qr : 'data:image/png;base64,' + r.qr; $('qrInfo').textContent = 'Aguardando leitura…'; }
         else if (r.aguardando) $('qrInfo').textContent = 'Gerando o QR code…';
         if (r.conectado) { $('qrInfo').textContent = '✅ Conectado!'; setTimeout(() => location.reload(), 1000); }
-        if (r.codigo) { $('qrCodigo').hidden = false; $('qrCodigo').textContent = 'Ou digite este código no celular (Conectar com número de telefone): ' + r.codigo; }
+        if (r.codigo) { $('qrCodigo').hidden = false; $('codigoTexto').textContent = String(r.codigo).replace(/^(.{4})(.{4})$/, '$1-$2'); }
+        $('qrBox').hidden = modoCodigo; // no modo código, o QR some para não confundir
     }
     async function desconectar() {
         if (!confirm('Desconectar o seu WhatsApp da plataforma?')) return;
@@ -291,7 +316,7 @@ const WA = (() => {
         toast(r.ok ? r.msg : r.erro, r.ok ? 'sucesso' : 'erro');
         if (r.ok) setTimeout(() => location.reload(), 800); else btn.disabled = false;
     }
-    return { conectar, desconectar, testar, reenviar, padrao };
+    return { conectar, conectarCodigo, desconectar, testar, reenviar, padrao };
 })();
 </script>
 </body>
