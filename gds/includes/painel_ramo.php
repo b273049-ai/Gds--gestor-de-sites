@@ -78,3 +78,30 @@ function ramo_orcamento($empresaId) {
     $r['taxa'] = $r['respondidos'] ? (int)round(100 * $r['aprovados'] / $r['respondidos']) : null;
     return $r;
 }
+
+// Contatos (CRM) e imóveis: o que entra, onde está e o que está atrasado
+function ramo_contato($empresaId, $comImoveis = false) {
+    global $pdo;
+    $r = ['novos' => 0, 'abertos' => 0, 'retornos' => 0, 'ganhos' => 0, 'valor' => 0, 'imoveis' => null];
+    try {
+        $s = $pdo->prepare("SELECT COUNT(*) FILTER (WHERE criado_em > NOW() - INTERVAL '30 days') novos,
+                COUNT(*) FILTER (WHERE COALESCE(etapa,'novo') NOT IN ('ganho','perdido')) abertos,
+                COUNT(*) FILTER (WHERE proximo_contato <= CURRENT_DATE AND COALESCE(etapa,'novo') NOT IN ('ganho','perdido')) retornos,
+                COUNT(*) FILTER (WHERE etapa='ganho' AND atualizado_em > NOW() - INTERVAL '30 days') ganhos,
+                COALESCE(SUM(valor) FILTER (WHERE COALESCE(etapa,'novo') NOT IN ('ganho','perdido')), 0) valor,
+                COUNT(*) FILTER (WHERE COALESCE(etapa,'novo')='novo') sem_resposta
+            FROM leads WHERE empresa_id=?");
+        $s->execute([(int)$empresaId]); $r = array_merge($r, $s->fetch());
+    } catch (PDOException $e) {}
+    if ($comImoveis) {
+        try {
+            $s = $pdo->prepare("SELECT COUNT(*) FILTER (WHERE situacao='disponivel' AND ativo) disponiveis, COALESCE(SUM(visualizacoes),0) vis,
+                    COUNT(*) FILTER (WHERE ativo AND (fotos IS NULL OR fotos='[]')) sem_foto FROM imoveis WHERE empresa_id=?");
+            $s->execute([(int)$empresaId]); $r['imoveis'] = $s->fetch();
+            $s = $pdo->prepare("SELECT im.codigo, im.titulo, im.visualizacoes, (SELECT COUNT(*) FROM leads l WHERE l.imovel_id=im.id) interessados
+                FROM imoveis im WHERE im.empresa_id=? AND im.ativo ORDER BY im.visualizacoes DESC LIMIT 5");
+            $s->execute([(int)$empresaId]); $r['top'] = $s->fetchAll();
+        } catch (PDOException $e) {}
+    }
+    return $r;
+}

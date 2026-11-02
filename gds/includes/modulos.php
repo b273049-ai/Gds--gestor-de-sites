@@ -15,6 +15,7 @@ function modulos_catalogo() {
         'cupons'     => ['rotulo' => 'Cupons de desconto', 'desc' => 'Cupons no site e no agendamento.', 'icone' => 'cupom'],
         'avaliacoes' => ['rotulo' => 'Avaliações', 'desc' => 'Clientes avaliam pelo site; você aprova o que aparece.', 'icone' => 'estrela'],
         'pix'        => ['rotulo' => 'Pagamento PIX', 'desc' => 'Cobrança PIX automática no agendamento (Mercado Pago).', 'icone' => 'cartao'],
+        'imoveis'    => ['rotulo' => 'Imóveis', 'desc' => 'Vitrine de imóveis no site com filtros, fotos, ficha completa e agendamento de visita.', 'icone' => 'casa'],
     ];
 }
 
@@ -32,6 +33,8 @@ function modulos_padrao($modo) {
 function modulos_da_empresa($empresa) {
     $modo = atendimento_modo_da_linha($empresa); // modo da empresa > do segmento > agendamento
     $ativos = array_fill_keys(modulos_padrao($modo), true);
+    // Ramos de imóveis já começam com a vitrine de imóveis
+    if (in_array($empresa['segmento_slug'] ?? '', ['imobiliaria', 'construtora', 'loteamento', 'chales'], true)) $ativos['imoveis'] = true;
     $escolhas = json_decode((string)($empresa['modulos'] ?? ''), true) ?: [];
     foreach ($escolhas as $k => $v) if (isset(modulos_catalogo()[$k])) $ativos[$k] = (bool)$v;
     return ['modo' => $modo, 'ativos' => array_keys(array_filter($ativos))];

@@ -178,7 +178,10 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
         $secao('sobre', '<section id="sobre" class="pt-secao"><div class="pt-container">' . $h . '</div></section>', 'Sobre');
     }
 
-    if ($dados['servicos']) {
+    if (!empty($dados['imoveis'])) {
+        // Imobiliária: vitrine de imóveis com filtros (e os serviços, se houver, logo abaixo)
+        $secao('servicos', '<section id="servicos" class="pt-secao pt-secao-alt pt-motivo"><div class="pt-container">' . $cabecalho('Imóveis', 'Encontre o seu imóvel', 'Filtre por bairro, preço e quartos. Gostou? Agende a visita em 1 minuto.') . '<div data-anim="fade-up">' . $f['{{SERVICOS}}'] . '</div></div></section>', 'Imóveis');
+    } elseif ($dados['servicos']) {
         $titSv = $N['servicos_titulo'] ?? '';
         if ($titSv === '' || ($modo === 'catalogo' && $rotCatalogo === 'Cardápio')) $titSv = ['catalogo' => $rotCatalogo === 'Cardápio' ? 'Escolha o seu favorito' : 'Escolha e peça', 'orcamento' => 'O que fazemos', 'agendamento' => 'Escolha seu serviço', 'contato' => 'Como podemos ajudar'][$modo];
         $txtSv = ['catalogo' => 'Adicione ao pedido e finalize em segundos — entrega ou retirada.', 'orcamento' => 'Escolha um serviço e peça seu orçamento sem compromisso.', 'agendamento' => 'Preços claros, sem surpresa. Escolha e reserve o melhor horário.', 'contato' => ''][$modo];

@@ -55,6 +55,8 @@ function site_carregar_dados($empresa) {
     $d['servicos'] = $q("SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY destaque DESC, ordem, nome",
                         "SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY nome");
     $d['profissionais'] = $q("SELECT * FROM profissionais WHERE empresa_id=? AND ativo=true ORDER BY nome");
+    require_once __DIR__ . '/imoveis.php';
+    $d['imoveis'] = in_array('imoveis', modulos_da_empresa($empresa)['ativos'], true) ? imoveis_publicos($id) : [];
     $d['cupons'] = $q("SELECT * FROM cupons WHERE empresa_id=? AND ativo=true AND (validade IS NULL OR validade >= CURRENT_DATE)");
     $d['blocos'] = $q("SELECT * FROM site_blocos WHERE empresa_id=? AND ativo=true ORDER BY ordem, id");
     $d['avaliacoes'] = $q("SELECT av.nota, av.comentario, av.criado_em, COALESCE(NULLIF(av.nome_autor,''), c.nome, 'Cliente') AS autor
@@ -151,6 +153,19 @@ function site_processar_post($empresa, $dados) {
     if (isset($_POST['enviar_lead'])) {
         $nome = site_limpar('nome', 120); $email = site_limpar('email', 150);
         $tel = site_limpar('telefone', 20); $msg = site_limpar('mensagem', 2000); $assunto = site_limpar('assunto', 80);
+        // Interesse/visita num imóvel da vitrine
+        $imovelId = null;
+        if ($iid = (int)($_POST['lead_imovel_id'] ?? 0)) {
+            try { $q = $pdo->prepare("SELECT id, codigo, titulo FROM imoveis WHERE id=? AND empresa_id=?"); $q->execute([$iid, $empresa['id']]); $im = $q->fetch(); } catch (PDOException $e) { $im = false; }
+            if ($im) {
+                $imovelId = (int)$im['id']; $cod = $im['codigo'] ?: $im['id'];
+                $assunto = 'Visita: imóvel cód. ' . $cod;
+                $dia = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['lead_visita_data'] ?? '') ? date('d/m', strtotime($_POST['lead_visita_data'])) : '';
+                $msg = trim('Quero visitar o imóvel cód. ' . $cod . ' (' . $im['titulo'] . ').' . ($dia ? ' Melhor dia: ' . $dia : '') . ' Período: ' . site_limpar('lead_visita_periodo', 30) . '. ' . $msg);
+                $estado['pagina_forcada'] = null;
+                if (strlen(preg_replace('/\D/', '', $tel)) < 10) { $estado['lead'] = ['erro' => 'Informe seu WhatsApp (com DDD) para combinarmos a visita.', 'post' => $_POST]; return $estado; }
+            }
+        }
         $estado['pagina_forcada'] = 'contato';
         if (site_eh_spam()) { $estado['lead'] = ['ok' => true, 'nome' => $nome]; return $estado; } // finge sucesso pro robô
         if ($nome === '' || $msg === '') {
@@ -170,7 +185,8 @@ function site_processar_post($empresa, $dados) {
             wa_notificar_empresa($empresa, 'contato', ['nome' => $nome, 'telefone' => $tel ?: $email, 'mensagem' => ($assunto ? "[$assunto] " : '') . $msg], 'lead');
             if ($tel !== '') wa_notificar_cliente($empresa, 'contato_recebido', $tel, ['nome' => explode(' ', $nome)[0]], 'lead');
             site_notificar_empresa($empresa, "Nova mensagem pelo site: $nome", ["$nome mandou uma mensagem pelo site" . ($assunto ? " ($assunto)" : '') . ':', '', $msg, '', 'WhatsApp/telefone: ' . ($tel ?: '-'), 'E-mail: ' . ($email ?: '-')]);
-            $estado['lead'] = ['ok' => true, 'nome' => $nome];
+            if ($imovelId) { try { $pdo->prepare("UPDATE leads SET imovel_id=?, etapa='novo' WHERE id=(SELECT MAX(id) FROM leads WHERE empresa_id=?)")->execute([$imovelId, $empresa['id']]); } catch (PDOException $e) {} }
+            $estado['lead'] = ['ok' => true, 'nome' => $nome, 'imovel' => (bool)$imovelId];
         }
         return $estado;
     }
@@ -587,7 +603,8 @@ function site_fragmentos_marcadores($empresa, $dados, $estado, $extraServicos = 
                       'contato' => $linkWhats, 'catalogo' => '#gds-servicos'][$modo];
     return [
         '{{SOBRE}}' => frag_sobre($empresa['sobre']),
-        '{{SERVICOS}}' => frag_servicos($dados['servicos'], $optsServicos),
+        // Imobiliária: a vitrine de imóveis entra no lugar dos serviços (e os serviços, se houver, vêm depois)
+        '{{SERVICOS}}' => !empty($dados['imoveis']) ? frag_imoveis($dados['imoveis'], $empresa, $estado['lead'] ?? []) . ($dados['servicos'] ? frag_servicos($dados['servicos'], $optsServicos) : '') : frag_servicos($dados['servicos'], $optsServicos),
         '{{EQUIPE}}' => frag_equipe($dados['profissionais'], $temAgenda),
         '{{GALERIA}}' => frag_galeria($dados['galeria'], $empresa['nome']),
         '{{AGENDAMENTO}}' => frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $dados['agenda'], $empresa),

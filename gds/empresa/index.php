@@ -55,6 +55,7 @@ $feitos = count(array_filter($checklist, fn($c) => $c[1]));
 $rDel = modulo_ativo('delivery') ? ramo_delivery($empresaId) : null;
 $rAg = $temAgenda ? ramo_agenda($empresa) : null;
 $rOrc = modulo_ativo('orcamentos') && !modulo_ativo('delivery') ? ramo_orcamento($empresaId) : null;
+$rCrm = (modulos_atuais()['modo'] === 'contato' || modulo_ativo('imoveis')) ? ramo_contato($empresaId, modulo_ativo('imoveis')) : null;
 $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
 $variacao = function ($a, $b) { if (!$b) return ''; $p = round(100 * ($a - $b) / $b); return ' <span style="color:' . ($p >= 0 ? 'var(--ok)' : 'var(--danger)') . '">' . ($p >= 0 ? '▲' : '▼') . abs($p) . '% vs ontem</span>'; };
 $percentual = round($feitos / count($checklist) * 100);
@@ -169,6 +170,22 @@ $percentual = round($feitos / count($checklist) * 100);
     </div>
     <?php endif; ?>
 
+    <?php if ($rCrm): ?>
+    <section class="form-box largo ramo">
+        <div class="ramo-topo"><h3><?= $rCrm['imoveis'] ? '🏠 Imóveis e interessados' : '🎯 Contatos e negociações' ?></h3><a class="btn btn-sm" href="leads.php">Abrir o funil</a></div>
+        <div class="ramo-kpis">
+            <div><small>Novos contatos (30 dias)</small><strong><?= (int)$rCrm['novos'] ?></strong></div>
+            <div><small>Em negociação</small><strong><?= (int)$rCrm['abertos'] ?></strong></div>
+            <div><small>Retornos para hoje</small><strong style="<?= (int)$rCrm['retornos'] ? 'color:var(--perigo,#f87171)' : '' ?>"><?= (int)$rCrm['retornos'] ?></strong></div>
+            <div><small>Fechados (30 dias)</small><strong><?= (int)$rCrm['ganhos'] ?></strong></div>
+            <?php if ((float)$rCrm['valor'] > 0): ?><div><small>Valor em negociação</small><strong><?= $moeda($rCrm['valor']) ?></strong></div><?php endif; ?>
+            <?php if ($rCrm['imoveis']): ?><div><small>Imóveis disponíveis</small><strong><?= (int)$rCrm['imoveis']['disponiveis'] ?></strong></div><div><small>Visualizações</small><strong><?= (int)$rCrm['imoveis']['vis'] ?></strong></div><?php endif; ?>
+        </div>
+        <?php if ((int)($rCrm['sem_resposta'] ?? 0) > 0): ?><p class="dica">💬 <?= (int)$rCrm['sem_resposta'] ?> contato(s) na etapa "Novo": responder em até 5 minutos multiplica a chance de fechar.</p><?php endif; ?>
+        <?php if ($rCrm['imoveis'] && (int)$rCrm['imoveis']['sem_foto'] > 0): ?><p class="dica">📷 <?= (int)$rCrm['imoveis']['sem_foto'] ?> imóvel(is) sem foto — anúncio sem foto quase não recebe contato. <a class="link" href="imoveis.php">Adicionar fotos</a></p><?php endif; ?>
+        <?php if (!empty($rCrm['top'])): ?><h4 style="margin:12px 0 6px">Mais vistos no site</h4><ul class="dica" style="margin:0"><?php foreach ($rCrm['top'] as $t): ?><li>Cód. <?= e($t['codigo']) ?> — <?= e(mb_strimwidth($t['titulo'], 0, 50, '…')) ?>: 👁 <?= (int)$t['visualizacoes'] ?> · 🙋 <?= (int)$t['interessados'] ?></li><?php endforeach; ?></ul><?php endif; ?>
+    </section>
+    <?php endif; ?>
     <?php if ($rOrc): ?>
     <section class="form-box largo">
         <div class="ramo-topo"><h3>📝 Orçamentos dos últimos 30 dias</h3><a class="btn btn-sm" href="pedidos.php?status=novo">Responder os novos (<?= (int)$rOrc['sem_resposta'] ?>)</a></div>
