@@ -426,7 +426,12 @@ function site_processar_pedido($empresa, $dados) {
     $nome = site_limpar('pd_nome', 120); $tel = site_limpar('pd_telefone', 20);
     $mesa = mb_substr(preg_replace('/[^0-9A-Za-z]/', '', (string)($_POST['pd_mesa'] ?? '')), 0, 10);
     $tipo = $mesa !== '' ? 'mesa' : (($_POST['pd_tipo_entrega'] ?? '') === 'retirada' ? 'retirada' : 'entrega');
-    $endereco = site_limpar('pd_endereco', 250); $obs = site_limpar('pd_obs', 500);
+    $obs = site_limpar('pd_obs', 500);
+    // Endereço completo (o entregador precisa de rua, número ou referência, e bairro)
+    $end = ['cep' => preg_replace('/\D/', '', (string)($_POST['pd_cep'] ?? '')), 'rua' => site_limpar('pd_rua', 150), 'numero' => !empty($_POST['pd_sem_numero']) ? 'S/N' : site_limpar('pd_numero', 15),
+            'bairro' => site_limpar('pd_bairro_txt', 100), 'cidade' => site_limpar('pd_cidade', 100), 'complemento' => site_limpar('pd_complemento', 100), 'referencia' => site_limpar('pd_referencia', 150)];
+    $endereco = site_limpar('pd_endereco', 250); // compatibilidade com sites antigos (campo único)
+    $cpf = preg_replace('/\D/', '', (string)($_POST['pd_cpf'] ?? ''));
     $formas = array_values(array_filter(array_map('trim', explode(',', (string)($empresa['formas_pagamento'] ?? '') ?: 'Pix, Cartão na entrega, Dinheiro'))));
     require_once __DIR__ . '/pagamentos.php';
     if (pg_bool($empresa['pix_pedido'] ?? false) && pag_disponivel($empresa)) array_unshift($formas, PIX_ONLINE);
@@ -445,6 +450,10 @@ function site_processar_pedido($empresa, $dados) {
     foreach ((array)json_decode((string)($_POST['pd_itens'] ?? ''), true) as $it) {
         $id = (int)($it['id'] ?? 0); $qtd = max(0, min(99, (int)($it['qtd'] ?? 0)));
         if ($qtd < 1 || !isset($porId[$id]) || pg_bool($porId[$id]['esgotado'] ?? false)) continue;
+        if (isset($porId[$id]['estoque']) && $porId[$id]['estoque'] !== null && $qtd > (int)$porId[$id]['estoque']) {
+            $erroOpcao = (int)$porId[$id]['estoque'] > 0 ? 'Só temos ' . (int)$porId[$id]['estoque'] . ' unidade(s) de ' . $porId[$id]['nome'] . '.' : $porId[$id]['nome'] . ' acabou.';
+            continue;
+        }
         // Preço sempre recalculado aqui com as opções escolhidas (o navegador não decide o preço)
         $pr = opc_precificar($porId[$id], (array)($it['opcoes'] ?? []));
         if (!$pr['ok']) { $erroOpcao = $pr['erro']; continue; }
@@ -460,8 +469,14 @@ function site_processar_pedido($empresa, $dados) {
     $bairro = null;
     if ($tipo === 'entrega' && $bairros) {
         foreach ($bairros as $b) if ($b['bairro'] === ($_POST['pd_bairro'] ?? '')) $bairro = $b;
-        if ($bairro) { $taxa = $bairro['taxa']; if (mb_stripos($endereco, $bairro['bairro']) === false) $endereco = trim($endereco . ' — ' . $bairro['bairro']); }
+        if ($bairro) { $taxa = $bairro['taxa']; $end['bairro'] = $bairro['bairro']; }
     }
+    $estruturado = $end['rua'] !== '' || $end['cep'] !== '';
+    if ($tipo === 'entrega' && $estruturado) $endereco = site_endereco_texto($end);
+    elseif ($tipo === 'entrega' && $bairro && mb_stripos($endereco, $bairro['bairro']) === false) $endereco = trim($endereco . ' — ' . $bairro['bairro']);
+    // Frete grátis a partir de um valor (sobre os itens)
+    $freteGratis = (float)($empresa['frete_gratis_acima'] ?? 0);
+    if ($tipo === 'entrega' && $freteGratis > 0 && $subtotal >= $freteGratis) $taxa = 0;
     // Cupom de desconto (vale sobre os itens, não sobre a entrega)
     $cupom = null; $desconto = 0.0;
     if (trim((string)($_POST['pd_cupom'] ?? '')) !== '') {
@@ -478,7 +493,14 @@ function site_processar_pedido($empresa, $dados) {
     elseif ($tipo === 'entrega' && !$lig('aceita_entrega')) $erro = 'No momento só aceitamos retirada no local.';
     elseif ($tipo === 'retirada' && !$lig('aceita_retirada')) $erro = 'No momento só fazemos entrega.';
     elseif ($tipo === 'entrega' && $bairros && !$bairro) $erro = 'Escolha o seu bairro para calcular a entrega.';
+    elseif ($tipo === 'entrega' && $estruturado && strlen($end['cep']) !== 8) $erro = 'Informe o CEP (8 números).';
+    elseif ($tipo === 'entrega' && $estruturado && mb_strlen($end['rua']) < 3) $erro = 'Informe a rua da entrega.';
+    elseif ($tipo === 'entrega' && $estruturado && $end['numero'] === '') $erro = 'Informe o número da casa (ou marque "Sem número").';
+    elseif ($tipo === 'entrega' && $estruturado && $end['numero'] === 'S/N' && mb_strlen($end['referencia']) < 4) $erro = 'Sem número, precisamos de um ponto de referência para o entregador achar você.';
+    elseif ($tipo === 'entrega' && $estruturado && $end['bairro'] === '') $erro = 'Informe o bairro.';
     elseif ($tipo === 'entrega' && mb_strlen($endereco) < 8) $erro = 'Informe o endereço completo para a entrega.';
+    elseif ($cpf !== '' && !site_cpf_valido($cpf)) $erro = 'Confira o CPF para a nota (ou deixe em branco).';
+    elseif (site_cliente_bloqueado($empresa['id'], $tel)) $erro = 'Não conseguimos aceitar este pedido pelo site. Fale com a gente pelo WhatsApp.';
     elseif ($minimo > 0 && $subtotal < $minimo) $erro = 'O pedido mínimo é R$ ' . number_format($minimo, 2, ',', '.') . '.';
     elseif ($troco !== null && $troco > 0 && $troco < $total) $erro = 'O troco precisa ser maior que o total do pedido.';
     if ($erro !== '') return ['erro' => $erro, 'post' => $p];
@@ -499,11 +521,22 @@ function site_processar_pedido($empresa, $dados) {
             $clienteId = $n->fetch()['id'];
         }
         $agendadoPara = $tipo !== 'mesa' && empty(agenda_status_agora($empresa)['aberto']) ? 'quando abrir' : null;
+        $quando = (string)($_POST['pd_quando'] ?? '');
+        if ($quando !== '' && $tipo !== 'mesa' && pg_bool($empresa['pedido_agendar'] ?? false) && isset(site_horarios_pedido($empresa)[$quando])) $agendadoPara = site_horarios_pedido($empresa)[$quando];
         $ins = $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status, origem, tipo, itens, tipo_entrega, endereco_entrega, forma_pagamento, troco_para, taxa_entrega, observacoes, token, agendado_para, mesa)
             VALUES (?,?,?,?, 'novo', 'site', 'delivery', ?,?,?,?,?,?,?,?,?,?) RETURNING id");
         $ins->execute([$empresa['id'], $clienteId, $descricao, $total, json_encode($itens, JSON_UNESCAPED_UNICODE), $tipo, $tipo === 'entrega' ? $endereco : null,
                        $pagamento, $troco ?: null, $taxa, $obs ?: null, $token, $agendadoPara, $mesa !== '' ? $mesa : null]);
         $pedidoId = (int)$ins->fetch()['id'];
+        // Endereço em partes, CPF e baixa de estoque (bancos antigos podem não ter as colunas)
+        try {
+            $pdo->exec('SAVEPOINT extras');
+            if ($tipo === 'entrega' && $estruturado) $pdo->prepare("UPDATE pedidos SET end_cep=?, end_rua=?, end_numero=?, end_bairro=?, end_cidade=?, end_complemento=?, end_referencia=? WHERE id=?")
+                ->execute([substr($end['cep'], 0, 5) . '-' . substr($end['cep'], 5), $end['rua'], $end['numero'], $end['bairro'], $end['cidade'] ?: null, $end['complemento'] ?: null, $end['referencia'] ?: null, $pedidoId]);
+            if ($cpf !== '') $pdo->prepare("UPDATE pedidos SET cpf_nota=? WHERE id=?")->execute([$cpf, $pedidoId]);
+            foreach ($itens as $i) $pdo->prepare("UPDATE servicos SET estoque = GREATEST(0, estoque - ?) WHERE id=? AND estoque IS NOT NULL")->execute([$i['qtd'], $i['id']]);
+            $pdo->exec('RELEASE SAVEPOINT extras');
+        } catch (PDOException $e) { $pdo->exec('ROLLBACK TO SAVEPOINT extras'); }
         if ($cupom) {
             try { $pdo->exec('SAVEPOINT cupom'); $pdo->prepare("UPDATE pedidos SET cupom_codigo=?, desconto=? WHERE id=?")->execute([$cupom['codigo'], $desconto, $pedidoId]); $pdo->exec('RELEASE SAVEPOINT cupom'); }
             catch (PDOException $e) { $pdo->exec('ROLLBACK TO SAVEPOINT cupom'); }
@@ -847,4 +880,62 @@ function site_dias_texto($dias) {
     if ($lista === [1, 2, 3, 4, 5, 6]) return 'de segunda a sábado';
     if ($lista === [0, 1, 2, 3, 4, 5, 6]) return 'todos os dias';
     return implode(', ', array_map(fn($d) => $n[$d], $lista));
+}
+
+// Endereço em uma linha para o painel, a comanda e o WhatsApp
+function site_endereco_texto($e) {
+    $l = trim(($e['rua'] ?? '') . ', ' . (($e['numero'] ?? '') ?: 'S/N'), ', ');
+    if (!empty($e['complemento'])) $l .= ' — ' . $e['complemento'];
+    if (!empty($e['bairro'])) $l .= ' — ' . $e['bairro'];
+    if (!empty($e['cidade'])) $l .= ', ' . $e['cidade'];
+    $cep = preg_replace('/\D/', '', (string)($e['cep'] ?? ''));
+    if (strlen($cep) === 8) $l .= ' — CEP ' . substr($cep, 0, 5) . '-' . substr($cep, 5);
+    if (!empty($e['referencia'])) $l .= ' (Ref.: ' . $e['referencia'] . ')';
+    return mb_substr($l, 0, 255);
+}
+
+function site_cpf_valido($c) {
+    $c = preg_replace('/\D/', '', (string)$c);
+    if (strlen($c) !== 11 || preg_match('/^(\d)\1{10}$/', $c)) return false;
+    for ($t = 9; $t < 11; $t++) {
+        $s = 0; for ($i = 0; $i < $t; $i++) $s += (int)$c[$i] * (($t + 1) - $i);
+        if ((int)$c[$t] !== ((10 * $s) % 11) % 10) return false;
+    }
+    return true;
+}
+
+// Cliente marcado como bloqueado (trote, calote) não consegue pedir pelo site
+function site_cliente_bloqueado($empresaId, $tel) {
+    global $pdo;
+    $d = preg_replace('/\D/', '', (string)$tel);
+    if (strlen($d) < 10) return false;
+    try {
+        $s = $pdo->prepare("SELECT 1 FROM clientes WHERE empresa_id=? AND bloqueado=true AND right(regexp_replace(COALESCE(telefone,''), '\D', '', 'g'), 11) = right(?, 11) LIMIT 1");
+        $s->execute([(int)$empresaId, $d]);
+        return (bool)$s->fetchColumn();
+    } catch (PDOException $e) { return false; }
+}
+
+// Horários para pedido agendado: de 30 em 30 min, hoje (a partir de agora + 1h) e amanhã, dentro do funcionamento
+function site_horarios_pedido($empresa) {
+    static $cache = [];
+    $k = (int)$empresa['id'];
+    if (isset($cache[$k])) return $cache[$k];
+    $dias = array_map('intval', array_filter(explode(',', (string)($empresa['dias_funcionamento'] ?? '1,2,3,4,5,6')), 'strlen'));
+    $ab = $empresa['horario_abertura'] ?: '09:00'; $fe = $empresa['horario_fechamento'] ?: '22:00';
+    $semana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+    $out = [];
+    for ($d = 0; $d <= 2; $d++) {
+        $dia = strtotime("today +$d day");
+        if (!in_array((int)date('w', $dia), $dias, true)) continue;
+        $ini = strtotime(date('Y-m-d', $dia) . ' ' . substr($ab, 0, 5)); $fim = strtotime(date('Y-m-d', $dia) . ' ' . substr($fe, 0, 5));
+        if ($fim <= $ini) $fim += 86400;
+        for ($t = $ini + 1800; $t <= $fim; $t += 1800) {
+            if ($t < time() + 3600) continue;
+            $rot = ($d === 0 ? 'hoje' : ($d === 1 ? 'amanhã' : $semana[(int)date('w', $t)] . ' ' . date('d/m', $t))) . ' às ' . date('H:i', $t);
+            $out[date('Y-m-d H:i', $t)] = $rot;
+            if (count($out) >= 60) break 2;
+        }
+    }
+    return $cache[$k] = $out;
 }

@@ -53,6 +53,8 @@ $subtotal = array_sum(array_map(fn($i) => $i['preco'] * $i['qtd'], $itens));
         <?php if ((float)$p['taxa_entrega'] > 0): ?><tr><td>Entrega</td><td><?= $moeda($p['taxa_entrega']) ?></td></tr><?php endif; ?>
         <tr class="total"><td>TOTAL</td><td><?= $moeda($p['valor']) ?></td></tr>
     </table>
+    <?php if (!empty($p['agendado_para'])): ?><div style="margin-top:6px"><strong>AGENDADO: <?= e($p['agendado_para']) ?></strong></div><?php endif; ?>
+    <?php if (!empty($p['cpf_nota'])): ?><div style="margin-top:6px">CPF na nota: <strong><?= e(preg_replace('/(\d{3})(\d{3})(\d{3})(\d{2})/', '$1.$2.$3-$4', $p['cpf_nota'])) ?></strong></div><?php endif; ?>
     <div style="margin-top:6px">Pagamento: <strong><?= e($p['forma_pagamento'] ?: '—') ?></strong><?= $p['troco_para'] ? '<br>Troco para ' . $moeda($p['troco_para']) . ' (levar ' . $moeda((float)$p['troco_para'] - (float)$p['valor']) . ')' : '' ?></div>
     <?php else: ?>
         <?php if (!empty($p['servico_nome'])): ?><strong><?= e($p['servico_nome']) ?></strong><br><?php endif; ?>

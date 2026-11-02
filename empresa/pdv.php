@@ -28,11 +28,14 @@ if (isset($_GET['cliente'])) {
     if (strlen($tel) < 8) responder_json(['ok' => false]);
     $c = $pdo->prepare("SELECT c.id, c.nome, c.telefone,
             (SELECT endereco_entrega FROM pedidos p WHERE p.cliente_id=c.id AND p.endereco_entrega IS NOT NULL ORDER BY p.id DESC LIMIT 1) endereco,
+            (SELECT json_build_object('cep', end_cep, 'rua', end_rua, 'numero', end_numero, 'bairro', end_bairro, 'cidade', end_cidade, 'complemento', end_complemento, 'referencia', end_referencia)::text
+                FROM pedidos p WHERE p.cliente_id=c.id AND p.end_rua IS NOT NULL ORDER BY p.id DESC LIMIT 1) end_partes,
             (SELECT COUNT(*) FROM pedidos p WHERE p.cliente_id=c.id AND p.status <> 'cancelado') pedidos,
             (SELECT descricao FROM pedidos p WHERE p.cliente_id=c.id AND p.status <> 'cancelado' AND p.tipo='delivery' ORDER BY p.id DESC LIMIT 1) ultimo
         FROM clientes c WHERE c.empresa_id=? AND right(regexp_replace(COALESCE(c.telefone,''), '\D', '', 'g'), 11) = right(?, 11) ORDER BY c.id DESC LIMIT 1");
     $c->execute([$empresaId, $tel]);
     $r = $c->fetch();
+    if ($r) $r['end_partes'] = json_decode((string)$r['end_partes'], true);
     responder_json($r ? ['ok' => true] + $r : ['ok' => false]);
 }
 
@@ -53,11 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancar'])) {
     $nome = mb_substr(trim(strip_tags($_POST['nome'] ?? '')), 0, 150);
     $tel = mb_substr(trim($_POST['telefone'] ?? ''), 0, 20);
     $mesa = $tipo === 'mesa' ? mb_substr(preg_replace('/[^0-9A-Za-z]/', '', (string)($_POST['mesa'] ?? '')), 0, 10) : '';
-    $endereco = $tipo === 'entrega' ? mb_substr(trim(strip_tags($_POST['endereco'] ?? '')), 0, 220) : '';
+    $lim = fn($k, $n) => mb_substr(trim(strip_tags((string)($_POST[$k] ?? ''))), 0, $n);
+    $end = ['cep' => preg_replace('/\D/', '', (string)($_POST['cep'] ?? '')), 'rua' => $lim('rua', 150), 'numero' => !empty($_POST['sem_numero']) ? 'S/N' : $lim('numero', 15),
+            'bairro' => $lim('bairro_txt', 100), 'cidade' => $lim('cidade', 100), 'complemento' => $lim('complemento', 100), 'referencia' => $lim('referencia', 150)];
     $taxa = 0.0;
     if ($tipo === 'entrega') {
         $taxa = (float)($empresa['taxa_entrega'] ?? 0);
-        foreach ($bairros as $b) if ($b['bairro'] === ($_POST['bairro'] ?? '')) { $taxa = $b['taxa']; if (mb_stripos($endereco, $b['bairro']) === false) $endereco = trim($endereco . ' — ' . $b['bairro']); }
+        foreach ($bairros as $b) if ($b['bairro'] === ($_POST['bairro'] ?? '')) { $taxa = $b['taxa']; $end['bairro'] = $b['bairro']; }
         if (isset($_POST['taxa']) && trim($_POST['taxa']) !== '') $taxa = max(0, valor_decimal($_POST['taxa']));
     }
     $desconto = min($subtotal, max(0, valor_decimal($_POST['desconto'] ?? '0')));
@@ -67,7 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancar'])) {
     $obs = mb_substr(trim(strip_tags($_POST['obs'] ?? '')), 0, 500);
     if ($erro === '') {
         if (!$itens) $erro = 'Adicione pelo menos um item.';
-        elseif ($tipo === 'entrega' && mb_strlen($endereco) < 6) $erro = 'Informe o endereço da entrega.';
+        elseif ($tipo === 'entrega' && mb_strlen($end['rua']) < 3) $erro = 'Informe a rua da entrega.';
+        elseif ($tipo === 'entrega' && $end['numero'] === '') $erro = 'Informe o número (ou marque "sem número").';
+        elseif ($tipo === 'entrega' && $end['numero'] === 'S/N' && mb_strlen($end['referencia']) < 4) $erro = 'Sem número: informe um ponto de referência para o entregador.';
+        elseif ($tipo === 'entrega' && $end['bairro'] === '') $erro = 'Informe o bairro.';
         elseif ($tipo === 'mesa' && $mesa === '') $erro = 'Informe o número da mesa.';
         elseif ($troco > 0 && $troco < $total) $erro = 'O troco precisa ser maior que o total.';
     }
@@ -85,6 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancar'])) {
         $n->execute([$empresaId, $nome, $tel ?: null]);
         $clienteId = (int)$n->fetch()['id'];
     }
+    $endereco = $tipo === 'entrega' ? pedido_endereco_texto($end) : '';
     $descricao = implode(', ', array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'], $itens));
     if ($desconto > 0) $obs = trim('Desconto de R$ ' . number_format($desconto, 2, ',', '.') . '. ' . $obs);
     $origem = ['retirada' => 'balcao', 'entrega' => 'telefone', 'mesa' => 'mesa'][$tipo];
@@ -93,6 +102,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancar'])) {
     $ins->execute([$empresaId, $clienteId, $descricao, $total, $origem, json_encode($itens, JSON_UNESCAPED_UNICODE), $tipo === 'mesa' ? 'retirada' : $tipo,
         $endereco ?: null, $pagamento, $troco > 0 ? $troco : null, $taxa, $obs ?: null, bin2hex(random_bytes(16)), $mesa ?: null, !empty($_POST['pago']) ? 'true' : 'false']);
     $id = (int)$ins->fetch()['id'];
+    if ($tipo === 'entrega') {
+        try { $pdo->prepare("UPDATE pedidos SET end_cep=?, end_rua=?, end_numero=?, end_bairro=?, end_cidade=?, end_complemento=?, end_referencia=? WHERE id=?")
+            ->execute([strlen($end['cep']) === 8 ? substr($end['cep'], 0, 5) . '-' . substr($end['cep'], 5) : null, $end['rua'], $end['numero'], $end['bairro'], $end['cidade'] ?: null, $end['complemento'] ?: null, $end['referencia'] ?: null, $id]); } catch (PDOException $e) {}
+    }
+    try { foreach ($itens as $i) $pdo->prepare("UPDATE servicos SET estoque = GREATEST(0, estoque - ?) WHERE id=? AND estoque IS NOT NULL")->execute([$i['qtd'], $i['id']]); } catch (PDOException $e) {}
     // Cliente com WhatsApp recebe a confirmação (mesmo aviso de "em preparo" do site)
     $msg = '';
     if ($telDig !== '' && function_exists('wa_avisar_status_pedido')) { wa_adiar(); $msg = trim(strip_tags(wa_resultado_para_tela(wa_avisar_status_pedido($empresa, $id, 'em_andamento')))); }
@@ -163,8 +177,12 @@ $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
             <p class="pdv-cliente-info" id="clienteInfo"></p>
             <label>Nome do cliente</label><input type="text" id="nome" maxlength="150">
             <div id="blocoEntrega" hidden>
-                <?php if ($bairros): ?><label>Bairro</label><select id="bairro"><option value="">— escolha —</option><?php foreach ($bairros as $b): ?><option value="<?= e($b['bairro']) ?>" data-taxa="<?= $b['taxa'] ?>"><?= e($b['bairro']) ?> (<?= $moeda($b['taxa']) ?>)</option><?php endforeach; ?></select><?php endif; ?>
-                <label>Endereço</label><input type="text" id="endereco" maxlength="220" placeholder="Rua, número, complemento">
+                <div class="form-row"><div><label>CEP</label><input type="text" id="cep" inputmode="numeric" maxlength="9" placeholder="00000-000"></div><div><label>Cidade</label><input type="text" id="cidade" maxlength="100" value="<?= e($empresa['cidade_entrega'] ?? '') ?>"></div></div>
+                <label>Rua</label><input type="text" id="rua" maxlength="150">
+                <div class="form-row"><div><label>Número</label><input type="text" id="numero" maxlength="15"><label class="check" style="margin:4px 0 0;font-size:12px"><input type="checkbox" id="sem_numero"> Sem número</label></div><div><label>Complemento</label><input type="text" id="complemento" maxlength="100" placeholder="Apto, bloco…"></div></div>
+                <?php if ($bairros): ?><label>Bairro</label><select id="bairro"><option value="">— escolha —</option><?php foreach ($bairros as $b): ?><option value="<?= e($b['bairro']) ?>" data-taxa="<?= $b['taxa'] ?>"><?= e($b['bairro']) ?> (<?= $moeda($b['taxa']) ?>)</option><?php endforeach; ?></select>
+                <?php else: ?><label>Bairro</label><input type="text" id="bairro_txt" maxlength="100"><?php endif; ?>
+                <label>Ponto de referência</label><input type="text" id="referencia" maxlength="150" placeholder="Ex.: portão azul, ao lado da padaria">
                 <label>Taxa de entrega (R$)</label><input type="text" id="taxa" inputmode="decimal" value="<?= number_format((float)($empresa['taxa_entrega'] ?? 0), 2, ',', '') ?>">
             </div>
             <div id="blocoMesa" hidden><label>Mesa</label><input type="text" id="mesa" maxlength="10" placeholder="Ex.: 7"></div>
@@ -285,6 +303,19 @@ $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
     ['taxa', 'desconto', 'pagamento'].forEach(function (id) { $(id).addEventListener('input', render); $(id).addEventListener('change', render); });
     if ($('bairro')) $('bairro').onchange = function () { var o = $('bairro').selectedOptions[0]; if (o && o.dataset.taxa) $('taxa').value = Number(o.dataset.taxa).toFixed(2).replace('.', ','); render(); };
     $('busca').oninput = grade;
+    $('cep').addEventListener('input', function () {
+        var d = $('cep').value.replace(/\D/g, ''); if (d.length !== 8) return;
+        $('cep').value = d.slice(0, 5) + '-' + d.slice(5);
+        fetch('https://viacep.com.br/ws/' + d + '/json/').then(function (r) { return r.json(); }).then(function (r) {
+            if (r.erro) return;
+            if (r.logradouro) $('rua').value = r.logradouro;
+            $('cidade').value = r.localidade + '/' + r.uf;
+            if ($('bairro')) { Array.prototype.forEach.call($('bairro').options, function (o) { if (o.value && o.value.toLowerCase() === String(r.bairro).toLowerCase()) { $('bairro').value = o.value; $('bairro').onchange(); } }); }
+            else if ($('bairro_txt')) $('bairro_txt').value = r.bairro;
+            $('numero').focus();
+        }).catch(function () { });
+    });
+    $('sem_numero').onchange = function () { $('numero').disabled = $('sem_numero').checked; if ($('sem_numero').checked) { $('numero').value = ''; $('referencia').focus(); } };
     $('tabs').onclick = function (e) {
         var b = e.target.closest('[data-cat]'); if (!b) return; catAtual = b.dataset.cat;
         $('tabs').querySelectorAll('button').forEach(function (x) { x.classList.toggle('btn-ghost', x !== b); }); grade();
@@ -298,7 +329,13 @@ $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
             fetch('pdv.php?cliente=' + d).then(function (r) { return r.json(); }).then(function (c) {
                 if (!c.ok) { $('clienteInfo').textContent = 'Cliente novo — será cadastrado.'; return; }
                 if (!$('nome').value) $('nome').value = c.nome;
-                if (c.endereco && !$('endereco').value) $('endereco').value = c.endereco;
+                var ep = c.end_partes;
+                if (ep && !$('rua').value) {
+                    $('cep').value = ep.cep || ''; $('rua').value = ep.rua || ''; $('complemento').value = ep.complemento || ''; $('referencia').value = ep.referencia || '';
+                    if (ep.cidade) $('cidade').value = ep.cidade;
+                    if (ep.numero === 'S/N') $('sem_numero').checked = true; else $('numero').value = ep.numero || '';
+                    if ($('bairro') && ep.bairro) { $('bairro').value = ep.bairro; $('bairro').onchange(); } else if ($('bairro_txt')) $('bairro_txt').value = ep.bairro || '';
+                } else if (c.endereco && !$('rua').value) $('rua').value = c.endereco;
                 $('clienteInfo').textContent = '✓ ' + c.nome + ' · ' + c.pedidos + ' pedido(s)' + (c.ultimo ? ' · último: ' + c.ultimo : '');
             });
         }, 350);
@@ -308,7 +345,9 @@ $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
         f.append('csrf_token', csrf); f.append('lancar', '1');
         f.append('itens', JSON.stringify(carrinho.map(function (l) { return { id: l.id, qtd: l.qtd, opcoes: l.opcoes, obs: l.obs }; })));
         f.append('tipo', tipo());
-        ['nome', 'telefone', 'endereco', 'mesa', 'taxa', 'pagamento', 'desconto', 'troco', 'obs'].forEach(function (k) { f.append(k, $(k).value); });
+        ['nome', 'telefone', 'cep', 'cidade', 'rua', 'numero', 'complemento', 'referencia', 'mesa', 'taxa', 'pagamento', 'desconto', 'troco', 'obs'].forEach(function (k) { f.append(k, $(k).value); });
+        if ($('bairro_txt')) f.append('bairro_txt', $('bairro_txt').value);
+        if ($('sem_numero').checked) f.append('sem_numero', '1');
         if ($('bairro')) f.append('bairro', $('bairro').value);
         if ($('pago').checked) f.append('pago', '1');
         b.disabled = true; b.textContent = 'Lançando…'; $('erro').hidden = true;

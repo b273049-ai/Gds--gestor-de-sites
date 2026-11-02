@@ -36,6 +36,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_fidelidade']))
     } catch (PDOException $e) { flash('erro', 'Atualize o banco (Admin → Diagnóstico) para usar esta função.'); }
     header('Location: clientes.php'); exit;
 }
+// Bloquear (trote, calote): não consegue mais pedir pelo site
+if (isset($_GET['bloquear']) || isset($_GET['desbloquear'])) {
+    $cid = (int)($_GET['bloquear'] ?? $_GET['desbloquear']);
+    try { $pdo->prepare("UPDATE clientes SET bloqueado=? WHERE id=? AND empresa_id=?")->execute([isset($_GET['bloquear']) ? 'true' : 'false', $cid, $empresaId]); } catch (PDOException $e) {}
+    flash('sucesso', isset($_GET['bloquear']) ? 'Cliente bloqueado: pedidos pelo site com esse telefone serão recusados.' : 'Cliente desbloqueado.');
+    header('Location: clientes.php?ficha=' . $cid); exit;
+}
 if (isset($_GET['excluir'])) {
     $pdo->prepare("DELETE FROM clientes WHERE id=? AND empresa_id=?")->execute([(int)$_GET['excluir'], $empresaId]);
     flash('sucesso', 'Cliente excluído.');
@@ -142,13 +149,15 @@ if (isset($_GET['editar'])) { $e = $pdo->prepare("SELECT * FROM clientes WHERE i
         <div class="ficha-topo">
             <div class="ficha-avatar"><?= e(mb_strtoupper(mb_substr($ficha['nome'], 0, 1))) ?></div>
             <div style="flex:1;min-width:200px">
-                <h2 style="margin:0"><?= e($ficha['nome']) ?> <?= $niver ? '🎂' : '' ?></h2>
+                <h2 style="margin:0"><?= e($ficha['nome']) ?> <?= $niver ? '🎂' : '' ?><?= pg_bool($ficha['bloqueado'] ?? false) ? ' <span class="pill pill-aviso">🚫 bloqueado</span>' : '' ?></h2>
                 <div class="muted"><?= e($ficha['telefone'] ?: 'sem telefone') ?><?= $ficha['email'] ? ' · ' . e($ficha['email']) : '' ?><?= $idade !== null ? ' · ' . $idade . ' anos (' . date('d/m', strtotime($ficha['nascimento'])) . ')' : '' ?> · cliente desde <?= date('m/Y', strtotime($ficha['criado_em'])) ?></div>
                 <?php if (!empty($ficha['etiquetas'])): ?><div style="margin-top:6px"><?php foreach (explode(',', $ficha['etiquetas']) as $t): ?><a class="pill pill-neutro" href="?etiqueta=<?= urlencode(trim($t)) ?>"><?= e(trim($t)) ?></a> <?php endforeach; ?></div><?php endif; ?>
             </div>
             <div class="acoes" style="display:flex;gap:6px;flex-wrap:wrap">
                 <?php if ($ficha['telefone']): ?><a class="btn btn-sm" target="_blank" href="<?= e(link_whatsapp($ficha['telefone'], 'Oi, ' . $prim . '!')) ?>"><?= icone('chat', 14) ?> WhatsApp</a><?php endif; ?>
                 <a class="btn btn-ghost btn-sm" href="?editar=<?= $cid ?>#form"><?= icone('lapis', 14) ?> Editar ficha</a>
+                <?php if (pg_bool($ficha['bloqueado'] ?? false)): ?><a class="btn btn-sm" href="?desbloquear=<?= $cid ?><?= csrf_qs() ?>">🔓 Desbloquear</a>
+                <?php else: ?><a class="btn btn-ghost btn-sm" href="?bloquear=<?= $cid ?><?= csrf_qs() ?>" onclick="return confirm('Bloquear este cliente? Ele não vai conseguir fazer pedidos pelo site (útil para trote e calote).')">🚫 Bloquear</a><?php endif; ?>
                 <a class="btn btn-ghost btn-sm" href="clientes.php">← Todos</a>
             </div>
         </div>
