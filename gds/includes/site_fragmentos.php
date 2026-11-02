@@ -594,7 +594,7 @@ function frag_css_apoio($tema = []) {
     return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=7">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
-         . '<script src="/assets/js/gds-site.js?v=7" defer></script>'
+         . '<script src="/assets/js/gds-site.js?v=8" defer></script>'
          . '<script src="/assets/js/gds-motion.js?v=1" defer></script>';
 }
 
@@ -619,6 +619,9 @@ function frag_carrinho($empresa, $estado = [], $servicos = []) {
     $taxa = (float)($empresa['taxa_entrega'] ?? 0);
     $bairros = delivery_bairros($empresa);
     $minimo = (float)($empresa['pedido_minimo'] ?? 0);
+    // Cupom no carrinho: o campo só aparece se a loja tiver algum cupom ativo
+    $temCupom = false;
+    try { global $pdo; $q = $pdo->prepare("SELECT 1 FROM cupons WHERE empresa_id=? AND ativo=true AND (validade IS NULL OR validade >= CURRENT_DATE) LIMIT 1"); $q->execute([(int)$empresa['id']]); $temCupom = (bool)$q->fetchColumn(); } catch (Throwable $e) {}
     $entrega = !isset($empresa['aceita_entrega']) || $empresa['aceita_entrega'] === null || pg_bool($empresa['aceita_entrega']);
     $retirada = !isset($empresa['aceita_retirada']) || $empresa['aceita_retirada'] === null || pg_bool($empresa['aceita_retirada']);
     $formas = array_values(array_filter(array_map('trim', explode(',', (string)($empresa['formas_pagamento'] ?? '') ?: 'Pix, Cartão na entrega, Dinheiro'))));
@@ -642,6 +645,7 @@ function frag_carrinho($empresa, $estado = [], $servicos = []) {
                . (!empty($d['wa_automatico']) ? '<p class="gds-aviso-wa">' . frag_icone('whats') . ' Você vai receber as atualizações no seu WhatsApp.</p>' : '')
                . '<div class="gds-resumo">';
         foreach ($d['itens'] as $i) $html .= '<div><span>' . (int)$i['qtd'] . '× ' . e($i['nome']) . '</span><span>' . e(frag_preco($i['preco'] * $i['qtd'])) . '</span></div>';
+        if (!empty($d['desconto'])) $html .= '<div><span>Cupom ' . e($d['cupom'] ?? '') . '</span><span>−' . e(frag_preco($d['desconto'])) . '</span></div>';
         if ($d['taxa'] > 0) $html .= '<div><span>Entrega</span><span>' . e(frag_preco($d['taxa'])) . '</span></div>';
         $html .= '<div class="gds-total"><span>Total</span><span>' . e(frag_preco($d['total'])) . '</span></div></div>'
                . (!empty($d['pix']) ? frag_pix_pagamento($d['pix'], 'Pague o pedido com Pix') : '')
@@ -694,9 +698,11 @@ function frag_carrinho($empresa, $estado = [], $servicos = []) {
            . '<div class="gds-linha2"><div class="gds-campo"><label for="pd_pagamento">Pagamento</label><select id="pd_pagamento" name="pd_pagamento" data-gds-pagamento>';
     foreach ($formas as $f) $html .= '<option' . (($p['pd_pagamento'] ?? '') === $f ? ' selected' : '') . '>' . e($f) . '</option>';
     $html .= '</select></div><div class="gds-campo" data-gds-troco hidden><label for="pd_troco">Troco para quanto?</label><input type="text" id="pd_troco" name="pd_troco" inputmode="decimal" placeholder="Ex: 100" value="' . e($p['pd_troco'] ?? '') . '"></div></div>'
+           . ($temCupom ? '<div class="gds-campo"><label for="pd_cupom">Cupom de desconto</label><div class="gds-cupom-campo"><input type="text" id="pd_cupom" name="pd_cupom" maxlength="30" autocomplete="off" data-gds-pd-cupom value="' . e($p['pd_cupom'] ?? '') . '"><button type="button" class="gds-btn-2" data-gds-pd-aplicar>Aplicar</button></div><p class="gds-cupom-msg" data-gds-pd-cupom-msg aria-live="polite"></p></div>' : '')
            . '<div class="gds-campo"><label for="pd_obs">Observações (opcional)</label><textarea id="pd_obs" name="pd_obs" rows="2" maxlength="500" placeholder="Ex: sem cebola, ponto da carne, portão azul">' . e($p['pd_obs'] ?? '') . '</textarea></div>'
            . frag_honeypot()
            . '</div><div class="gds-carrinho-rodape"><div class="gds-carrinho-totais"><div><span>Subtotal</span><span data-gds-subtotal>R$ 0,00</span></div>'
+           . '<div data-gds-linha-desc hidden><span>Cupom</span><span data-gds-desc></span></div>'
            . '<div data-gds-linha-taxa><span>Entrega</span><span data-gds-taxa>' . e(frag_preco($taxa)) . '</span></div>'
            . '<div class="gds-total"><span>Total</span><strong data-gds-total>R$ 0,00</strong></div></div>'
            . ($minimo > 0 ? '<p class="gds-mute gds-carrinho-minimo" data-gds-minimo-aviso hidden>Pedido mínimo: ' . e(frag_preco($minimo)) . '</p>' : '')

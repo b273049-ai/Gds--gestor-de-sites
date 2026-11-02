@@ -65,7 +65,7 @@ function wa_eventos() {
         'pedido_saiu' => ['grupo' => 'Pedidos / Delivery', 'rotulo' => 'Saiu para entrega', 'quando' => 'Quando você marca o pedido como "Saiu para entrega"',
             'texto' => "🛵 {nome}, seu pedido nº {codigo} *saiu para entrega*! Chega já já."],
         'pedido_concluido' => ['grupo' => 'Pedidos / Delivery', 'rotulo' => 'Pedido entregue / concluído', 'quando' => 'Quando você marca o pedido como "Concluído"',
-            'texto' => "Obrigado pela preferência, {nome}! 💙 Esperamos que tenha gostado. Volte sempre à *{empresa}*!"],
+            'texto' => "Obrigado pela preferência, {nome}! 💙 Esperamos que tenha gostado.\nConta pra gente como foi (leva 10 segundos): {link}"],
         'pedido_cancelado' => ['grupo' => 'Pedidos / Delivery', 'rotulo' => 'Pedido cancelado', 'quando' => 'Quando você cancela um pedido ou orçamento',
             'texto' => "{nome}, seu pedido nº {codigo} na *{empresa}* foi *cancelado*. {mensagem}\nQualquer dúvida, responda esta mensagem."],
 
@@ -529,7 +529,9 @@ function wa_avisar_status_pedido($empresa, $pedidoId, $status) {
         'cancelado' => 'pedido_cancelado',
     ][$status] ?? null;
     if (!$evento) return null;
-    return wa_notificar_cliente($empresa, $evento, $p['telefone'], wa_vars_pedido($p, $empresa), 'pedido', $p['id']);
+    $v = wa_vars_pedido($p, $empresa);
+    if ($evento === 'pedido_concluido') $v['link'] = wa_url_publica($empresa) . '#avaliacoes'; // pede a avaliação
+    return wa_notificar_cliente($empresa, $evento, $p['telefone'], $v, 'pedido', $p['id']);
 }
 
 function wa_avisar_status_agendamento($empresa, $agId, $status) {

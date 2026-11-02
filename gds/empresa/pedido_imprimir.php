@@ -49,6 +49,7 @@ $subtotal = array_sum(array_map(fn($i) => $i['preco'] * $i['qtd'], $itens));
         <?php foreach ($itens as $i): ?><tr><td><?= (int)$i['qtd'] ?>x <?= e($i['nome']) ?></td><td><?= $moeda($i['preco'] * $i['qtd']) ?></td></tr><?php endforeach; ?>
         <tr><td colspan="2"><hr></td></tr>
         <tr><td>Subtotal</td><td><?= $moeda($subtotal) ?></td></tr>
+        <?php if ((float)($p['desconto'] ?? 0) > 0): ?><tr><td>Cupom <?= e($p['cupom_codigo'] ?? '') ?></td><td>−<?= $moeda($p['desconto']) ?></td></tr><?php endif; ?>
         <?php if ((float)$p['taxa_entrega'] > 0): ?><tr><td>Entrega</td><td><?= $moeda($p['taxa_entrega']) ?></td></tr><?php endif; ?>
         <tr class="total"><td>TOTAL</td><td><?= $moeda($p['valor']) ?></td></tr>
     </table>

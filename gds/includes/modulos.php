@@ -23,7 +23,7 @@ function modulos_padrao($modo) {
     return [
         'agendamento' => ['agenda', 'equipe', 'cupons', 'avaliacoes', 'pix'],
         'orcamento'   => ['orcamentos', 'avaliacoes'],
-        'catalogo'    => ['delivery', 'avaliacoes'],
+        'catalogo'    => ['delivery', 'cupons', 'avaliacoes'],
         'contato'     => ['avaliacoes'],
     ][$modo] ?? ['agenda', 'avaliacoes'];
 }

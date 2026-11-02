@@ -123,6 +123,7 @@ main{width:100%;max-width:520px}
             <?php endforeach; else: ?>
                 <div><span>Pedido</span><span style="white-space:pre-line;text-align:right"><?= e($p['servico_nome'] ?: $p['descricao']) ?></span></div>
             <?php endif; ?>
+            <?php if ($delivery && (float)($p['desconto'] ?? 0) > 0): ?><div><span>Cupom <?= e($p['cupom_codigo'] ?? '') ?></span><span>−R$ <?= number_format((float)$p['desconto'], 2, ',', '.') ?></span></div><?php endif; ?>
             <?php if ($delivery && (float)$p['taxa_entrega'] > 0): ?><div><span>Entrega</span><span>R$ <?= number_format((float)$p['taxa_entrega'], 2, ',', '.') ?></span></div><?php endif; ?>
             <?php if ($delivery && !empty($p['mesa'])): ?><div><span>Consumo no local</span><span>Mesa <?= e($p['mesa']) ?></span></div>
             <?php elseif ($delivery): ?><div><span><?= $p['tipo_entrega'] === 'retirada' ? 'Retirada' : 'Entrega em' ?></span><span><?= e($p['tipo_entrega'] === 'retirada' ? ($p['endereco'] ?: 'no local') : $p['endereco_entrega']) ?></span></div><?php endif; ?>
@@ -143,6 +144,10 @@ main{width:100%;max-width:520px}
                 <div class="gds-campo" style="margin:0"><label for="aceite_nome">Seu nome completo (fica registrado como aceite)</label><input type="text" id="aceite_nome" name="aceite_nome" required maxlength="150" value="<?= e($p['cliente_nome']) ?>"></div>
                 <?php if ((int)($p['orc_sinal_percentual'] ?? 0) > 0 && (float)$p['valor'] > 0 && pag_disponivel(['id' => $p['emp_id']] + $p)): ?><p class="gds-mute" style="font-size:.85rem;margin:0">Para reservar, o sinal de <?= (int)$p['orc_sinal_percentual'] ?>% (<?= e(frag_preco(round((float)$p['valor'] * (int)$p['orc_sinal_percentual'] / 100, 2))) ?>) é pago por Pix logo depois de aprovar.</p><?php endif; ?>
                 <button type="submit" name="aprovar" value="1" class="gds-btn"><?= frag_icone('check') ?> Aprovar orçamento</button></form>
+            <?php endif; ?>
+            <?php if ($delivery && $itens && empty($p['mesa']) && in_array($p['status'], ['concluido', 'saiu_entrega', 'pronto'], true)):
+                $rep = array_map(fn($i) => ['id' => (int)($i['id'] ?? 0), 'qtd' => (int)($i['qtd'] ?? 1), 'opcoes' => $i['opcoes'] ?? [], 'nome' => (string)($i['nome'] ?? ''), 'preco' => (float)($i['preco'] ?? 0)], array_filter($itens, fn($i) => !empty($i['id']))); ?>
+            <?php if ($rep): ?><a class="gds-btn" href="/<?= e($p['slug']) ?>#gds-repetir=<?= e(rawurlencode(json_encode(array_values($rep), JSON_UNESCAPED_UNICODE))) ?>">🔁 Pedir de novo</a><?php endif; ?>
             <?php endif; ?>
             <?php if ($p['whatsapp']): ?><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="<?= e(frag_link_whatsapp($p['whatsapp'], 'Olá! Sobre o meu ' . ($delivery ? 'pedido' : 'orçamento') . ' nº ' . $p['id'] . ':')) ?>"><?= frag_icone('whats') ?> Falar com a empresa</a><?php endif; ?>
         </div>

@@ -45,3 +45,20 @@ function pedido_proxima_etapa($p) {
         default => null,
     };
 }
+
+// Mensagem de WhatsApp para o entregador: cliente, endereço com rota no Maps e quanto cobrar
+function pedido_link_entregador($empresa, $pedidoId, $entregador) {
+    global $pdo;
+    if (empty($entregador['telefone'])) return null;
+    $st = $pdo->prepare("SELECT p.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone FROM pedidos p LEFT JOIN clientes c ON c.id=p.cliente_id WHERE p.id=? AND p.empresa_id=?");
+    $st->execute([(int)$pedidoId, (int)$empresa['id']]);
+    $p = $st->fetch();
+    if (!$p) return null;
+    $din = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
+    $online = pg_bool($p['pago'] ?? false) || stripos((string)$p['forma_pagamento'], 'pix pelo site') !== false || stripos((string)$p['forma_pagamento'], 'online') !== false;
+    $l = ['🛵 *Entrega nº ' . $p['id'] . '* — ' . $empresa['nome'], '', '👤 ' . ($p['cliente_nome'] ?: 'Cliente') . ($p['cliente_telefone'] ? ' · ' . $p['cliente_telefone'] : '')];
+    if ($p['endereco_entrega']) { $l[] = '📍 ' . $p['endereco_entrega']; $l[] = '🗺 https://www.google.com/maps/dir/?api=1&destination=' . rawurlencode($p['endereco_entrega']); }
+    $l[] = $online ? '✅ Já está pago' : '💰 Cobrar ' . $din($p['valor']) . ' (' . $p['forma_pagamento'] . ')' . ($p['troco_para'] ? ' — levar troco para ' . $din($p['troco_para']) : '');
+    if ($p['observacoes']) $l[] = '📝 ' . $p['observacoes'];
+    return link_whatsapp($entregador['telefone'], implode("\n", $l));
+}

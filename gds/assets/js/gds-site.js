@@ -449,6 +449,7 @@
         }
         var subtotal = function () { return itens.reduce(function (t, i) { return t + i.preco * i.qtd; }, 0); };
         var qtdTotal = function () { return itens.reduce(function (t, i) { return t + i.qtd; }, 0); };
+        var cupomPct = 0;
         var ehEntrega = function () { var r = form && $('input[name=pd_tipo_entrega]:checked', form); return r ? r.value === 'entrega' : false; };
 
         function abrir() { painel.hidden = false; fundo.hidden = false; document.documentElement.classList.add('gds-sem-rolagem'); var f = $('button, input', painel); if (f) setTimeout(function () { f.focus(); }, 50); }
@@ -482,7 +483,16 @@
             var linhaTaxa = $('[data-gds-linha-taxa]', form);
             linhaTaxa.hidden = !ehEntrega();
             $('[data-gds-taxa]', form).textContent = t > 0 ? dinheiro(t) : 'Grátis';
-            $('[data-gds-total]', form).textContent = dinheiro(sub + t);
+            var desc = Math.round(sub * cupomPct) / 100, linhaD = $('[data-gds-linha-desc]', form);
+            if (linhaD) { linhaD.hidden = !desc; $('[data-gds-desc]', form).textContent = '−' + dinheiro(desc); }
+            $('[data-gds-total]', form).textContent = dinheiro(sub - desc + t);
+            // "Peça também" não sugere o que já está no pedido
+            var sug = $('[data-gds-sugestoes]', form);
+            if (sug) {
+                var visiveis = 0;
+                $$('[data-gds-add]', sug).forEach(function (b) { var tem = itens.some(function (i) { return String(i.id) === b.getAttribute('data-gds-add'); }); b.hidden = tem; if (!tem) visiveis++; });
+                sug.hidden = visiveis === 0;
+            }
             var end = $('[data-gds-endereco]', form);
             if (end) { end.hidden = !ehEntrega(); $('input', end).required = ehEntrega(); }
             var abaixo = minimo > 0 && sub < minimo;
@@ -491,6 +501,38 @@
             $('[data-gds-finalizar]', form).disabled = itens.length === 0 || abaixo;
             $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco, opcoes: i.opcoes || [] }; }));
         }
+
+        // Cupom no carrinho: confere no servidor e mostra o desconto (o servidor recalcula ao finalizar)
+        if (form && $('[data-gds-pd-aplicar]', form)) {
+            var campoC = $('[data-gds-pd-cupom]', form), msgC = $('[data-gds-pd-cupom-msg]', form);
+            var aplicarC = function () {
+                var cod = campoC.value.trim();
+                if (!cod) { cupomPct = 0; msgC.textContent = ''; render(); return; }
+                fetch('/site/cupom.php?e=' + raiz.getAttribute('data-empresa') + '&c=' + encodeURIComponent(cod)).then(function (r) { return r.json(); }).then(function (r) {
+                    cupomPct = r.ok ? r.desconto : 0; msgC.textContent = r.ok ? '✓ ' + String(r.desconto).replace('.', ',') + '% de desconto aplicado' : r.erro; msgC.className = 'gds-cupom-msg ' + (r.ok ? 'ok' : 'erro'); render();
+                }).catch(function () { });
+            };
+            $('[data-gds-pd-aplicar]', form).addEventListener('click', aplicarC);
+            campoC.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); aplicarC(); } });
+            if (campoC.value.trim()) aplicarC();
+        }
+        // "Pedir de novo" (link do acompanhamento): #gds-repetir=[{id,qtd,opcoes,nome,preco}]
+        (function () {
+            var m = location.hash.match(/^#gds-repetir=(.+)$/);
+            if (!m) return;
+            try {
+                var lista = JSON.parse(decodeURIComponent(m[1])), novos = [];
+                lista.forEach(function (x) {
+                    var b = document.querySelector('[data-gds-add="' + parseInt(x.id, 10) + '"]');
+                    if (!b || b.disabled) return; // saiu do cardápio ou esgotou
+                    var semOp = !(x.opcoes && x.opcoes.length);
+                    novos.push({ id: parseInt(x.id, 10), nome: semOp ? b.getAttribute('data-nome') : String(x.nome || ''), preco: semOp ? parseFloat(b.getAttribute('data-preco')) || 0 : parseFloat(x.preco) || 0, qtd: Math.max(1, Math.min(99, parseInt(x.qtd, 10) || 1)), opcoes: x.opcoes || [] });
+                });
+                if (novos.length) { itens = novos; gravar(); }
+                history.replaceState(null, '', location.pathname + location.search);
+                if (novos.length) setTimeout(function () { render(); abrir(); }, 300);
+            } catch (e) { }
+        })();
 
         // Item com opções (adicionais, ponto, meio a meio, tamanho...): janela de escolha com preço ao vivo
         function escolherOpcoes(b, grupos, pronto) {

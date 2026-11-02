@@ -14,6 +14,7 @@ $mods = modulos_atuais();
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/agenda.php', 'agenda.php', 'calendario', 'Agenda') ?><?php endif; ?>
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/caixa.php', 'caixa.php', 'dinheiro', 'Caixa e comandas') ?><?php endif; ?>
         <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/gestor.php', 'gestor.php', 'pacote', 'Gestor de pedidos', 'destaque') ?><?php endif; ?>
+        <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/pdv.php', 'pdv.php', 'mais', 'Novo pedido (balcão)') ?><?= menu_item('/empresa/entregas.php', 'entregas.php', 'dinheiro', 'Entregas e fechamento') ?><?php endif; ?>
         <?php if (modulo_ativo('delivery') || modulo_ativo('orcamentos')): ?><?= menu_item('/empresa/pedidos.php', 'pedidos.php', modulo_ativo('delivery') ? 'pacote' : 'prancheta', modulos_rotulo_pedidos()) ?><?php endif; ?>
         <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/mesas.php', 'mesas.php', 'layout', 'QR Code das mesas') ?><?php endif; ?>
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/clube.php', 'clube.php', 'estrela', 'Clube e pacotes') ?><?php endif; ?>
