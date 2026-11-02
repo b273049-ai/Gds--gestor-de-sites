@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
+require_once __DIR__ . '/../includes/inteligencia.php';
 
 $erro = '';
 $form = [];
@@ -77,6 +78,10 @@ $stmt = $pdo->prepare("
     ORDER BY e.criado_em DESC");
 $stmt->execute($params);
 $empresas = $stmt->fetchAll();
+// Saúde de cada cliente (risco de cancelar) e o que dá para vender a mais
+$saudePorId = []; foreach (intel_saude_empresas() as $sx) $saudePorId[$sx['id']] = $sx;
+$filtroSaude = in_array($_GET['saude'] ?? '', ['alto', 'medio', 'baixo'], true) ? $_GET['saude'] : '';
+if ($filtroSaude) $empresas = array_values(array_filter($empresas, fn($x) => ($saudePorId[$x['id']]['risco'] ?? '') === $filtroSaude));
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -120,17 +125,26 @@ $empresas = $stmt->fetchAll();
         <select name="status" onchange="this.form.submit()">
             <option value="">Todos os status</option>
             <?php foreach (['ativo' => 'Ativo', 'pendente' => 'Pendente', 'suspenso' => 'Suspenso', 'cancelado' => 'Cancelado'] as $v => $l): ?><option value="<?= $v ?>" <?= $filtroStatus === $v ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?>
+            </select>
+            <select name="saude" onchange="this.form.submit()"><option value="">Toda a saúde</option>
+            <?php foreach (['alto' => '🚨 Risco alto', 'medio' => '⚠ Atenção', 'baixo' => '💚 Saudáveis'] as $v => $l): ?><option value="<?= $v ?>" <?= $filtroSaude === $v ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?>
         </select>
         <button class="btn btn-ghost">Filtrar</button>
         <?php if ($busca || $filtroStatus): ?><a class="link" href="empresas.php">limpar</a><?php endif; ?>
     </form>
 
     <div class="tabela-wrap"><table>
-        <thead><tr><th>Empresa</th><th>Segmento / Plano</th><th>Status</th><th>Vencimento</th><th>Site</th><th></th></tr></thead>
+        <thead><tr><th>Empresa</th><th>Saúde</th><th>Segmento / Plano</th><th>Status</th><th>Vencimento</th><th>Site</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($empresas as $emp): ?>
         <tr>
             <td><strong><?= e($emp['nome']) ?></strong><span class="mini"><?= e($emp['email']) ?></span></td>
+            <td><?php $sx = $saudePorId[$emp['id']] ?? null; if ($sx): ?>
+                <span class="pill <?= ['alto' => 'pill-aviso', 'medio' => 'pill-neutro', 'baixo' => 'pill-ok'][$sx['risco']] ?>" title="<?= e(implode(' · ', array_merge($sx['bom'], $sx['ruim']))) ?>"><?= $sx['pontos'] ?> · <?= ['alto' => 'risco alto', 'medio' => 'atenção', 'baixo' => 'saudável'][$sx['risco']] ?></span>
+                <span class="mini"><?= e($sx['ruim'][0] ?? ($sx['bom'][0] ?? '')) ?></span>
+                <?php if ($sx['sugestoes']): ?><span class="mini" title="Venda extra sugerida">💡 <?= e($sx['sugestoes'][0]) ?></span><?php endif; ?>
+                <?php if ($sx['whatsapp']): ?><a class="link mini" target="_blank" rel="noopener" href="https://wa.me/<?= e((strlen($sx['whatsapp']) <= 11 ? '55' : '') . $sx['whatsapp']) ?>?text=<?= rawurlencode($sx['mensagem']) ?>">💬 mensagem pronta</a><?php endif; ?>
+            <?php else: ?>—<?php endif; ?></td>
             <td><?= e($emp['segmento_nome'] ?? '—') ?><span class="mini"><?= e($emp['plano_nome'] ?? 'sem plano') ?></span></td>
             <td><span class="badge badge-<?= e($emp['status']) ?>"><?= e($emp['status']) ?></span></td>
             <td><?php if ($emp['vencimento']): $venc = strtotime($emp['vencimento']); ?><span style="color:<?= $venc < time() ? 'var(--danger)' : 'inherit' ?>"><?= date('d/m/Y', $venc) ?></span><?php else: ?>—<?php endif; ?></td>
@@ -145,7 +159,7 @@ $empresas = $stmt->fetchAll();
             </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (!$empresas): ?><tr class="vazio"><td colspan="6">Nenhuma empresa encontrada.</td></tr><?php endif; ?>
+        <?php if (!$empresas): ?><tr class="vazio"><td colspan="7">Nenhuma empresa encontrada.</td></tr><?php endif; ?>
         </tbody>
     </table></div>
 </main>

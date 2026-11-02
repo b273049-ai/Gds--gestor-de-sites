@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
+require_once __DIR__ . '/../includes/marketing_banco.php';
 
 // Ideias de conteúdo que vendem sites para negócios locais
 $objetivos = [
@@ -12,6 +13,7 @@ $objetivos = [
     'educativo'    => 'Dica educativa (Google, Instagram x site, confiança)',
     'bastidores'   => 'Bastidores: site sendo criado com IA em minutos',
     'objecao'      => 'Quebrar objeção ("é caro", "não preciso", "Instagram basta")',
+    'dados'        => 'Dados reais da sua base (números verdadeiros da prospecção)',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
@@ -25,12 +27,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             set_config('mkt_escuro', ($_POST['mkt_escuro'] ?? '1') === '1' ? '1' : '0');
             responder_json(['ok' => true]);
         case 'gerar_post':
-            if (!ia_configurada()) responder_json(['ok' => false, 'erro' => 'Configure a IA em Configurações primeiro.']);
-            $obj = $objetivos[$_POST['objetivo'] ?? ''] ?? trim($_POST['objetivo'] ?? 'Divulgar a plataforma');
+            $chaveObj = (string)($_POST['objetivo'] ?? '');
+            $obj = $objetivos[$chaveObj] ?? trim($_POST['objetivo'] ?? 'Divulgar a plataforma');
             $publico = trim($_POST['publico'] ?? '') ?: 'pequenos negócios locais em geral';
             $formato = in_array($_POST['formato'] ?? '', ['feed', 'story', 'quadrado'], true) ? $_POST['formato'] : 'feed';
             $extra = mb_substr(trim($_POST['extra'] ?? ''), 0, 400);
             $preco = get_config('mkt_preco', '');
+            $dadosReais = $chaveObj === 'dados' ? mkt_dados_reais(trim($_POST['publico'] ?? '')) : null;
+            if ($chaveObj === 'dados' && !$dadosReais) responder_json(['ok' => false, 'erro' => 'Ainda não há dados suficientes desse público na Prospecção (precisa de pelo menos 8 empresas numa cidade). Rode uma caçada ou deixe o público em branco.']);
+            // Sem chave de IA: banco de posts prontos (ou o post com os números reais)
+            if (!ia_configurada() || !empty($_POST['sem_ia'])) {
+                $d = $dadosReais ? mkt_post_dados($dadosReais, $marca) : mkt_post_sem_ia($chaveObj, trim($_POST['publico'] ?? ''), $marca, $preco);
+                $pdo->prepare("INSERT INTO marketing_posts (rede, formato, tema, conteudo) VALUES (?,?,?,?)")
+                    ->execute(['instagram/tiktok', $formato, mb_substr($obj, 0, 150), json_encode($d, JSON_UNESCAPED_UNICODE)]);
+                responder_json(['ok' => true, 'post' => $d, 'formato' => $formato, 'origem' => $d['origem']]);
+            }
+            if ($dadosReais) $extra = trim($extra . ' DADO REAL (use exatamente estes números, sem arredondar nem inventar outros): ' . $dadosReais['frase']);
             $prompt = <<<PROMPT
 Você é um social media e copywriter de resposta direta especialista em vender serviços para pequenos negócios brasileiros.
 Crie UM post para Instagram/TikTok que venda a plataforma "$marca": sites profissionais para negócios locais, criados
@@ -69,7 +81,7 @@ PROMPT;
                 ->execute(['instagram/tiktok', $formato, mb_substr($obj, 0, 150), json_encode($d, JSON_UNESCAPED_UNICODE)]);
             responder_json(['ok' => true, 'post' => $d, 'formato' => $formato]);
         case 'gerar_semana':
-            if (!ia_configurada()) responder_json(['ok' => false, 'erro' => 'Configure a IA em Configurações primeiro.']);
+            if (!ia_configurada()) responder_json(['ok' => true, 'dias' => mkt_semana_sem_ia(trim($_POST['publico'] ?? '')), 'origem' => 'banco']);
             $publico = trim($_POST['publico'] ?? '') ?: 'pequenos negócios locais';
             $prompt = "Você é estrategista de conteúdo. Monte o calendário de 7 dias de posts (Instagram + TikTok) para vender a plataforma \"$marca\" "
                     . "(sites com IA para negócios locais, agendamento, WhatsApp automático, orçamento, delivery, domínio próprio) para o público: $publico. "
@@ -151,7 +163,7 @@ textarea.mkt-legenda { min-height: 160px; }
     <div class="page-header"><div><h1>Marketing com IA</h1>
         <p class="subtitulo">Gere posts prontos para vender os sites: arte (PNG), vídeo para Reels/TikTok, legenda, hashtags e roteiro. Tudo com a IA configurada na plataforma.</p></div></div>
     <?= flash_render() ?>
-    <?php if (!ia_configurada()): ?><?= alerta('aviso', 'Configure a IA em Configurações para gerar os textos. Você ainda pode montar as artes à mão.') ?><?php endif; ?>
+    <?php if (!ia_configurada()): ?><?= alerta('aviso', 'Sem chave de IA, os posts saem do banco de posts prontos da plataforma (variando modelo, estilo e roteiro) e dos dados reais da sua prospecção. Com a IA ligada (o Google Gemini é grátis), cada post é escrito sob medida.') ?><?php endif; ?>
 
     <div class="mkt-grade">
     <div>
@@ -165,7 +177,7 @@ textarea.mkt-legenda { min-height: 160px; }
             </div>
             <label>Observações (opcional)</label><input type="text" id="extra" placeholder="Ex: promoção de lançamento até sexta, foco em agendamento">
             <div class="mkt-acoes">
-                <button type="button" class="btn" id="btnGerar" onclick="MKT.gerar()"><?= icone('brilho', 16) ?> Gerar post com IA</button>
+                <button type="button" class="btn" id="btnGerar" onclick="MKT.gerar()"><?= icone('brilho', 16) ?> <?= ia_configurada() ? 'Gerar post com IA' : 'Gerar post' ?></button>
                 <button type="button" class="btn btn-ghost" onclick="MKT.semana()"><?= icone('calendario', 16) ?> Plano da semana</button>
             </div>
         </section>
@@ -373,7 +385,7 @@ const MKT = (() => {
         const r = await api({ acao: 'gerar_post', objetivo: $('objetivo').value, publico: $('publico').value, formato: $('formato').value, extra: $('extra').value });
         b.disabled = false; b.innerHTML = txt;
         if (!r.ok) { toast(r.erro, 'erro'); return; }
-        mostrarPost(r.post); toast('Post criado! Ajuste o que quiser e baixe.', 'sucesso');
+        mostrarPost(r.post); toast(r.origem === 'dados' ? 'Post criado com números reais da sua prospecção!' : r.origem === 'banco' ? 'Post pronto do banco da plataforma (sem IA). Ajuste o que quiser e baixe.' : 'Post criado! Ajuste o que quiser e baixe.', 'sucesso');
     }
     async function semana() {
         toast('Montando a semana…');

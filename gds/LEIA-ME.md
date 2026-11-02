@@ -169,7 +169,22 @@ link da bio). Mais: faturamento, ticket médio, mais vendidos e **comissão por 
   **taxa por bairro** (Configurações → Pedidos pelo site), **alerta sonoro** de pedido novo e **comanda para
   impressora térmica** (botão Imprimir em cada pedido).
 
+## Central de inteligência (Admin)
+Funciona sem chave de IA. Com a IA ligada, o briefing fica mais detalhado.
+- **Dashboard**: *briefing do dia*, *próximas ações* em ordem do dinheiro em jogo (mensalidades atrasadas, quem
+  clicou "Quero este site", quem abriu a prévia, quem respondeu, clientes em risco, sites em rascunho, falhas de
+  WhatsApp), *previsão de receita* para 30/60/90 dias e *saúde dos clientes*.
+- **Saúde do cliente (0–100)**: uso do painel, site no ar, visitas, agendamentos/pedidos/contatos pelo site,
+  pagamento em dia e recursos ligados. Mostra o risco de cancelar, o motivo, uma venda extra sugerida (domínio,
+  Pix, WhatsApp) e uma mensagem pronta para chamar o cliente. Filtro por saúde em Empresas.
+- **Relatórios**: funil de vendas (empresas vistas → chamadas → abriram a prévia → responderam → clientes) e previsão.
+- **Prospecção que aprende**: taxa de resposta por segmento, por horário e por dia ("seus leads respondem mais
+  entre 10h e 12h"). A 2ª mensagem cita o que os clientes mais elogiam nas avaliações do Google.
+
 ## Marketing com IA (Admin)
+Sem chave de IA, os posts saem de um **banco de posts prontos** (8 objetivos, com arte, legenda, hashtags e
+roteiro) e do objetivo **"Dados reais da sua base"**, com números verdadeiros da prospecção (ex.: "80% das
+empresas de Jundiaí não têm site"). Com a IA ligada, cada post é escrito sob medida.
 A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e o estilo. A tela:
 - gera **foto exclusiva com IA**, busca no **banco de fotos** ou usa a sua;
 - monta a arte em **9 modelos** (foto + título, foto + bloco, pergunta, número gigante, impacto, lista, antes × depois,
