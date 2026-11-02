@@ -462,7 +462,14 @@ function site_processar_pedido($empresa, $dados) {
         foreach ($bairros as $b) if ($b['bairro'] === ($_POST['pd_bairro'] ?? '')) $bairro = $b;
         if ($bairro) { $taxa = $bairro['taxa']; if (mb_stripos($endereco, $bairro['bairro']) === false) $endereco = trim($endereco . ' — ' . $bairro['bairro']); }
     }
-    $total = round($subtotal + $taxa, 2);
+    // Cupom de desconto (vale sobre os itens, não sobre a entrega)
+    $cupom = null; $desconto = 0.0;
+    if (trim((string)($_POST['pd_cupom'] ?? '')) !== '') {
+        $cupom = site_cupom_valido($empresa['id'], $_POST['pd_cupom']);
+        if (!$cupom) return ['erro' => 'Esse cupom não vale (confira o código ou a validade).', 'post' => $p];
+        $desconto = round($subtotal * min(100, (float)$cupom['desconto_percentual']) / 100, 2);
+    }
+    $total = round($subtotal - $desconto + $taxa, 2);
     $minimo = (float)($empresa['pedido_minimo'] ?? 0);
     $erro = '';
     if ($erroOpcao !== '') $erro = $erroOpcao;
@@ -478,6 +485,7 @@ function site_processar_pedido($empresa, $dados) {
 
     $linhas = array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'], $itens);
     $descricao = implode(', ', $linhas);
+    if ($cupom) { $linhas[] = 'Cupom ' . $cupom['codigo'] . ': -' . wa_dinheiro($desconto); $obs = trim('Cupom ' . $cupom['codigo'] . ' (-' . wa_dinheiro($desconto) . '). ' . $obs); }
     $token = bin2hex(random_bytes(16));
     try {
         $pdo->beginTransaction();
@@ -496,6 +504,10 @@ function site_processar_pedido($empresa, $dados) {
         $ins->execute([$empresa['id'], $clienteId, $descricao, $total, json_encode($itens, JSON_UNESCAPED_UNICODE), $tipo, $tipo === 'entrega' ? $endereco : null,
                        $pagamento, $troco ?: null, $taxa, $obs ?: null, $token, $agendadoPara, $mesa !== '' ? $mesa : null]);
         $pedidoId = (int)$ins->fetch()['id'];
+        if ($cupom) {
+            try { $pdo->exec('SAVEPOINT cupom'); $pdo->prepare("UPDATE pedidos SET cupom_codigo=?, desconto=? WHERE id=?")->execute([$cupom['codigo'], $desconto, $pedidoId]); $pdo->exec('RELEASE SAVEPOINT cupom'); }
+            catch (PDOException $e) { $pdo->exec('ROLLBACK TO SAVEPOINT cupom'); }
+        }
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -516,7 +528,7 @@ function site_processar_pedido($empresa, $dados) {
         $cob = pag_criar($empresa, $total, 'Pedido nº ' . $pedidoId . ' - ' . $empresa['nome'], 'total', ['pedido_id' => $pedidoId], $clienteId);
         if ($cob['ok']) $pix = $cob;
     }
-    return ['ok' => true, 'codigo' => $pedidoId, 'nome' => $nome, 'itens' => $itens, 'taxa' => $taxa, 'total' => $total, 'pix' => $pix,
+    return ['ok' => true, 'codigo' => $pedidoId, 'nome' => $nome, 'itens' => $itens, 'taxa' => $taxa, 'total' => $total, 'pix' => $pix, 'desconto' => $desconto, 'cupom' => $cupom['codigo'] ?? '',
             'link' => '/site/pedido.php?t=' . $token, 'wa_automatico' => wa_remetente($empresa) !== null, 'msg_whatsapp' => $msgWa];
 }
 

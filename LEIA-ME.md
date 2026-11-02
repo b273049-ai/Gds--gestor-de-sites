@@ -315,6 +315,22 @@ Cada ramo abre um painel com o que as plataformas famosas do ramo mostram, só q
 - **Orçamento item a item**: em "Responder orçamento", linhas de descrição × qtd × valor; o total soma sozinho e o
   cliente vê o orçamento detalhado no link.
 
+### Delivery completo (v13, migração 24)
+Estudo do segmento delivery comparando com iFood, Anota AI e Saipos; cada tela foi revista:
+- **Cardápio** (Painel → Cardápio): itens agrupados por categoria, busca, preço editado direto na lista, chave
+  "Disponível/Esgotado" por item e por categoria inteira, foto enviada do celular (ou criada com IA), duplicar item
+  e quanto cada item vendeu nos últimos 30 dias.
+- **Novo pedido (balcão/telefone/mesa)** — PDV: toca nos itens (com opções e observação), o telefone puxa o cliente e
+  o último endereço, desconto, troco e "já pago". Entra no Gestor já em preparo e pode imprimir a comanda.
+- **Gestor**: mostra a origem (site, telefone, balcão), muda o tempo de entrega que aparece no site com um clique e,
+  em "Saiu para entrega", pergunta qual entregador vai levar e abre o WhatsApp dele com o endereço, a rota no Maps e
+  quanto cobrar. Sem WhatsApp automático, aparece o botão para enviar a mensagem ao cliente na hora.
+- **Entregas e fechamento**: cadastro dos entregadores (valor por entrega ou repasse da taxa) e o fechamento do dia
+  por forma de pagamento e por canal, taxas, descontos, acerto de cada entregador (a pagar e dinheiro com ele) e
+  cancelados com o motivo. Imprime.
+- **Site**: cupom de desconto no carrinho (módulo Cupons passa a vir ligado no delivery), "Peça também" não sugere o
+  que já está no pedido, "Pedir de novo" no acompanhamento remonta o carrinho e o "Pedido entregue" pede a avaliação.
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)

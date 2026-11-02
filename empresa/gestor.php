@@ -15,8 +15,24 @@ $empresa = $carregar();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     switch ($_POST['acao']) {
         case 'status':
-            $r = pedido_mudar_status($empresa, (int)($_POST['id'] ?? 0), (string)($_POST['status'] ?? ''), (string)($_POST['motivo'] ?? ''));
-            responder_json($r['ok'] ? ['ok' => true, 'msg' => trim(strip_tags($r['msg']))] : $r);
+            $pid = (int)($_POST['id'] ?? 0);
+            $link = null;
+            // Saiu para entrega com um entregador: grava quem levou e prepara a mensagem com a rota para ele
+            if (($_POST['status'] ?? '') === 'saiu_entrega' && ($eid = (int)($_POST['entregador_id'] ?? 0))) {
+                $en = $pdo->prepare("SELECT * FROM entregadores WHERE id=? AND empresa_id=?"); $en->execute([$eid, $empresaId]);
+                if ($en = $en->fetch()) {
+                    $pdo->prepare("UPDATE pedidos SET entregador_id=? WHERE id=? AND empresa_id=?")->execute([$eid, $pid, $empresaId]);
+                    $link = pedido_link_entregador($empresa, $pid, $en);
+                }
+            }
+            $r = pedido_mudar_status($empresa, $pid, (string)($_POST['status'] ?? ''), (string)($_POST['motivo'] ?? ''));
+            // WhatsApp manual: a mensagem pronta vai junto na resposta (e não fica para a próxima página)
+            $manual = $_SESSION['wa_manual']['link'] ?? null; unset($_SESSION['wa_manual']);
+            responder_json($r['ok'] ? ['ok' => true, 'msg' => trim(strip_tags($r['msg'])), 'link_entregador' => $link, 'wa_manual' => $manual] : $r);
+        case 'tempo':
+            $t = mb_substr(trim(strip_tags($_POST['tempo'] ?? '')), 0, 60);
+            $pdo->prepare("UPDATE empresas SET tempo_entrega=? WHERE id=?")->execute([$t ?: null, $empresaId]);
+            responder_json(['ok' => true]);
         case 'loja':
             $pausar = ($_POST['pausada'] ?? '') === '1';
             $pdo->prepare("UPDATE empresas SET loja_pausada=? WHERE id=?")->execute([$pausar ? 'true' : 'false', $empresaId]);
@@ -30,7 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
 
 // Dados do quadro (a tela pergunta a cada poucos segundos)
 if (isset($_GET['dados'])) {
-    $st = $pdo->prepare("SELECT p.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+    $temEnt = (bool)$pdo->query("SELECT to_regclass('entregadores') IS NOT NULL")->fetchColumn();
+    $st = $pdo->prepare("SELECT p.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone," . ($temEnt ? " (SELECT nome FROM entregadores en WHERE en.id = p.entregador_id) AS entregador_nome," : " NULL AS entregador_nome,") . "
             EXTRACT(EPOCH FROM (LOCALTIMESTAMP - p.criado_em))::bigint AS idade_seg,
             (SELECT COUNT(*) FROM pedidos p2 WHERE p2.cliente_id = p.cliente_id AND p2.status <> 'cancelado' AND p2.id < p.id) AS pedidos_antes
         FROM pedidos p LEFT JOIN clientes c ON c.id = p.cliente_id
@@ -43,7 +60,7 @@ if (isset($_GET['dados'])) {
         $prox = pedido_proxima_etapa($p);
         // Idade calculada no banco (mesmo fuso do criado_em) → horário de chegada no relógio do servidor
         $pedidos[] = ['id' => (int)$p['id'], 'status' => $p['status'], 'ts' => time() - max(0, (int)$p['idade_seg']), 'cliente' => $p['cliente_nome'] ?: 'Cliente',
-            'telefone' => preg_replace('/\D/', '', (string)$p['cliente_telefone']), 'novo_cliente' => (int)$p['pedidos_antes'] === 0,
+            'telefone' => preg_replace('/\D/', '', (string)$p['cliente_telefone']), 'novo_cliente' => (int)$p['pedidos_antes'] === 0, 'origem' => (string)$p['origem'], 'entregador' => $p['entregador_nome'],
             'itens' => array_map(fn($i) => ['qtd' => (int)$i['qtd'], 'nome' => (string)$i['nome'], 'preco' => (float)$i['preco']], json_decode((string)$p['itens'], true) ?: []),
             'total' => (float)$p['valor'], 'taxa' => (float)$p['taxa_entrega'], 'entrega' => $p['mesa'] ? 'mesa' : ($p['tipo_entrega'] ?: 'entrega'), 'mesa' => $p['mesa'],
             'endereco' => $p['endereco_entrega'], 'pagamento' => $p['forma_pagamento'], 'troco' => $p['troco_para'] !== null ? (float)$p['troco_para'] : null,
@@ -64,6 +81,10 @@ if (isset($_GET['dados'])) {
     responder_json(['ok' => true, 'agora' => time(), 'pedidos' => $pedidos, 'kpis' => $k, 'pausada' => pg_bool($empresa['loja_pausada'] ?? false)]);
 }
 $pausada = pg_bool($empresa['loja_pausada'] ?? false);
+$entregadores = [];
+try { $s2 = $pdo->prepare("SELECT id, nome FROM entregadores WHERE empresa_id=? AND ativo=true ORDER BY nome"); $s2->execute([$empresaId]); $entregadores = $s2->fetchAll(); } catch (PDOException $e) {}
+$tempos = ['20–30 min', '30–45 min', '40–60 min', '50–70 min', '60–90 min'];
+$tempoAtual = (string)($empresa['tempo_entrega'] ?? '');
 $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
 ?>
 <!DOCTYPE html>
@@ -102,6 +123,10 @@ $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
 .gst-acoes .btn { margin: 0; flex: 1 1 auto; }
 .gst-vazio { color: var(--text-dim); font-size: 13px; text-align: center; padding: 24px 8px; }
 @media (max-width: 1100px) { .gst-quadro { grid-template-columns: repeat(4, 280px); } }
+.gst-manual { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gst-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 60; padding: 16px; }
+.gst-modal-cx { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; width: min(360px, 100%); display: grid; gap: 8px; }
+.gst-modal-cx h3 { margin: 0 0 6px; }
 </style></head>
 <body>
 <div class="layout">
@@ -113,6 +138,11 @@ $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
             <button type="button" class="btn btn-sm <?= $pausada ? 'btn-ghost' : '' ?>" id="btnLoja" onclick="GST.loja()"><?= $pausada ? '⏸ Loja pausada — abrir' : '🟢 Loja aberta — pausar' ?></button>
             <button type="button" class="btn btn-ghost btn-sm" id="btnSom" onclick="GST.som()">🔕 Ativar som</button>
             <label class="check" style="margin:0;align-self:center"><input type="checkbox" id="impAuto" <?= $imprimirAuto ? 'checked' : '' ?> onchange="GST.imprimirAuto(this)"> Imprimir comanda ao aceitar</label>
+            <select id="tempoEntrega" onchange="GST.tempo(this.value)" title="Tempo de entrega que o cliente vê no site" style="width:auto;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+                <?php foreach (array_unique(array_merge($tempoAtual !== '' && !in_array($tempoAtual, $tempos, true) ? [$tempoAtual] : [], $tempos)) as $t): ?><option value="<?= e($t) ?>" <?= $t === $tempoAtual ? 'selected' : '' ?>>⏱ <?= e($t) ?></option><?php endforeach; ?>
+            </select>
+            <a class="btn btn-sm" href="pdv.php">＋ Novo pedido</a>
+            <a class="btn btn-ghost btn-sm" href="entregas.php">Entregadores e fechamento</a>
             <a class="btn btn-ghost btn-sm" href="pedidos.php">Histórico</a>
         </div>
     </div>
@@ -133,12 +163,21 @@ $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
 </div>
 <div id="toasts"></div>
 <script>
+const ENTREGADORES = <?= json_encode(array_map(fn($x) => ['id' => (int)$x['id'], 'nome' => $x['nome']], $entregadores), JSON_UNESCAPED_UNICODE) ?>;
 const GST = (() => {
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
     const $ = (id) => document.getElementById(id);
     const din = (v) => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     let pedidos = [], conhecidos = null, difRelogio = 0, ctx = null, pausada = <?= $pausada ? 'true' : 'false' ?>;
     const somLigado = () => { try { return localStorage.getItem('gds-gestor-som') === '1'; } catch (e) { return false; } };
+    // Sem WhatsApp automático: botão para enviar a mensagem pronta ao cliente
+    function avisoManual(p, link) {
+        const t = document.createElement('div'); t.className = 'toast toast-info gst-manual';
+        t.append(el('span', '', 'Avisar ' + p.cliente + ' (nº ' + p.id + '): '));
+        const a = el('a', 'btn btn-sm', '💬 Enviar pelo WhatsApp'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; a.onclick = () => setTimeout(() => t.remove(), 300);
+        const x = el('button', 'btn btn-ghost btn-sm', '✕'); x.type = 'button'; x.onclick = () => t.remove();
+        t.append(a, x); $('toasts').appendChild(t); setTimeout(() => t.remove(), 45000);
+    }
     function toast(msg, tipo) { const t = document.createElement('div'); t.className = 'toast toast-' + (tipo || 'info'); t.textContent = msg; $('toasts').appendChild(t); setTimeout(() => t.remove(), 5000); }
     async function post(d) {
         const fd = new FormData(); fd.append('csrf_token', CSRF); Object.entries(d).forEach(([k, v]) => fd.append(k, v));
@@ -165,6 +204,7 @@ const GST = (() => {
         const tags = el('div', 'gst-tags');
         tags.append(el('span', '', p.entrega === 'mesa' ? '🍽 Mesa ' + p.mesa : p.entrega === 'retirada' ? '🏪 Retirada' : '🛵 Entrega'));
         if (p.pago) tags.append(el('span', 't-pago', '💰 Pago no Pix'));
+        if (p.origem === 'telefone') tags.append(el('span', '', '📞 Telefone')); else if (p.origem === 'balcao') tags.append(el('span', '', '🧾 Balcão'));
         if (p.novo_cliente) tags.append(el('span', 't-novo', '⭐ Cliente novo'));
         if (p.agendado) tags.append(el('span', '', '🕒 ' + p.agendado));
         if (p.status === 'cancelado') tags.append(el('span', '', '❌ Cancelado'));
@@ -174,6 +214,7 @@ const GST = (() => {
         c.append(ul);
         const info = el('div', 'gst-info');
         if (p.entrega === 'entrega' && p.endereco) info.append(el('span', '', '📍 ' + p.endereco));
+        if (p.entregador) info.append(el('span', '', '🛵 com ' + p.entregador));
         info.append(el('span', '', '💳 ' + (p.pagamento || '—') + (p.troco ? ' · troco p/ ' + din(p.troco) : '') + ' · ' + din(p.total)));
         if (p.obs) info.append(el('span', '', '📝 ' + p.obs));
         c.append(info);
@@ -223,10 +264,24 @@ const GST = (() => {
             if (r.pausada !== pausada) { pausada = r.pausada; marcarLoja(); }
         } catch (e) {}
     }
+    function escolherEntregador(p) {
+        return new Promise(res => {
+            const m = el('div', 'gst-modal'), cx = el('div', 'gst-modal-cx');
+            cx.append(el('h3', '', 'Quem vai levar o nº ' + p.id + '?'));
+            ENTREGADORES.forEach(en => { const b = el('button', 'btn', '🛵 ' + en.nome); b.type = 'button'; b.onclick = () => { m.remove(); res(en.id); }; cx.append(b); });
+            const sem = el('button', 'btn btn-ghost', 'Sem entregador cadastrado'); sem.type = 'button'; sem.onclick = () => { m.remove(); res(0); };
+            const canc = el('button', 'btn btn-ghost', 'Cancelar'); canc.type = 'button'; canc.onclick = () => { m.remove(); res(null); };
+            cx.append(sem, canc); m.append(cx); document.body.append(m);
+        });
+    }
     async function avancar(p, status, b) {
+        let entregador = 0;
+        if (status === 'saiu_entrega' && ENTREGADORES.length) { entregador = await escolherEntregador(p); if (entregador === null) return; }
         b.disabled = true;
-        const r = await post({ acao: 'status', id: p.id, status });
+        const r = await post({ acao: 'status', id: p.id, status, entregador_id: entregador });
         if (!r.ok) { toast(r.erro, 'erro'); b.disabled = false; return; }
+        if (r.link_entregador) window.open(r.link_entregador, '_blank', 'noopener');
+        if (r.wa_manual) avisoManual(p, r.wa_manual);
         if (status === 'em_andamento' && $('impAuto').checked) window.open('pedido_imprimir.php?id=' + p.id, '_blank');
         toast('Pedido nº ' + p.id + ' atualizado.' + (r.msg ? ' ' + r.msg : ''), 'sucesso');
         atualizar();
@@ -245,7 +300,8 @@ const GST = (() => {
     function som() { try { localStorage.setItem('gds-gestor-som', somLigado() ? '0' : '1'); } catch (e) {} marcarSom(); if (somLigado()) bip(); }
     async function imprimirAuto(c) { await post({ acao: 'imprimir_auto', ligado: c.checked ? '1' : '0' }); }
     marcarSom(); atualizar(); setInterval(atualizar, 8000); setInterval(relogio, 15000);
-    return { loja, som, imprimirAuto };
+    async function tempo(v) { const r = await post({ acao: 'tempo', tempo: v }); if (r.ok) toast('Tempo de entrega no site: ' + v, 'sucesso'); }
+    return { loja, som, imprimirAuto, tempo };
 })();
 </script>
 </body>
