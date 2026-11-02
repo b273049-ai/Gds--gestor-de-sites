@@ -27,7 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             $r = wa_enviar_agora(['canal' => 'plataforma', 'tipo' => $a['tipo'], 'instancia' => $a['plat_instancia'], 'token' => $a['plat_token']], $num, "✅ Teste do WhatsApp da plataforma GDS. Está funcionando!");
             responder_json($r['ok'] ? ['ok' => true, 'msg' => 'Mensagem enviada para ' . wa_numero($num) . '!'] : ['ok' => false, 'erro' => $r['erro']]);
         case 'conectar':
-            if ($a['tipo'] === 'ponte') { $nome = adm_wa_instancia(); wa_ponte_pedir($nome); responder_json(wa_ponte_situacao($nome)); }
+            $numPar = wa_numero($_POST['numero'] ?? ''); // sem câmera: código de pareamento para este número
+            if ($a['tipo'] === 'ponte') { $nome = adm_wa_instancia(); wa_ponte_pedir($nome, $numPar); responder_json(wa_ponte_situacao($nome)); }
             if (!in_array($a['tipo'], ['evolution', 'wppconnect'], true) || !wa_api_configurada()) responder_json(['ok' => false, 'erro' => 'Disponível com Evolution API ou WPPConnect configurados.']);
             $nome = adm_wa_instancia();
             if ($a['tipo'] === 'wppconnect') {
@@ -37,8 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
                 responder_json(['ok' => true, 'qr' => $qr ? (str_starts_with($qr, 'data:') ? $qr : 'data:image/png;base64,' . $qr) : null, 'conectado' => in_array(strtoupper((string)($q['dados']['status'] ?? '')), ['CONNECTED', 'ISLOGGED'], true)]);
             }
             $r = wa_http('POST', $a['url'] . '/instance/create', ['instanceName' => $nome, 'qrcode' => true, 'integration' => 'WHATSAPP-BAILEYS'], ['apikey: ' . $a['chave']], 20);
-            if ($r['ok'] && !empty($r['dados']['qrcode']['base64'])) responder_json(['ok' => true, 'qr' => $r['dados']['qrcode']['base64']]);
-            $q = wa_http('GET', $a['url'] . '/instance/connect/' . rawurlencode($nome), null, ['apikey: ' . $a['chave']]);
+            if ($r['ok'] && !empty($r['dados']['qrcode']['base64']) && $numPar === '') responder_json(['ok' => true, 'qr' => $r['dados']['qrcode']['base64']]);
+            $q = wa_http('GET', $a['url'] . '/instance/connect/' . rawurlencode($nome) . ($numPar !== '' ? '?number=' . $numPar : ''), null, ['apikey: ' . $a['chave']], 25);
             if (!$q['ok']) responder_json(['ok' => false, 'erro' => $q['erro'] ?: $r['erro']]);
             responder_json(['ok' => true, 'qr' => $q['dados']['base64'] ?? null, 'codigo' => $q['dados']['pairingCode'] ?? null, 'conectado' => ($q['dados']['instance']['state'] ?? '') === 'open']);
         case 'estado':
@@ -168,7 +169,18 @@ $chaveSalva = $a['chave'] !== '';
         <div data-tipo="ponte gds evolution wppconnect">
             <p class="dica">Conecte o número da plataforma lendo o QR code com o WhatsApp do celular (Aparelhos conectados → Conectar um aparelho).</p>
             <button type="button" class="btn" onclick="conectar(this)"><?= icone('celular', 16) ?> Gerar QR code</button>
-            <div id="qrArea" hidden style="margin-top:14px"><div class="wa-qr"><img id="qrImg" alt="QR code"><span id="qrInfo">Aguardando leitura…</span></div></div>
+            <details class="wa-sem-camera" data-tipo="ponte gds evolution"><summary class="link">📱 Sem câmera? Conectar com o número de telefone (código)</summary>
+                <p class="dica">Serve para conectar no <strong>mesmo celular</strong>. Digite o número do chip da plataforma, com DDD.</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+                    <div style="flex:1;min-width:180px"><label>Número do WhatsApp</label><input type="tel" id="numPareamento" placeholder="(11) 99999-9999"></div>
+                    <button type="button" class="btn" onclick="conectar(this, true)">Receber código</button>
+                </div>
+            </details>
+            <div id="qrArea" hidden style="margin-top:14px"><div class="wa-qr" id="qrBox"><img id="qrImg" alt="QR code"><span id="qrInfo">Aguardando leitura…</span></div>
+                <div class="wa-codigo" id="qrCodigo" hidden><strong id="codigoTexto"></strong>
+                    <ol class="dica"><li>No celular: WhatsApp → <strong>⋮ / Configurações → Aparelhos conectados → Conectar um aparelho</strong>.</li>
+                        <li>Toque em <strong>Conectar com número de telefone</strong>.</li><li>Digite este código. Ele vale por alguns minutos.</li></ol></div>
+                <p class="dica" id="estadoConexao"></p></div>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end;margin-top:14px;flex-wrap:wrap">
             <div style="flex:1;min-width:180px"><label>Enviar teste para</label><input type="tel" id="numTeste" placeholder="(11) 99999-9999"></div>
@@ -259,18 +271,35 @@ async function testar(b) {
     b.disabled = true; const r = await post({ acao: 'testar', numero: document.getElementById('numTeste').value }); b.disabled = false;
     const el = document.getElementById('resTeste'); el.textContent = r.ok ? r.msg : r.erro; el.style.color = r.ok ? 'var(--ok)' : 'var(--danger)';
 }
-async function conectar(b) {
-    b.disabled = true; const r = await post({ acao: 'conectar' }); b.disabled = false;
+let timerConexao = null;
+function mostrarCodigo(c) {
+    if (!c) return;
+    document.getElementById('qrCodigo').hidden = false;
+    document.getElementById('codigoTexto').textContent = String(c).replace(/^(.{4})(.{4})$/, '$1-$2');
+}
+async function conectar(b, porCodigo) {
+    const el = (id) => document.getElementById(id);
+    const dados = { acao: 'conectar' };
+    if (porCodigo) {
+        const num = el('numPareamento').value.replace(/\D/g, '');
+        if (num.length < 10) { alert('Digite o número com DDD.'); return; }
+        dados.numero = num;
+    }
+    b.disabled = true; const r = await post(dados); b.disabled = false;
     if (!r.ok) { alert(r.erro); return; }
-    document.getElementById('qrArea').hidden = false;
-    if (r.qr) document.getElementById('qrImg').src = r.qr.startsWith('data:') ? r.qr : 'data:image/png;base64,' + r.qr;
-    else if (r.aguardando) document.getElementById('qrInfo').textContent = 'Pedindo o QR ao conector…';
-    const t = setInterval(async () => {
+    el('qrArea').hidden = false; el('qrBox').hidden = !!porCodigo; el('qrCodigo').hidden = !porCodigo;
+    if (porCodigo) el('codigoTexto').textContent = 'Gerando o código…';
+    if (r.qr) el('qrImg').src = r.qr.startsWith('data:') ? r.qr : 'data:image/png;base64,' + r.qr;
+    else if (r.aguardando) el('qrInfo').textContent = 'Pedindo o QR ao conector…';
+    if (porCodigo) mostrarCodigo(r.codigo);
+    clearInterval(timerConexao);
+    timerConexao = setInterval(async () => {
         const e = await post({ acao: 'estado' });
-        if (e.conectado) { clearInterval(t); document.getElementById('qrInfo').textContent = '✅ Conectado!'; }
-        else if (e.qr) { document.getElementById('qrImg').src = e.qr; document.getElementById('qrInfo').textContent = 'Aguardando leitura…'; }
+        if (e.conectado) { clearInterval(timerConexao); el('qrInfo').textContent = '✅ Conectado!'; el('estadoConexao').textContent = '✅ WhatsApp conectado!'; return; }
+        if (porCodigo) mostrarCodigo(e.codigo);
+        else if (e.qr) { el('qrImg').src = e.qr; el('qrInfo').textContent = 'Aguardando leitura…'; }
     }, 3000);
-    setTimeout(() => clearInterval(t), 180000);
+    setTimeout(() => clearInterval(timerConexao), 300000);
 }
 async function rotina(b) {
     b.disabled = true; const r = await post({ acao: 'rotina' }); b.disabled = false;

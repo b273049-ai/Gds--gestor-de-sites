@@ -370,6 +370,11 @@ td.acoes > * { vertical-align: middle; }
 .wa-modo small { display: block; color: var(--text-dim); font-weight: 400; margin-top: 2px; }
 .wa-modo.desativado { opacity: .5; cursor: not-allowed; }
 .wa-qr { display: grid; place-items: center; gap: 10px; padding: 18px; background: #fff; border-radius: 14px; max-width: 320px; color: #111; text-align: center; }
+.wa-sem-camera { margin-top: 12px; }
+.wa-sem-camera summary { cursor: pointer; font-size: 13.5px; }
+.wa-codigo { margin-top: 12px; padding: 16px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); max-width: 420px; }
+.wa-codigo > strong { display: block; font: 800 34px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 4px; text-align: center; margin-bottom: 10px; user-select: all; }
+.wa-codigo ol { margin: 0; padding-left: 18px; }
 .wa-qr img { width: 260px; height: 260px; image-rendering: pixelated; }
 .wa-eventos { display: grid; gap: 10px; }
 .wa-evento { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

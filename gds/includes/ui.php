@@ -52,6 +52,6 @@ function painel_head($titulo) {
          . '<title>' . e($titulo) . '</title>'
          . '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
          . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">'
-         . '<link rel="stylesheet" href="/assets/css/style.css?v=2">'
+         . '<link rel="stylesheet" href="/assets/css/style.css?v=3">'
          . '<meta name="csrf-token" content="' . csrf_token() . '">';
 }
