@@ -57,8 +57,26 @@ function pedido_link_entregador($empresa, $pedidoId, $entregador) {
     $din = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
     $online = pg_bool($p['pago'] ?? false) || stripos((string)$p['forma_pagamento'], 'pix pelo site') !== false || stripos((string)$p['forma_pagamento'], 'online') !== false;
     $l = ['🛵 *Entrega nº ' . $p['id'] . '* — ' . $empresa['nome'], '', '👤 ' . ($p['cliente_nome'] ?: 'Cliente') . ($p['cliente_telefone'] ? ' · ' . $p['cliente_telefone'] : '')];
-    if ($p['endereco_entrega']) { $l[] = '📍 ' . $p['endereco_entrega']; $l[] = '🗺 https://www.google.com/maps/dir/?api=1&destination=' . rawurlencode($p['endereco_entrega']); }
+    if ($p['endereco_entrega']) {
+        $l[] = '📍 ' . $p['endereco_entrega'];
+        // Rota: rua + número + bairro + cidade (sem complemento/referência, que confundem o Maps)
+        $destino = !empty($p['end_rua']) ? trim($p['end_rua'] . ', ' . ($p['end_numero'] !== 'S/N' ? $p['end_numero'] : '') . ' - ' . $p['end_bairro'] . ', ' . ($p['end_cidade'] ?? ''), ' ,-') : $p['endereco_entrega'];
+        $l[] = '🗺 https://www.google.com/maps/dir/?api=1&destination=' . rawurlencode($destino);
+        if (!empty($p['end_referencia'])) $l[] = '🔎 Referência: ' . $p['end_referencia'];
+    }
     $l[] = $online ? '✅ Já está pago' : '💰 Cobrar ' . $din($p['valor']) . ' (' . $p['forma_pagamento'] . ')' . ($p['troco_para'] ? ' — levar troco para ' . $din($p['troco_para']) : '');
     if ($p['observacoes']) $l[] = '📝 ' . $p['observacoes'];
     return link_whatsapp($entregador['telefone'], implode("\n", $l));
+}
+
+// Endereço em partes → uma linha (painel, comanda, WhatsApp)
+function pedido_endereco_texto($e) {
+    $l = trim(($e['rua'] ?? '') . ', ' . (($e['numero'] ?? '') ?: 'S/N'), ', ');
+    if (!empty($e['complemento'])) $l .= ' — ' . $e['complemento'];
+    if (!empty($e['bairro'])) $l .= ' — ' . $e['bairro'];
+    if (!empty($e['cidade'])) $l .= ', ' . $e['cidade'];
+    $cep = preg_replace('/\D/', '', (string)($e['cep'] ?? ''));
+    if (strlen($cep) === 8) $l .= ' — CEP ' . substr($cep, 0, 5) . '-' . substr($cep, 5);
+    if (!empty($e['referencia'])) $l .= ' (Ref.: ' . $e['referencia'] . ')';
+    return mb_substr($l, 0, 255);
 }

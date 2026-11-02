@@ -494,7 +494,18 @@
                 sug.hidden = visiveis === 0;
             }
             var end = $('[data-gds-endereco]', form);
-            if (end) { end.hidden = !ehEntrega(); $('input', end).required = ehEntrega(); }
+            if (end) {
+                end.hidden = !ehEntrega();
+                var semN = $('[data-gds-sem-numero]', end), semNum = semN && semN.checked;
+                ['#pd_cep', '#pd_rua', '#pd_bairro_txt'].forEach(function (q) { var x = $(q, end); if (x) x.required = ehEntrega(); });
+                var num = $('#pd_numero', end); if (num) { num.required = ehEntrega() && !semNum; num.disabled = semNum; if (semNum) num.value = ''; }
+                var ref = $('#pd_referencia', end); if (ref) ref.required = ehEntrega() && semNum;
+                var unico = $('#pd_endereco', end); if (unico) unico.required = ehEntrega();
+            }
+            // Frete grátis a partir de um valor: avisa quanto falta (como nos apps)
+            var fg = parseFloat(raiz.getAttribute('data-frete-gratis')) || 0, avisoFg = $('[data-gds-frete-aviso]', form);
+            if (fg > 0 && ehEntrega() && sub >= fg) { t = 0; $('[data-gds-taxa]', form).textContent = 'Grátis 🎉'; $('[data-gds-total]', form).textContent = dinheiro(sub - desc); }
+            if (avisoFg) { avisoFg.hidden = !ehEntrega() || !sub; avisoFg.textContent = sub >= fg ? '🎉 Você ganhou frete grátis!' : '🛵 Faltam ' + dinheiro(fg - sub) + ' para o frete grátis'; }
             var abaixo = minimo > 0 && sub < minimo;
             var aviso = $('[data-gds-minimo-aviso]', form);
             if (aviso) aviso.hidden = !abaixo;
@@ -502,6 +513,52 @@
             $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco, opcoes: i.opcoes || [] }; }));
         }
 
+        // Endereço: CEP preenche rua, bairro e cidade (ViaCEP); "sem número" exige referência;
+        // dados lembrados no aparelho para o próximo pedido
+        if (form && $('[data-gds-endereco]', form)) {
+            var fe = $('[data-gds-endereco]', form), cep = $('[data-gds-cep]', fe), msgCep = $('[data-gds-cep-msg]', fe);
+            var chaveEnd = 'gds-endereco-' + raiz.getAttribute('data-empresa');
+            var campos = ['pd_cep', 'pd_cidade', 'pd_rua', 'pd_numero', 'pd_complemento', 'pd_bairro', 'pd_bairro_txt', 'pd_referencia', 'pd_nome', 'pd_telefone'];
+            var normal = function (t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''); };
+            var escolherBairro = function (nome) {
+                var sel = $('#pd_bairro', fe); if (!sel) { var tx = $('#pd_bairro_txt', fe); if (tx && nome) tx.value = nome; return true; }
+                var alvo = normal(nome), achou = false;
+                Array.prototype.forEach.call(sel.options, function (o) { if (!achou && o.value && normal(o.value) === alvo) { sel.value = o.value; achou = true; } });
+                return achou;
+            };
+            var buscarCep = function () {
+                var d = cep.value.replace(/\D/g, '');
+                if (d.length === 8) cep.value = d.slice(0, 5) + '-' + d.slice(5);
+                if (d.length !== 8) return;
+                msgCep.textContent = 'Buscando o endereço…'; msgCep.className = 'gds-cep-msg';
+                fetch('https://viacep.com.br/ws/' + d + '/json/').then(function (r) { return r.json(); }).then(function (r) {
+                    if (r.erro) { msgCep.textContent = 'CEP não encontrado. Confira ou preencha a rua e o bairro.'; msgCep.className = 'gds-cep-msg erro'; return; }
+                    if (r.logradouro) $('#pd_rua', fe).value = r.logradouro;
+                    $('#pd_cidade', fe).value = r.localidade + (r.uf ? '/' + r.uf : '');
+                    var ok = escolherBairro(r.bairro);
+                    msgCep.textContent = ok || !$('#pd_bairro', fe) ? '✓ ' + (r.logradouro ? r.logradouro + ', ' : '') + (r.bairro ? r.bairro + ' — ' : '') + r.localidade : '⚠ O bairro ' + r.bairro + ' não está na lista de entrega. Escolha o mais próximo ou chame no WhatsApp.';
+                    msgCep.className = 'gds-cep-msg ' + (ok || !$('#pd_bairro', fe) ? 'ok' : 'erro');
+                    render();
+                    var n = $('#pd_numero', fe); if (n && !n.value && !n.disabled) n.focus();
+                }).catch(function () { msgCep.textContent = 'Não deu para buscar o CEP agora. Preencha a rua e o bairro.'; });
+            };
+            cep.addEventListener('input', function () { if (cep.value.replace(/\D/g, '').length === 8) buscarCep(); });
+            cep.addEventListener('blur', buscarCep);
+            var sn = $('[data-gds-sem-numero]', fe);
+            if (sn) sn.addEventListener('change', function () { var r = $('[data-gds-ref-rotulo]', fe); if (r) r.textContent = sn.checked ? '(obrigatório sem número)' : '(ajuda o entregador)'; render(); if (sn.checked) $('#pd_referencia', fe).focus(); });
+            try {
+                var salvo = JSON.parse(localStorage.getItem(chaveEnd) || 'null');
+                if (salvo && !$('#pd_rua', fe).value) campos.forEach(function (c) { var x = form.querySelector('[name="' + c + '"]'); if (x && salvo[c] && !x.value) x.value = salvo[c]; });
+                if (salvo && salvo.pd_sem_numero && sn) { sn.checked = true; }
+            } catch (e) { }
+            form.addEventListener('submit', function () {
+                var lembrar = $('[data-gds-lembrar]', fe);
+                try {
+                    if (lembrar && lembrar.checked) { var o = {}; campos.forEach(function (c) { var x = form.querySelector('[name="' + c + '"]'); if (x) o[c] = x.value; }); o.pd_sem_numero = sn && sn.checked; localStorage.setItem(chaveEnd, JSON.stringify(o)); }
+                    else localStorage.removeItem(chaveEnd);
+                } catch (e) { }
+            });
+        }
         // Cupom no carrinho: confere no servidor e mostra o desconto (o servidor recalcula ao finalizar)
         if (form && $('[data-gds-pd-aplicar]', form)) {
             var campoC = $('[data-gds-pd-cupom]', form), msgC = $('[data-gds-pd-cupom-msg]', form);

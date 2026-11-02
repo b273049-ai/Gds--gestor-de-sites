@@ -77,6 +77,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_servico'])) {
         try {
             $ops = opc_de_texto($_POST['opcoes'] ?? '');
             $perg = array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim($x), 0, 160), preg_split('/\r?\n/', (string)($_POST['perguntas'] ?? ''))))), 0, 8);
+            $de = valor_decimal($_POST['preco_de'] ?? '', 0);
+            $est = trim((string)($_POST['estoque'] ?? ''));
+            $pdo->prepare("UPDATE servicos SET preco_de=?, estoque=? WHERE id=? AND empresa_id=?")->execute([$de > $preco ? $de : null, $est === '' ? null : max(0, min(999999, (int)$est)), $sid, $empresaId]);
+            if ($est !== '' && (int)$est > 0) $pdo->prepare("UPDATE servicos SET esgotado=false WHERE id=? AND empresa_id=?")->execute([$sid, $empresaId]);
             $pdo->prepare("UPDATE servicos SET opcoes=?, sugerir=?, retorno_dias=?, vagas=?, experimental=?, perguntas=? WHERE id=? AND empresa_id=?")->execute([
                 $ops ? json_encode($ops, JSON_UNESCAPED_UNICODE) : null, isset($_POST['sugerir']) ? 'true' : 'false', max(0, min(365, (int)($_POST['retorno_dias'] ?? 0))),
                 max(1, min(200, (int)($_POST['vagas'] ?? 1))), isset($_POST['experimental']) ? 'true' : 'false', $perg ? json_encode($perg, JSON_UNESCAPED_UNICODE) : null, $sid, $empresaId]);
@@ -155,6 +159,11 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <label class="check"><input type="checkbox" name="preco_a_partir" <?= $editando && pg_bool($editando['preco_a_partir'] ?? false) ? 'checked' : '' ?>> Mostrar como "a partir de R$ …" (o preço pode variar)</label>
         <?php $comOrc = modulo_ativo('orcamentos'); ?>
         <?php if ($ehCatalogo): ?>
+        <div class="form-row">
+            <div><label>Preço "de" (promoção: aparece riscado)</label><input type="text" inputmode="decimal" name="preco_de" placeholder="Ex.: 39,90" value="<?= !empty($editando['preco_de']) ? number_format((float)$editando['preco_de'], 2, ',', '') : '' ?>"></div>
+            <div><label>Estoque (vazio = sem controle)</label><input type="number" name="estoque" min="0" placeholder="Ex.: 12" value="<?= isset($editando['estoque']) && $editando['estoque'] !== null ? (int)$editando['estoque'] : '' ?>"></div>
+        </div>
+        <p class="dica">Com estoque, cada pedido dá baixa sozinho e o item aparece "Esgotado" quando zera.</p>
         <label>Opções do item (adicionais, ponto, tamanho, sabores, cor…) — uma linha por grupo</label>
         <textarea name="opcoes" rows="4" placeholder="Ponto da carne* (1): Mal passado, Ao ponto, Bem passado&#10;Adicionais (até 3): Bacon +4, Cheddar +3,50, Ovo +2&#10;Sabores* (2, maior preço): Calabresa 45, Marguerita 42"><?= e(opc_para_texto(opc_ler($editando ?? []))) ?></textarea>
         <p class="dica">* = obrigatório · (1) escolhe uma · (até 3) escolhe várias · "+4" soma ao preço · "maior preço" = meio a meio cobra o sabor mais caro. Serve também para tamanho (P, M +5, G +10) e cor.</p>
@@ -180,6 +189,7 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <input type="search" id="cdBusca" placeholder="Buscar <?= e($item) ?>…" aria-label="Buscar">
         <span class="muted"><?= count($servicos) ?> itens · <?= count($grupos) ?> categoria(s)</span>
         <?php if ($ehCatalogo && $semFoto): ?><span class="pill pill-aviso">📷 <?= $semFoto ?> sem foto</span><?php endif; ?>
+        <?php $baixo = $ehCatalogo ? count(array_filter($servicos, fn($x) => pg_bool($x['ativo']) && isset($x['estoque']) && $x['estoque'] !== null && (int)$x['estoque'] <= 3)) : 0; if ($baixo): ?><span class="pill pill-aviso">📦 <?= $baixo ?> com estoque baixo</span><?php endif; ?>
     </div>
     <?php endif; ?>
     <?php foreach ($grupos as $cat => $lista): $todosEsg = $ehCatalogo && !array_filter($lista, fn($x) => !pg_bool($x['esgotado'] ?? false)); ?>
@@ -195,7 +205,7 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
             <div class="cd-info">
                 <strong><?= e($s['nome']) ?></strong><?= pg_bool($s['destaque'] ?? false) ? ' <span class="pill pill-ok">destaque</span>' : '' ?><?= $ehCatalogo && pg_bool($s['sugerir'] ?? false) ? ' <span class="pill pill-neutro">peça também</span>' : '' ?>
                 <?php if ($s['descricao']): ?><span class="mini"><?= e(mb_strimwidth($s['descricao'], 0, 90, '…')) ?></span><?php endif; ?>
-                <span class="mini"><?= $comAgenda ? (int)$s['duracao_minutos'] . ' min · ' : '' ?><?= $ehCatalogo ? ($vend ? '🔥 ' . $vend . ' vendido(s) em 30 dias' : 'sem vendas em 30 dias') : ((int)$s['usos'] . ' agendamento(s)') ?><?= !empty($s['opcoes']) && $s['opcoes'] !== '[]' ? ' · com opções' : '' ?></span>
+                <span class="mini"><?= $comAgenda ? (int)$s['duracao_minutos'] . ' min · ' : '' ?><?= $ehCatalogo ? ($vend ? '🔥 ' . $vend . ' vendido(s) em 30 dias' : 'sem vendas em 30 dias') : ((int)$s['usos'] . ' agendamento(s)') ?><?= !empty($s['opcoes']) && $s['opcoes'] !== '[]' ? ' · com opções' : '' ?><?php if ($ehCatalogo && isset($s['estoque']) && $s['estoque'] !== null): ?> · <b style="color:<?= (int)$s['estoque'] <= 3 ? 'var(--perigo,#f87171)' : 'inherit' ?>">📦 <?= (int)$s['estoque'] ?> em estoque</b><?php endif; ?><?php if (!empty($s['preco_de']) && (float)$s['preco_de'] > (float)$s['preco']): ?> · 🏷 de R$ <?= number_format((float)$s['preco_de'], 2, ',', '.') ?><?php endif; ?></span>
             </div>
             <div class="cd-preco"><span>R$</span><input type="text" inputmode="decimal" value="<?= number_format((float)$s['preco'], 2, ',', '') ?>" data-preco="<?= (int)$s['id'] ?>" aria-label="Preço de <?= e($s['nome']) ?>"></div>
             <div class="cd-acoes">

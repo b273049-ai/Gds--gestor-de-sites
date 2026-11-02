@@ -36,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_delivery'])) {
                    max(0, valor_decimal($_POST['taxa_entrega'] ?? '0')), max(0, valor_decimal($_POST['pedido_minimo'] ?? '0')),
                    $formas ?: 'Pix, Cartão na entrega, Dinheiro', mb_substr(trim($_POST['tempo_entrega'] ?? ''), 0, 60) ?: null, $empresaId]);
     try { $pdo->prepare("UPDATE empresas SET bairros_entrega=? WHERE id=?")->execute([delivery_bairros_de_texto($_POST['bairros_entrega'] ?? ''), $empresaId]); } catch (PDOException $e) {}
+    try { $pdo->prepare("UPDATE empresas SET frete_gratis_acima=?, pedido_agendar=? WHERE id=?")->execute([max(0, valor_decimal($_POST['frete_gratis_acima'] ?? '0')), isset($_POST['pedido_agendar']) ? 'true' : 'false', $empresaId]); } catch (PDOException $e) {}
     flash(!$entrega && !$retirada && isset($_POST['pedido_online']) ? 'aviso' : 'sucesso', !$entrega && !$retirada && isset($_POST['pedido_online']) ? 'Salvo — mas marque entrega ou retirada para o carrinho aparecer no site.' : 'Pedidos pelo site salvos!');
     $voltar('delivery'); exit;
 }
@@ -251,6 +252,11 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
             <div><label>Taxa de entrega (R$)</label><input type="text" inputmode="decimal" name="taxa_entrega" value="<?= number_format((float)($empresa['taxa_entrega'] ?? 0), 2, ',', '') ?>"></div>
             <div><label>Pedido mínimo (R$, 0 = sem mínimo)</label><input type="text" inputmode="decimal" name="pedido_minimo" value="<?= number_format((float)($empresa['pedido_minimo'] ?? 0), 2, ',', '') ?>"></div>
         </div>
+        <div class="form-row">
+            <div><label>Frete grátis a partir de (R$, 0 = não)</label><input type="text" inputmode="decimal" name="frete_gratis_acima" value="<?= number_format((float)($empresa['frete_gratis_acima'] ?? 0), 2, ',', '') ?>"></div>
+            <div><label class="check" style="margin-top:30px"><input type="checkbox" name="pedido_agendar" <?= pg_bool($empresa['pedido_agendar'] ?? false) ? 'checked' : '' ?>> Cliente pode agendar o pedido para um horário</label></div>
+        </div>
+        <p class="dica">O carrinho mostra "faltam R$ X para o frete grátis" — ajuda a vender mais por pedido. O endereço no site pede CEP, rua, número (ou "sem número" + referência) e bairro, como nos apps de delivery.</p>
         <label>Taxa por bairro (opcional — uma linha por bairro; se preencher, o cliente escolhe o bairro no carrinho)</label>
         <textarea name="bairros_entrega" rows="4" placeholder="Centro = 5,00&#10;Jardim América = 7,00&#10;Vila Nova = 9,50"><?= e(delivery_bairros_texto($empresa)) ?></textarea>
         <label>Formas de pagamento (separadas por vírgula)</label>

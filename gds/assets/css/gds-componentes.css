@@ -413,3 +413,20 @@ html.gds-sem-rolagem { overflow: hidden; }
 
 /* Pedido pela mesa (QR Code) */
 .gds-mesa{margin:0 0 12px;padding:10px 14px;border-radius:12px;background:var(--gds-accent-soft,#eef2ff);font-size:.95rem}
+
+/* ---- Endereço de entrega completo, CPF, frete grátis, preço promocional (v14) ---- */
+.gds-c .gds-endereco { border: 1px solid #e3e5ea; border-radius: 14px; padding: 12px 12px 4px; margin: 10px 0; min-width: 0; }
+.gds-c .gds-endereco legend { font-weight: 700; font-size: .92rem; padding: 0 6px; }
+.gds-c .gds-endereco[hidden] { display: none; }
+.gds-c .gds-linha-cep { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+.gds-c .gds-check-mini { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 500; margin-top: 6px; cursor: pointer; }
+.gds-c .gds-check-mini input { width: auto; margin: 0; }
+.gds-c .gds-cep-msg { font-size: .82rem; margin: -2px 0 8px; min-height: 1em; }
+.gds-c .gds-cep-msg.ok, .gds-c .gds-cupom-msg.ok { color: #15803d; }
+.gds-c .gds-cep-msg.erro, .gds-c .gds-cupom-msg.erro { color: #b91c1c; }
+.gds-c .gds-cpf { margin: 6px 0 10px; font-size: .9rem; }
+.gds-c .gds-cpf summary { cursor: pointer; color: inherit; opacity: .8; }
+.gds-c .gds-frete-gratis { margin: 6px 0 0; padding: 7px 10px; border-radius: 10px; background: rgba(34, 197, 94, .12); color: #166534; font-size: .85rem; font-weight: 600; text-align: center; }
+.gds-c .gds-frete-gratis[hidden] { display: none; }
+.gds-c .gds-preco-de { opacity: .55; font-size: .8em; font-weight: 500; margin-right: 2px; }
+.gds-c .gds-off { font-size: .7rem; padding: 2px 6px; vertical-align: middle; }
