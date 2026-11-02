@@ -299,6 +299,22 @@ Tudo entra sozinho no banco (migração 20). Cada empresa liga o que quiser no p
 - **Atualizar o cliente** (pedido aprovado/em andamento): texto + foto da etapa ("peça chegou", "pintura pronta"). O cliente
   recebe no WhatsApp e vê a linha do tempo com fotos no link do pedido.
 
+### Painel por segmento (v12, migração 23)
+Cada ramo abre um painel com o que as plataformas famosas do ramo mostram, só que tudo junto e ligado ao site:
+- **Delivery → Gestor de pedidos** (estilo iFood/Anota AI): quadro ao vivo Novos → Em preparo → Prontos/a caminho →
+  Concluídos, com som, cronômetro (amarelo 20 min, vermelho 40), recusar com motivo, pausar a loja e impressão
+  automática ao aceitar. Cada etapa avisa o cliente no WhatsApp e guarda a hora (tempo médio de preparo e total).
+- **Dashboard por ramo**: delivery (hoje x ontem, pedidos por hora, mais vendidos, recorrência); agenda (ocupação do
+  dia, previsto, faltas, caixa, aniversariantes); orçamento (funil do mês e taxa de aprovação).
+- **Agenda → Caixa e comandas** (estilo AppBarber/Trinks): "Fechar comanda" em cada horário (serviço + produtos do
+  catálogo + itens avulsos, desconto, forma de pagamento), comanda avulsa para quem chegou sem marcar, caixa do dia
+  por forma de pagamento e por profissional com a comissão (só serviços, com o desconto descontado) e estorno.
+- **Ficha do cliente** (clique no nome em Clientes): total gasto, visitas, ticket médio, "volta a cada X dias",
+  faltas, próximo horário, histórico de atendimentos/pedidos/comandas, aniversário, anotações (alergias,
+  preferências) e etiquetas (VIP, indica amigos…) com filtro. Sugere a próxima ação (parabéns, chamar de volta).
+- **Orçamento item a item**: em "Responder orçamento", linhas de descrição × qtd × valor; o total soma sozinho e o
+  cliente vê o orçamento detalhado no link.
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)

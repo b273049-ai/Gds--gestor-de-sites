@@ -95,8 +95,9 @@ if ($filtroProf) { $where[] = 'a.profissional_id = ?'; $params[] = $filtroProf; 
 $diaGrade = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['dia'] ?? '') ? $_GET['dia'] : date('Y-m-d');
 if ($ver === 'grade') { $where = ['a.empresa_id = ?', 'a.data_hora::date = ?', "a.status <> 'cancelado'"]; $params = [$empresaId, $diaGrade]; }
 $ordem = $ver === 'passados' || $ver === 'todos' ? 'DESC' : 'ASC';
+$temComandas = (bool)$pdo->query("SELECT to_regclass('comandas') IS NOT NULL")->fetchColumn();
 $agendamentos = $pdo->prepare("
-    SELECT a.*, c.nome AS cliente_nome, c.telefone, s.nome AS servico_nome, s.duracao_minutos, pr.nome AS profissional_nome
+    SELECT a.*, c.nome AS cliente_nome, c.telefone, s.nome AS servico_nome, s.duracao_minutos, pr.nome AS profissional_nome" . ($temComandas ? ", (SELECT id FROM comandas cm WHERE cm.agendamento_id = a.id LIMIT 1) AS comanda_id" : "") . "
     FROM agendamentos a
     LEFT JOIN clientes c ON c.id = a.cliente_id
     LEFT JOIN servicos s ON s.id = a.servico_id
@@ -234,6 +235,11 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
                 <?php if ($a['status'] === 'cancelado' && !empty($a['cancelado_motivo'])): ?><span class="mini" title="<?= e($a['cancelado_motivo']) ?>"><?= e(mb_strimwidth($a['cancelado_motivo'], 0, 40, '…')) ?></span><?php endif; ?>
             </td>
             <td class="acoes">
+                <?php if ($temComandas && !empty($a['comanda_id'])): ?>
+                <a class="btn btn-ghost btn-sm" href="/empresa/caixa.php?dia=<?= date('Y-m-d', strtotime($a['data_hora'])) ?>" title="Comanda fechada"><?= icone('dinheiro', 14) ?> Pago</a>
+                <?php elseif ($temComandas && !in_array($a['status'], ['cancelado', 'faltou'], true) && $ts < strtotime('tomorrow')): ?>
+                <a class="btn btn-sm" href="/empresa/caixa.php?agendamento=<?= (int)$a['id'] ?>" title="Fechar a conta deste atendimento"><?= icone('dinheiro', 14) ?> Fechar comanda</a>
+                <?php endif; ?>
                 <?php if ($a['telefone'] && $ts > time() && $a['status'] !== 'cancelado'): ?>
                 <a class="btn btn-ghost btn-sm" target="_blank" href="<?= e(link_whatsapp($a['telefone'], 'Olá, ' . explode(' ', (string)$a['cliente_nome'])[0] . '! Passando para lembrar do seu horário' . ($a['servico_nome'] ? ' de ' . $a['servico_nome'] : '') . ' em ' . date('d/m \à\s H:i', $ts) . ' na ' . $empresa['nome'] . '. Podemos confirmar?')) ?>" title="Lembrar pelo WhatsApp"><?= icone('chat', 14) ?> Lembrar</a>
                 <?php endif; ?>
