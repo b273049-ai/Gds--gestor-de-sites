@@ -36,6 +36,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_fidelidade']))
     } catch (PDOException $e) { flash('erro', 'Atualize o banco (Admin → Diagnóstico) para usar esta função.'); }
     header('Location: clientes.php'); exit;
 }
+// Anotações de cada atendimento (evolução / prontuário / o que foi feito)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_nota'])) {
+    $cid = (int)$_POST['cliente_id'];
+    $txt = mb_substr(trim((string)($_POST['texto'] ?? '')), 0, 5000);
+    $ok = $pdo->prepare("SELECT 1 FROM clientes WHERE id=? AND empresa_id=?"); $ok->execute([$cid, $empresaId]);
+    if ($txt !== '' && $ok->fetch()) {
+        $ag = (int)($_POST['agendamento_id'] ?? 0) ?: null; $pr = (int)($_POST['profissional_id'] ?? 0) ?: null;
+        if ($ag) { $q = $pdo->prepare("SELECT profissional_id FROM agendamentos WHERE id=? AND empresa_id=?"); $q->execute([$ag, $empresaId]); $r = $q->fetch(); if (!$r) $ag = null; elseif (!$pr) $pr = $r['profissional_id']; }
+        try { $pdo->prepare("INSERT INTO atendimento_notas (empresa_id, cliente_id, agendamento_id, profissional_id, texto) VALUES (?,?,?,?,?)")->execute([$empresaId, $cid, $ag, $pr, $txt]); flash('sucesso', 'Anotação salva na ficha.'); }
+        catch (PDOException $e) { flash('erro', 'Atualizando o banco… tente de novo em instantes.'); }
+    }
+    header('Location: clientes.php?ficha=' . $cid . '#notas'); exit;
+}
+if (isset($_GET['apagar_nota'])) {
+    try { $pdo->prepare("DELETE FROM atendimento_notas WHERE id=? AND empresa_id=?")->execute([(int)$_GET['apagar_nota'], $empresaId]); } catch (PDOException $e) {}
+    header('Location: clientes.php?ficha=' . (int)($_GET['ficha'] ?? 0) . '#notas'); exit;
+}
 // Bloquear (trote, calote): não consegue mais pedir pelo site
 if (isset($_GET['bloquear']) || isset($_GET['desbloquear'])) {
     $cid = (int)($_GET['bloquear'] ?? $_GET['desbloquear']);
@@ -97,6 +114,10 @@ if ($ficha) {
     $ultima = $datas ? max($datas) : null;
     $proximo = null; foreach ($linha as $l) if ($l['tipo'] === 'agenda' && strtotime($l['quando']) > time() && !in_array($l['status'], ['cancelado', 'faltou'], true)) $proximo = $l;
     $faltas = count(array_filter($linha, fn($l) => $l['tipo'] === 'agenda' && $l['status'] === 'faltou'));
+    $notas = [];
+    try { $q = $pdo->prepare("SELECT n.*, pr.nome AS profissional_nome, a.data_hora FROM atendimento_notas n LEFT JOIN profissionais pr ON pr.id=n.profissional_id LEFT JOIN agendamentos a ON a.id=n.agendamento_id WHERE n.cliente_id=? AND n.empresa_id=? ORDER BY n.id DESC LIMIT 100"); $q->execute([$cid, $empresaId]); $notas = $q->fetchAll(); } catch (PDOException $e) {}
+    $profsNota = $pdo->prepare("SELECT id, nome FROM profissionais WHERE empresa_id=? AND ativo=true ORDER BY nome"); $profsNota->execute([$empresaId]); $profsNota = $profsNota->fetchAll();
+    $notaAg = (int)($_GET['nota'] ?? 0);
     $idade = !empty($ficha['nascimento']) ? (int)date_diff(date_create($ficha['nascimento']), date_create('today'))->y : null;
     $niver = !empty($ficha['nascimento']) && date('m-d', strtotime($ficha['nascimento'])) === date('m-d');
     // Sugestão automática de próxima ação
@@ -172,6 +193,20 @@ if (isset($_GET['editar'])) { $e = $pdo->prepare("SELECT * FROM clientes WHERE i
         </div>
         <?php if ($proximo): ?><p class="dica">📅 Próximo horário: <strong><?= date('d/m \à\s H:i', strtotime($proximo['quando'])) ?></strong> — <?= e($proximo['titulo']) ?></p><?php endif; ?>
         <?php if (!empty($ficha['ficha']) || $ficha['observacoes']): ?><div class="ficha-nota">📝 <?= nl2br(e(trim(($ficha['ficha'] ?? '') . "\n" . ($ficha['observacoes'] ?? '')))) ?></div><?php endif; ?>
+        <h4 style="margin-top:16px" id="notas">Anotações dos atendimentos <span class="muted" style="font-weight:400">(evolução, o que foi feito, produtos usados — só a sua equipe vê)</span></h4>
+        <form method="post" class="ficha-nova-nota">
+            <?= csrf_campo() ?><input type="hidden" name="cliente_id" value="<?= $cid ?>"><input type="hidden" name="agendamento_id" value="<?= $notaAg ?>">
+            <textarea name="texto" rows="3" maxlength="5000" required placeholder="Ex.: Corte degradê nº 1 nas laterais · coloração 7.1 com 30 vol · paciente relatou melhora da dor lombar" <?= $notaAg ? 'autofocus' : '' ?>></textarea>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <?php if ($profsNota): ?><select name="profissional_id" style="width:auto"><option value="">Profissional…</option><?php foreach ($profsNota as $pp): ?><option value="<?= (int)$pp['id'] ?>"><?= e($pp['nome']) ?></option><?php endforeach; ?></select><?php endif; ?>
+                <button type="submit" name="salvar_nota" value="1" class="btn btn-sm">Salvar anotação</button>
+                <?php if ($notaAg): ?><span class="muted">ligada ao atendimento escolhido na agenda</span><?php endif; ?>
+            </div>
+        </form>
+        <?php foreach ($notas as $n): ?>
+        <div class="ficha-nota" style="margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px"><small class="muted"><?= date('d/m/Y H:i', strtotime($n['criado_em'])) ?><?= $n['profissional_nome'] ? ' · ' . e($n['profissional_nome']) : '' ?><?= $n['data_hora'] ? ' · atendimento de ' . date('d/m', strtotime($n['data_hora'])) : '' ?></small>
+            <a class="link" href="?ficha=<?= $cid ?>&apagar_nota=<?= (int)$n['id'] ?><?= csrf_qs() ?>" onclick="return confirm('Apagar esta anotação?')" style="font-size:12px">apagar</a></div><?= nl2br(e($n['texto'])) ?></div>
+        <?php endforeach; ?>
         <h4 style="margin-top:16px">Histórico</h4>
         <ul class="ficha-linha">
             <?php foreach (array_slice($linha, 0, 60) as $l): ?>
@@ -189,6 +224,7 @@ if (isset($_GET['editar'])) { $e = $pdo->prepare("SELECT * FROM clientes WHERE i
     .ficha-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 14px; }
     .ficha-kpis div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
     .ficha-kpis small { display: block; color: var(--text-dim); font-size: 12px; } .ficha-kpis strong { font-size: 18px; }
+    .ficha-nova-nota textarea, .ficha-nova-nota select { width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
     .ficha-nota { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--primary); background: var(--surface-2); border-radius: 0 10px 10px 0; }
     .ficha-linha { list-style: none; padding: 0; margin: 6px 0 0; }
     .ficha-linha li { display: grid; grid-template-columns: 130px 1fr auto; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); align-items: start; }
