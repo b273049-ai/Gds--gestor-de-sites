@@ -331,6 +331,27 @@ Estudo do segmento delivery comparando com iFood, Anota AI e Saipos; cada tela f
 - **Site**: cupom de desconto no carrinho (módulo Cupons passa a vir ligado no delivery), "Peça também" não sugere o
   que já está no pedido, "Pedir de novo" no acompanhamento remonta o carrinho e o "Pedido entregue" pede a avaliação.
 
+### Todos os segmentos no nível das plataformas do ramo (v14, migração 25)
+**Delivery (comparado com iFood, Anota AI, 99Food, Goomer, Saipos):**
+- Endereço como nos apps: **CEP** (preenche rua, bairro e cidade sozinho), **rua**, **número** obrigatório (ou "Sem
+  número" + **ponto de referência obrigatório**), **bairro** obrigatório (ligado à taxa), complemento e referência.
+  O site lembra os dados no aparelho para o próximo pedido. O PDV usa os mesmos campos e puxa o último endereço do cliente.
+- Mensagem do entregador com rota pelo endereço limpo e a referência destacada.
+- CPF na nota (validado), frete grátis acima de um valor ("faltam R$ X"), pedido agendado para um horário,
+  preço promocional riscado com % off, estoque com baixa automática e "Esgotado" ao zerar, bloquear cliente (trote).
+**Lojas (catálogo):** estoque por item, aviso de estoque baixo, preço "de/por".
+**Agenda (barbearia, salão, estética, clínicas, academias):** o cliente **confirma presença** e **remarca** pelo link
+(só horários livres; o lembrete pede a confirmação), aviso na agenda de cliente que costuma faltar, **anotações de
+cada atendimento** na ficha (evolução/prontuário).
+**Orçamento (eventos, obras, oficinas, serviços):** **validade** (vencido não pode ser aprovado), painel "Precisam de
+atenção" com cobrança pelo WhatsApp, **orçamento em documento/PDF** para o cliente e para a empresa.
+**Contato e imobiliária:**
+- **Contatos e negociações (funil/CRM)** para todos: etapas (Novo → Em conversa → Visita → Proposta → Fechado/Perdido),
+  arrastar cartões, valor, próximo contato com aviso, anotações, contato anotado à mão.
+- **Imóveis** (imobiliária, construtora, loteamento): cadastro como nos portais (finalidade, tipo, preço, condomínio,
+  IPTU, quartos, suítes, banheiros, vagas, áreas, características, até 20 fotos, vídeo, proprietário), vitrine no site
+  com filtros, ficha com galeria, link de cada imóvel, contagem de visualizações e **"Agendar visita"** que cai no funil.
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)

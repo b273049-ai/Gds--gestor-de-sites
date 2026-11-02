@@ -429,6 +429,71 @@
         if (alvo) mostrarPaginaDe(alvo.closest('.gds-c'));
     });
 
+    // ---------- IMÓVEIS: filtros, ficha completa com fotos, visita e link de cada imóvel (#imovel-COD) ----------
+    (function () {
+        var raiz = $('[data-gds-imoveis]');
+        if (!raiz) return;
+        var cards = $$('[data-gds-im]', raiz), filtros = $('[data-gds-im-filtros]', raiz), modal = $('[data-gds-im-modal]', raiz);
+        // A janela sai de dentro da seção (que tem animações com transform) e vai para o body, acima do cabeçalho
+        var casca = document.createElement('div'); casca.className = 'gds-c gds-im-casca'; document.body.appendChild(casca); casca.appendChild(modal);
+        var num = function (s) { return parseFloat(String(s || '').replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '')) || 0; };
+        var dados = function (c) { try { return JSON.parse(c.getAttribute('data-gds-im')); } catch (e) { return {}; } };
+        function filtrar() {
+            var f = {}; $$('[data-f]', filtros).forEach(function (x) { f[x.getAttribute('data-f')] = x.value.trim(); });
+            var vis = 0, max = num(f.preco), q = (f.busca || '').toLowerCase();
+            cards.forEach(function (c) {
+                var d = dados(c), m = (!f.finalidade || d.fin === f.finalidade) && (!f.tipo || d.tipo === f.tipo) && (!f.bairro || d.bairro === f.bairro)
+                    && (!f.quartos || d.q >= +f.quartos) && (!max || !d.preco || d.preco <= max) && (!q || c.getAttribute('data-busca').indexOf(q) >= 0);
+                c.hidden = !m; if (m) vis++;
+            });
+            $('[data-gds-im-contagem]', raiz).textContent = vis + (vis === 1 ? ' imóvel encontrado' : ' imóveis encontrados');
+            $('[data-gds-im-vazio]', raiz).hidden = vis > 0;
+        }
+        if (filtros) { filtros.addEventListener('input', filtrar); filtros.addEventListener('change', filtrar); }
+        var din = function (v) { return 'R$ ' + Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 }); };
+        function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; }
+        function abrir(c, semHash) {
+            var d = dados(c), h = '';
+            var fotos = d.fotos || [];
+            h += '<div class="gds-im-galeria">' + (fotos.length ? '<img data-gds-im-foto src="' + encodeURI(fotos[0]) + '" alt="">' + (fotos.length > 1 ? '<button type="button" class="gds-im-nav ant" data-nav="-1" aria-label="Foto anterior">‹</button><button type="button" class="gds-im-nav prox" data-nav="1" aria-label="Próxima foto">›</button><span class="gds-im-contador" data-gds-im-contador>1/' + fotos.length + '</span>' : '') : '<div class="gds-im-semfoto">🏠</div>') + '</div>';
+            if (fotos.length > 1) { h += '<div class="gds-im-miniaturas">'; fotos.forEach(function (f, i) { h += '<button type="button" data-ir="' + i + '" style="background-image:url(\'' + encodeURI(f) + '\')" aria-label="Foto ' + (i + 1) + '"></button>'; }); h += '</div>'; }
+            h += '<div class="gds-im-ficha"><span class="gds-chip">' + esc(d.fin_txt) + '</span> <span class="gds-chip">' + esc(d.tipo_txt) + '</span>' + (d.sit !== 'disponivel' ? ' <span class="gds-chip gds-chip-accent">' + esc(d.sit_txt) + '</span>' : '') + ' <span class="gds-mute">Cód. ' + esc(d.cod) + '</span>';
+            h += '<h3>' + esc(d.titulo) + '</h3><p class="gds-mute">' + esc([d.bairro, d.cidade].filter(Boolean).join(', ')) + '</p>';
+            h += '<div class="gds-im-precos"><strong>' + esc(d.preco_txt) + '</strong>' + (d.cond ? '<span>Condomínio ' + din(d.cond) + '</span>' : '') + (d.iptu ? '<span>IPTU ' + din(d.iptu) + '</span>' : '') + '</div>';
+            var pl = function (n, um, varios) { return n === 1 ? um : varios; };
+            var num2 = [[d.q, pl(d.q, 'quarto', 'quartos'), '🛏'], [d.s, pl(d.s, 'suíte', 'suítes'), '🛁'], [d.b, pl(d.b, 'banheiro', 'banheiros'), '🚿'], [d.v, pl(d.v, 'vaga', 'vagas'), '🚗'], [d.area, 'm² úteis', '📐'], [d.terreno, 'm² terreno', '🌳']].filter(function (x) { return x[0]; });
+            if (num2.length) { h += '<ul class="gds-im-nums">'; num2.forEach(function (x) { h += '<li><span>' + x[2] + '</span><b>' + Number(x[0]).toLocaleString('pt-BR') + '</b> ' + x[1] + '</li>'; }); h += '</ul>'; }
+            var tags = (d.carac || []).slice(); if (d.fin_ok) tags.unshift('Aceita financiamento'); if (d.permuta) tags.unshift('Aceita permuta'); if (d.mob) tags.push('Mobiliado'); if (d.pet) tags.push('Aceita pet');
+            if (tags.length) { h += '<div class="gds-im-tags">'; tags.forEach(function (t) { h += '<span>✓ ' + esc(t) + '</span>'; }); h += '</div>'; }
+            if (d.desc) h += '<p class="gds-im-desc">' + esc(d.desc) + '</p>';
+            if (d.video) h += '<p><a class="gds-btn-2" target="_blank" rel="noopener" href="' + esc(d.video) + '">▶ Ver vídeo / tour</a></p>';
+            h += '</div>';
+            $('[data-gds-im-conteudo]', modal).innerHTML = h;
+            $('[data-gds-im-id]', modal).value = d.id;
+            $('[data-gds-im-assunto]', modal).value = 'Visita: imóvel cód. ' + d.cod;
+            var wa = $('[data-gds-im-wa]', modal);
+            if (wa) wa.href = wa.getAttribute('data-base') + '?text=' + encodeURIComponent('Olá! Tenho interesse no imóvel cód. ' + d.cod + ' (' + d.titulo + ') — ' + d.preco_txt + '. ' + location.origin + location.pathname + '#imovel-' + d.cod);
+            var atual = 0, img = $('[data-gds-im-foto]', modal), cont = $('[data-gds-im-contador]', modal);
+            var ir = function (i) { if (!fotos.length) return; atual = (i + fotos.length) % fotos.length; img.src = fotos[atual]; if (cont) cont.textContent = (atual + 1) + '/' + fotos.length; };
+            modal.onclick = function (e) {
+                if (e.target === modal || e.target.closest('[data-gds-im-fechar]')) return fechar();
+                var n = e.target.closest('[data-nav]'); if (n) ir(atual + +n.getAttribute('data-nav'));
+                var m = e.target.closest('[data-ir]'); if (m) ir(+m.getAttribute('data-ir'));
+            };
+            var x0 = null; img && img.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+            img && img.addEventListener('touchend', function (e) { if (x0 === null) return; var dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) ir(atual + (dx < 0 ? 1 : -1)); x0 = null; });
+            modal.hidden = false; document.documentElement.classList.add('gds-sem-rolagem');
+            if (!semHash) history.replaceState(null, '', '#imovel-' + d.cod);
+            try { navigator.sendBeacon && navigator.sendBeacon('/site/imovel_ver.php?id=' + d.id); } catch (e) { }
+        }
+        function fechar() { modal.hidden = true; document.documentElement.classList.remove('gds-sem-rolagem'); if (/^#imovel-/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); }
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden) fechar(); });
+        cards.forEach(function (c) { c.addEventListener('click', function () { abrir(c); }); c.addEventListener('keydown', function (e) { if (e.key === 'Enter') abrir(c); }); });
+        filtrar();
+        var m = location.hash.match(/^#imovel-(.+)$/);
+        if (m) { var alvo = cards.filter(function (c) { return String(dados(c).cod) === decodeURIComponent(m[1]); })[0]; if (alvo) setTimeout(function () { abrir(alvo, true); }, 300); }
+    })();
+
     // ---------- CARRINHO (pedido pelo site) ----------
     (function () {
         var raiz = $('[data-gds-carrinho]');
