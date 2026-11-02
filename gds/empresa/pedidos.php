@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
 exigir_modulo('orcamentos', 'delivery');
 require_once __DIR__ . '/../includes/orcamento.php';
+require_once __DIR__ . '/../includes/pedidos_fluxo.php';
 $empresaId = (int)empresa_id_atual();
 $empresa = $pdo->prepare("SELECT * FROM empresas WHERE id=?");
 $empresa->execute([$empresaId]); $empresa = $empresa->fetch();
@@ -52,12 +53,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['criar_pedido'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['responder_orcamento'])) {
     $p = pedido_da_empresa((int)$_POST['pedido_id'], $empresaId);
     $valor = valor_decimal($_POST['valor'] ?? '', -1);
+    // Orçamento item a item (descrição × qtd × valor): o total vira o valor do orçamento
+    $orcItens = [];
+    foreach ((array)($_POST['orc_nome'] ?? []) as $i => $nome) {
+        $nome = mb_substr(trim(strip_tags((string)$nome)), 0, 120);
+        $preco = max(0, valor_decimal($_POST['orc_preco'][$i] ?? '0'));
+        $qtd = max(1, min(9999, (int)($_POST['orc_qtd'][$i] ?? 1)));
+        if ($nome !== '') $orcItens[] = ['nome' => $nome, 'qtd' => $qtd, 'preco' => round($preco, 2)];
+    }
+    if ($orcItens) $valor = round(array_sum(array_map(fn($i) => $i['qtd'] * $i['preco'], $orcItens)), 2);
     if (!$p) flash('erro', 'Pedido não encontrado.');
     elseif ($valor < 0) flash('erro', 'Informe o valor do orçamento.');
     else {
         if (empty($p['token'])) $pdo->prepare("UPDATE pedidos SET token=? WHERE id=?")->execute([bin2hex(random_bytes(16)), $p['id']]);
-        $pdo->prepare("UPDATE pedidos SET valor=?, resposta=?, status='orcado', atualizado_em=NOW() WHERE id=?")
-            ->execute([$valor, mb_substr(trim($_POST['resposta'] ?? ''), 0, 2000) ?: null, $p['id']]);
+        $pdo->prepare("UPDATE pedidos SET valor=?, resposta=?, itens=?, status='orcado', atualizado_em=NOW() WHERE id=?")
+            ->execute([$valor, mb_substr(trim($_POST['resposta'] ?? ''), 0, 2000) ?: null, $orcItens ? json_encode($orcItens, JSON_UNESCAPED_UNICODE) : null, $p['id']]);
         wa_adiar();
         flash('sucesso', 'Orçamento de R$ ' . number_format($valor, 2, ',', '.') . ' registrado.' . wa_resultado_para_tela(wa_avisar_status_pedido($empresa, $p['id'], 'orcado')));
     }
@@ -83,14 +93,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrar_etapa'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mudar_status']) && isset($statusNomes[$_POST['status'] ?? ''])) {
     $p = pedido_da_empresa((int)$_POST['pedido_id'], $empresaId);
     if ($p && $p['status'] !== $_POST['status']) {
-        $motivo = mb_substr(trim($_POST['motivo'] ?? ''), 0, 300);
-        $pdo->prepare("UPDATE pedidos SET status=?, atualizado_em=NOW()" . ($_POST['status'] === 'cancelado' && $motivo !== '' ? ', resposta=?' : '') . " WHERE id=?")
-            ->execute($_POST['status'] === 'cancelado' && $motivo !== '' ? [$_POST['status'], $motivo, $p['id']] : [$_POST['status'], $p['id']]);
-        wa_adiar();
+        $mud = pedido_mudar_status($empresa, $p['id'], $_POST['status'], (string)($_POST['motivo'] ?? '')); // guarda a hora da etapa e avisa no WhatsApp
         // Data de evento já com outro evento fechado: avisa (não bloqueia — a empresa decide)
         $conflito = $_POST['status'] === 'aprovado' && !empty($p['data_evento']) && (int)($empresa['eventos_por_dia'] ?? 0) > 0
             && orc_eventos_na_data($empresaId, $p['data_evento'], $p['id']) >= (int)$empresa['eventos_por_dia'];
-        flash('sucesso', 'Pedido nº ' . $p['id'] . ': ' . $nomeStatus(['tipo' => $p['tipo'] ?? '', 'status' => $_POST['status']]) . '.' . wa_resultado_para_tela(wa_avisar_status_pedido($empresa, $p['id'], $_POST['status']))
+        flash('sucesso', 'Pedido nº ' . $p['id'] . ': ' . $nomeStatus(['tipo' => $p['tipo'] ?? '', 'status' => $_POST['status']]) . '.' . ($mud['msg'] ?? '')
             . ($conflito ? ' ⚠ Atenção: você já tinha evento fechado em ' . date('d/m/Y', strtotime($p['data_evento'])) . '.' : ''));
     }
     header('Location: ' . $voltar()); exit;
@@ -205,7 +212,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                     <small><?= date('d/m/Y H:i', strtotime($p['criado_em'])) ?></small>
                 </div>
                 <div class="pedido-detalhe">
-                    <?php if ($itens): ?>
+                    <?php if ($itens && $tipo === 'delivery'): ?>
                         <ul class="pedido-itens"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul>
                         <p><?= !empty($p['mesa']) ? '🍽 Consumo no local — mesa ' . e($p['mesa']) : (($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local' : '🛵 Entrega: ' . e($p['endereco_entrega'])) ?><?= (float)$p['taxa_entrega'] > 0 ? ' (taxa R$ ' . number_format((float)$p['taxa_entrega'], 2, ',', '.') . ')' : '' ?></p>
                         <p>💳 <?= e($p['forma_pagamento']) ?><?= $p['troco_para'] ? ' — troco para R$ ' . number_format((float)$p['troco_para'], 2, ',', '.') : '' ?></p>
@@ -214,6 +221,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                         <?php if (!empty($p['data_evento'])): ?><span class="mini">📅 <?= date('d/m/Y', strtotime($p['data_evento'])) ?></span><?php endif; ?>
                         <?php if (!empty($p['local_evento'])): ?><span class="mini">📍 <?= e($p['local_evento']) ?></span><?php endif; ?>
                         <?php if ($p['veiculo_info']): ?><span class="mini">🚗 <?= e($p['veiculo_info']) ?></span><?php endif; ?>
+                        <?php if ($itens): ?><ul class="pedido-itens" style="margin-top:8px"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul><?php endif; ?>
                     <?php endif; ?>
                     <?php if (!empty($p['observacoes'])): ?><p class="pedido-obs">📝 <?= e($p['observacoes']) ?></p><?php endif; ?>
                     <?php if (!empty($p['resposta'])): ?><p class="pedido-obs">💬 <?= nl2br(e($p['resposta'])) ?></p><?php endif; ?>
@@ -229,8 +237,13 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                     <summary class="btn btn-sm"><?= $p['status'] === 'novo' ? '💰 Responder orçamento' : '✏️ Alterar orçamento' ?></summary>
                     <form method="post">
                         <?= csrf_campo() ?><input type="hidden" name="pedido_id" value="<?= (int)$p['id'] ?>">
+                        <label>Itens do orçamento <span class="muted">(opcional: o total soma sozinho)</span></label>
+                        <div class="orc-linhas">
+                            <?php foreach ($itens ?: [] as $i): ?><div class="orc-linha"><input name="orc_nome[]" maxlength="120" value="<?= e($i['nome']) ?>" placeholder="Descrição"><input name="orc_qtd[]" type="number" min="1" value="<?= (int)$i['qtd'] ?>" aria-label="Quantidade"><input name="orc_preco[]" inputmode="decimal" value="<?= number_format((float)$i['preco'], 2, ',', '') ?>" placeholder="Valor unit."><button type="button" class="btn btn-ghost btn-sm" onclick="orcRemover(this)" aria-label="Remover">✕</button></div><?php endforeach; ?>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="orcLinha(this)" style="margin-bottom:8px">+ Adicionar item</button>
                         <div class="form-row">
-                            <div><label>Valor (R$)</label><input type="text" inputmode="decimal" name="valor" required value="<?= (float)$p['valor'] > 0 ? number_format((float)$p['valor'], 2, ',', '') : '' ?>" placeholder="1.500,00"></div>
+                            <div><label>Valor total (R$)</label><input type="text" inputmode="decimal" name="valor" required value="<?= (float)$p['valor'] > 0 ? number_format((float)$p['valor'], 2, ',', '') : '' ?>" placeholder="1.500,00" <?= $itens ? 'readonly' : '' ?>></div>
                             <div></div>
                         </div>
                         <label>Mensagem para o cliente (o que está incluso, prazo, forma de pagamento…)</label>
@@ -309,6 +322,28 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
         }).catch(function () { });
     }, 15000);
 })();
+</script>
+<style>
+.orc-linha { display: grid; grid-template-columns: 1fr 70px 110px 36px; gap: 6px; margin-bottom: 6px; }
+.orc-linha input { margin: 0; }
+@media (max-width: 560px) { .orc-linha { grid-template-columns: 1fr 60px 90px 32px; } }
+</style>
+<script>
+// Orçamento item a item: soma sozinho e trava o total enquanto houver itens
+function orcNum(s) { s = String(s || '').trim(); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); return parseFloat(s.replace(/[^0-9.]/g, '')) || 0; }
+function orcSomar(form) {
+    var linhas = form.querySelectorAll('.orc-linha'), t = 0, alguma = false;
+    linhas.forEach(function (l) { if (l.querySelector('[name="orc_nome[]"]').value.trim()) { alguma = true; t += (parseInt(l.querySelector('[name="orc_qtd[]"]').value, 10) || 1) * orcNum(l.querySelector('[name="orc_preco[]"]').value); } });
+    var v = form.querySelector('[name=valor]');
+    v.readOnly = alguma; if (alguma) v.value = t.toFixed(2).replace('.', ',');
+}
+function orcLinha(btn) {
+    var form = btn.closest('form'), d = document.createElement('div'); d.className = 'orc-linha';
+    d.innerHTML = '<input name="orc_nome[]" maxlength="120" placeholder="Descrição (ex.: mão de obra)"><input name="orc_qtd[]" type="number" min="1" value="1" aria-label="Quantidade"><input name="orc_preco[]" inputmode="decimal" placeholder="Valor unit."><button type="button" class="btn btn-ghost btn-sm" onclick="orcRemover(this)" aria-label="Remover">✕</button>';
+    form.querySelector('.orc-linhas').appendChild(d); d.querySelector('input').focus();
+}
+function orcRemover(b) { var form = b.closest('form'); b.closest('.orc-linha').remove(); orcSomar(form); }
+document.addEventListener('input', function (e) { if (e.target.closest('.orc-linha')) orcSomar(e.target.closest('form')); });
 </script>
 </body>
 </html>

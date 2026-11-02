@@ -12,6 +12,8 @@ $mods = modulos_atuais();
         <?php if ($estudioLiberado): ?><?= menu_item('/empresa/ia_estudio.php', 'ia_estudio.php', 'brilho', 'Estúdio IA', 'destaque') ?><?php else: ?><?= menu_item('/empresa/meu_site.php', 'meu_site.php', 'globo', 'Meu site') ?><?php endif; ?>
         <div class="sidebar-grupo">Atendimento</div>
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/agenda.php', 'agenda.php', 'calendario', 'Agenda') ?><?php endif; ?>
+        <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/caixa.php', 'caixa.php', 'dinheiro', 'Caixa e comandas') ?><?php endif; ?>
+        <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/gestor.php', 'gestor.php', 'pacote', 'Gestor de pedidos', 'destaque') ?><?php endif; ?>
         <?php if (modulo_ativo('delivery') || modulo_ativo('orcamentos')): ?><?= menu_item('/empresa/pedidos.php', 'pedidos.php', modulo_ativo('delivery') ? 'pacote' : 'prancheta', modulos_rotulo_pedidos()) ?><?php endif; ?>
         <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/mesas.php', 'mesas.php', 'layout', 'QR Code das mesas') ?><?php endif; ?>
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/clube.php', 'clube.php', 'estrela', 'Clube e pacotes') ?><?php endif; ?>

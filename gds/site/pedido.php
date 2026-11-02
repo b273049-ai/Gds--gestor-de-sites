@@ -117,6 +117,7 @@ main{width:100%;max-width:520px}
         <?php endif; ?>
 
         <div class="gds-resumo">
+            <?php if ($itens && !$delivery && ($p['servico_nome'] ?: $p['descricao'])): ?><div><span>Pedido</span><span style="white-space:pre-line;text-align:right"><?= e($p['servico_nome'] ?: $p['descricao']) ?></span></div><?php endif; ?>
             <?php if ($itens): foreach ($itens as $i): ?>
                 <div><span><?= (int)$i['qtd'] ?>× <?= e($i['nome']) ?></span><span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></div>
             <?php endforeach; else: ?>
