@@ -46,6 +46,44 @@ if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['cancel
         $msg = 'ok';
     }
 }
+// Cliente confirma presença pelo link do lembrete (reduz falta, como no Trinks/Booksy)
+if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['confirmar'])) {
+    if (!hash_equals($_SESSION['gds_cancel_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
+    elseif ($ag['status'] === 'agendado' && strtotime($ag['data_hora']) > time()) {
+        $pdo->prepare("UPDATE agendamentos SET status='confirmado' WHERE id=?")->execute([$ag['id']]);
+        $ag['status'] = 'confirmado'; $msg = 'confirmado';
+        if ($empresaWa = wa_carregar_empresa($ag['empresa_id'])) {
+            wa_adiar();
+            wa_notificar_empresa($empresaWa, 'contato', ['nome' => $ag['cliente_nome'], 'telefone' => $ag['cliente_telefone'] ?? '', 'mensagem' => '✅ Confirmou presença: ' . date('d/m \à\s H:i', strtotime($ag['data_hora'])) . ($ag['servico_nome'] ? ' — ' . $ag['servico_nome'] : '')], 'agendamento', $ag['id']);
+        }
+    }
+}
+// Remarcar: o cliente escolhe outro dia/horário livre (mesmo serviço e profissional)
+if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['remarcar'])) {
+    require_once __DIR__ . '/../includes/agenda_helper.php';
+    $nova = (string)($_POST['nova_data'] ?? '') . ' ' . (string)($_POST['nova_hora'] ?? '');
+    if (!hash_equals($_SESSION['gds_cancel_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
+    elseif (in_array($ag['status'], ['cancelado', 'concluido'], true) || strtotime($ag['data_hora']) < time() + 3600) $msg = 'Este agendamento não pode mais ser remarcado por aqui. Fale com a empresa.';
+    else {
+        $emp = $pdo->prepare("SELECT * FROM empresas WHERE id=?"); $emp->execute([$ag['empresa_id']]); $emp = $emp->fetch();
+        $sv = null;
+        if ($ag['servico_id']) { $q = $pdo->prepare("SELECT id, vagas, duracao_minutos FROM servicos WHERE id=?"); $q->execute([$ag['servico_id']]); $sv = $q->fetch() ?: null; }
+        $erro = agenda_validar($emp, trim($nova), (int)($ag['duracao_minutos'] ?: 30), $ag['profissional_id'] ?: null, $ag['id'], $sv);
+        if ($erro) $msg = $erro;
+        else {
+            $antes = $ag['data_hora'];
+            $pdo->prepare("UPDATE agendamentos SET data_hora=?, status='agendado', lembrete_enviado_em=NULL WHERE id=?")->execute([trim($nova), $ag['id']]);
+            $ag['data_hora'] = trim($nova) . ':00'; $ag['status'] = 'agendado'; $msg = 'remarcado';
+            site_notificar_empresa(['nome' => $ag['empresa_nome'], 'email' => $ag['empresa_email'], 'notificar_email' => $ag['notificar_email']],
+                'Agendamento remarcado: ' . $ag['cliente_nome'], [$ag['cliente_nome'] . ' remarcou de ' . date('d/m H:i', strtotime($antes)) . ' para ' . date('d/m/Y \à\s H:i', strtotime($ag['data_hora'])) . '.']);
+            if ($empresaWa = wa_carregar_empresa($ag['empresa_id'])) {
+                wa_adiar();
+                wa_notificar_empresa($empresaWa, 'contato', ['nome' => $ag['cliente_nome'], 'telefone' => $ag['cliente_telefone'] ?? '', 'mensagem' => '🔁 Remarcou: de ' . date('d/m H:i', strtotime($antes)) . ' para ' . date('d/m \à\s H:i', strtotime($ag['data_hora'])) . ($ag['servico_nome'] ? ' — ' . $ag['servico_nome'] : '')], 'agendamento', $ag['id']);
+                espera_avisar($empresaWa, $antes, $ag['servico_id'] ?? null); // o horário antigo ficou livre
+            }
+        }
+    }
+}
 $_SESSION['gds_cancel_csrf'] = bin2hex(random_bytes(16));
 
 $tema = $ag ? site_tema($ag) : ['accent' => '#2563eb'];
@@ -70,6 +108,8 @@ $podeCancelar = $ag && !in_array($ag['status'], ['cancelado', 'concluido'], true
         <p class="gds-mute" style="font-size:.85rem"><?= e($ag['empresa_nome']) ?></p>
         <h3 style="font-size:1.4rem;margin:4px 0 14px">Seu agendamento</h3>
         <?php if ($msg === 'ok'): ?><div class="gds-alerta gds-alerta-ok">Agendamento cancelado. Avisamos a empresa.</div>
+        <?php elseif ($msg === 'confirmado'): ?><div class="gds-alerta gds-alerta-ok">✅ Presença confirmada. Te esperamos!</div>
+        <?php elseif ($msg === 'remarcado'): ?><div class="gds-alerta gds-alerta-ok">🔁 Remarcado! Avisamos a empresa.</div>
         <?php elseif ($msg): ?><div class="gds-alerta gds-alerta-erro"><?= e($msg) ?></div><?php endif; ?>
         <div class="gds-resumo">
             <div><span>Situação</span><span><?= e($statusTxt[$ag['status']] ?? $ag['status']) ?></span></div>
@@ -86,6 +126,33 @@ $podeCancelar = $ag && !in_array($ag['status'], ['cancelado', 'concluido'], true
             <?php if ($ag['whatsapp']): ?><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="<?= e(frag_link_whatsapp($ag['whatsapp'], 'Olá! Sobre o meu agendamento de ' . date('d/m \à\s H:i', $ts) . ' (' . $ag['cliente_nome'] . '):')) ?>"><?= frag_icone('whats') ?> Falar com a empresa</a><?php endif; ?>
             <?php if ($ag['endereco']): ?><a class="gds-btn-2" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=<?= urlencode($ag['endereco']) ?>"><?= frag_icone('rota') ?> Como chegar</a><?php endif; ?>
         </div>
+        <?php if ($podeCancelar && $ag['status'] === 'agendado'): ?>
+        <form method="post" style="margin-top:16px"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_cancel_csrf']) ?>">
+            <button type="submit" name="confirmar" value="1" class="gds-btn gds-btn-bloco">✅ Confirmar minha presença</button></form>
+        <?php endif; ?>
+        <?php if ($podeCancelar && $ts > time() + 3600): ?>
+        <details style="margin-top:16px" data-remarcar><summary class="gds-btn-2">🔁 Remarcar para outro dia/horário</summary>
+            <form method="post" style="margin-top:14px">
+                <input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_cancel_csrf']) ?>">
+                <div class="gds-campo"><label for="nova_data">Novo dia</label><input type="date" id="nova_data" name="nova_data" min="<?= date('Y-m-d') ?>" required></div>
+                <div class="gds-campo"><label for="nova_hora">Horário livre</label><select id="nova_hora" name="nova_hora" required><option value="">Escolha o dia primeiro</option></select></div>
+                <button type="submit" name="remarcar" value="1" class="gds-btn">Remarcar</button>
+            </form>
+        </details>
+        <script>
+        (function () {
+            var d = document.getElementById('nova_data'), h = document.getElementById('nova_hora');
+            d.addEventListener('change', function () {
+                h.innerHTML = '<option value="">Carregando…</option>';
+                fetch('/site/horarios.php?e=<?= (int)$ag['empresa_id'] ?>&data=' + d.value + '&duracao=<?= (int)($ag['duracao_minutos'] ?: 30) ?>&profissional=<?= (int)$ag['profissional_id'] ?>&servico=<?= (int)$ag['servico_id'] ?>')
+                    .then(function (r) { return r.json(); }).then(function (r) {
+                        var l = (r.livres || []); h.innerHTML = l.length ? '' : '<option value="">Sem horários livres nesse dia</option>';
+                        l.forEach(function (x) { var o = document.createElement('option'); o.value = o.textContent = (typeof x === 'string' ? x : x.hora); h.appendChild(o); });
+                    });
+            });
+        })();
+        </script>
+        <?php endif; ?>
         <?php if ($podeCancelar): ?>
         <details style="margin-top:22px"><summary class="gds-btn-2" style="color:var(--gds-erro)">Preciso cancelar</summary>
             <form method="post" style="margin-top:14px">

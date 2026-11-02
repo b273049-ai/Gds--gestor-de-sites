@@ -68,6 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['responder_orcamento']
         if (empty($p['token'])) $pdo->prepare("UPDATE pedidos SET token=? WHERE id=?")->execute([bin2hex(random_bytes(16)), $p['id']]);
         $pdo->prepare("UPDATE pedidos SET valor=?, resposta=?, itens=?, status='orcado', atualizado_em=NOW() WHERE id=?")
             ->execute([$valor, mb_substr(trim($_POST['resposta'] ?? ''), 0, 2000) ?: null, $orcItens ? json_encode($orcItens, JSON_UNESCAPED_UNICODE) : null, $p['id']]);
+        $dias = max(1, min(180, (int)($_POST['validade_dias'] ?? 15)));
+        try { $pdo->prepare("UPDATE pedidos SET validade = CURRENT_DATE + ?::int WHERE id=?")->execute([$dias, $p['id']]); } catch (PDOException $e) {}
         wa_adiar();
         flash('sucesso', 'Orçamento de R$ ' . number_format($valor, 2, ',', '.') . ' registrado.' . wa_resultado_para_tela(wa_avisar_status_pedido($empresa, $p['id'], 'orcado')));
     }
@@ -165,6 +167,32 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
         </div></div>
     <?php if (modulo_ativo('delivery') && pg_bool($empresa['loja_pausada'] ?? false)): ?><?= alerta('aviso', 'Sua loja está pausada: o carrinho do site está desligado e os clientes só conseguem pedir pelo WhatsApp.') ?><?php endif; ?>
     <?= flash_render() ?>
+    <?php if (modulo_ativo('orcamentos')):
+        $parados = [];
+        try {
+            $q = $pdo->prepare("SELECT p.id, p.valor, p.status, p.validade, p.criado_em, p.atualizado_em, p.token, c.nome, c.telefone,
+                    EXTRACT(DAY FROM (LOCALTIMESTAMP - COALESCE(p.atualizado_em, p.criado_em)))::int AS dias
+                FROM pedidos p LEFT JOIN clientes c ON c.id=p.cliente_id
+                WHERE p.empresa_id=? AND COALESCE(p.tipo,'') <> 'delivery' AND ((p.status='orcado' AND COALESCE(p.atualizado_em, p.criado_em) < NOW() - INTERVAL '3 days') OR (p.status='novo' AND p.criado_em < NOW() - INTERVAL '1 day'))
+                ORDER BY p.status='novo' DESC, p.atualizado_em LIMIT 8");
+            $q->execute([$empresaId]); $parados = $q->fetchAll();
+        } catch (PDOException $e) {}
+        if ($parados): ?>
+    <section class="form-box largo" style="border-color:rgba(250,204,21,.45)">
+        <h3 style="margin-top:0">⏰ Precisam de atenção</h3>
+        <p class="dica" style="margin-top:-6px">Orçamento enviado e sem resposta há 3+ dias, ou pedido sem orçamento há 1+ dia. Um "conseguiu ver?" fecha muito negócio.</p>
+        <ul style="list-style:none;padding:0;margin:0;display:grid;gap:6px">
+        <?php foreach ($parados as $x): $prim = explode(' ', (string)$x['nome'])[0];
+            $txt = $x['status'] === 'novo' ? 'Oi, ' . $prim . '! Recebemos seu pedido de orçamento nº ' . $x['id'] . ' e já estamos finalizando. Posso tirar alguma dúvida rapidinho?'
+                : 'Oi, ' . $prim . '! Conseguiu ver o orçamento nº ' . $x['id'] . ' (R$ ' . number_format((float)$x['valor'], 2, ',', '.') . ')? ' . (!empty($x['validade']) ? 'Ele vale até ' . date('d/m', strtotime($x['validade'])) . '. ' : '') . 'Se quiser, ajusto alguma coisa pra caber no seu orçamento 🙂' . (!empty($x['token']) ? ' ' . wa_url_publica($empresa, '/site/pedido.php?t=' . $x['token']) : ''); ?>
+            <li style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--border);border-radius:10px">
+                <span>nº <?= (int)$x['id'] ?> · <strong><?= e($x['nome'] ?: 'Cliente') ?></strong> · <?= $x['status'] === 'novo' ? '<span class="pill pill-aviso">sem orçamento há ' . max(1, (int)$x['dias']) . ' dia(s)</span>' : 'R$ ' . number_format((float)$x['valor'], 2, ',', '.') . ' · <span class="pill pill-neutro">sem resposta há ' . (int)$x['dias'] . ' dias</span>' ?><?= !empty($x['validade']) && strtotime($x['validade']) < strtotime('today') ? ' <span class="pill pill-aviso">vencido</span>' : '' ?></span>
+                <?php if ($x['telefone']): ?><a class="btn btn-sm" target="_blank" href="<?= e(link_whatsapp($x['telefone'], $txt)) ?>"><?= icone('chat', 14) ?> <?= $x['status'] === 'novo' ? 'Avisar' : 'Cobrar resposta' ?></a><?php endif; ?>
+            </li>
+        <?php endforeach; ?>
+        </ul>
+    </section>
+    <?php endif; endif; ?>
     <details class="form-box">
         <summary><?= icone('mais') ?> Registrar <?= modulo_ativo('delivery') && !modulo_ativo('orcamentos') ? 'pedido' : 'orçamento' ?> manualmente</summary>
         <form method="post">
@@ -246,6 +274,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                             <div><label>Valor total (R$)</label><input type="text" inputmode="decimal" name="valor" required value="<?= (float)$p['valor'] > 0 ? number_format((float)$p['valor'], 2, ',', '') : '' ?>" placeholder="1.500,00" <?= $itens ? 'readonly' : '' ?>></div>
                             <div></div>
                         </div>
+                        <div class="form-row"><div><label>Válido por (dias)</label><input type="number" name="validade_dias" min="1" max="180" value="<?= !empty($p['validade']) ? max(1, (int)round((strtotime($p['validade']) - strtotime('today')) / 86400)) : 15 ?>"></div><div></div></div>
                         <label>Mensagem para o cliente (o que está incluso, prazo, forma de pagamento…)</label>
                         <textarea name="resposta" rows="3" maxlength="2000" placeholder="Ex: Inclui som, iluminação e 5h de festa. 50% na reserva."><?= e($p['resposta'] ?? '') ?></textarea>
                         <button type="submit" name="responder_orcamento" value="1" class="btn btn-sm">Enviar orçamento ao cliente</button>
@@ -279,6 +308,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                 <?php endif; ?>
                 <a class="btn btn-ghost btn-sm" target="_blank" href="pedido_imprimir.php?id=<?= (int)$p['id'] ?>">🖨 Imprimir</a>
                 <?php if (!empty($p['token'])): ?><a class="btn btn-ghost btn-sm" target="_blank" href="/site/pedido.php?t=<?= e($p['token']) ?>"><?= icone('olho', 14) ?> Ver como o cliente</a><?php endif; ?>
+                <?php if (!empty($p['token']) && $tipo === 'orcamento' && (float)$p['valor'] > 0): ?><a class="btn btn-ghost btn-sm" target="_blank" href="/site/orcamento_pdf.php?t=<?= e($p['token']) ?>">📄 PDF</a><?php endif; ?>
             </footer>
             <?php endif; ?>
         </article>

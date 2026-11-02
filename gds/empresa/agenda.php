@@ -97,7 +97,7 @@ if ($ver === 'grade') { $where = ['a.empresa_id = ?', 'a.data_hora::date = ?', "
 $ordem = $ver === 'passados' || $ver === 'todos' ? 'DESC' : 'ASC';
 $temComandas = (bool)$pdo->query("SELECT to_regclass('comandas') IS NOT NULL")->fetchColumn();
 $agendamentos = $pdo->prepare("
-    SELECT a.*, c.nome AS cliente_nome, c.telefone, s.nome AS servico_nome, s.duracao_minutos, pr.nome AS profissional_nome" . ($temComandas ? ", (SELECT id FROM comandas cm WHERE cm.agendamento_id = a.id LIMIT 1) AS comanda_id" : "") . "
+    SELECT a.*, c.nome AS cliente_nome, c.telefone, s.nome AS servico_nome, s.duracao_minutos, pr.nome AS profissional_nome, (SELECT COUNT(*) FROM agendamentos f WHERE f.cliente_id = a.cliente_id AND f.empresa_id = a.empresa_id AND f.status='faltou') AS faltas_cliente" . ($temComandas ? ", (SELECT id FROM comandas cm WHERE cm.agendamento_id = a.id LIMIT 1) AS comanda_id" : "") . "
     FROM agendamentos a
     LEFT JOIN clientes c ON c.id = a.cliente_id
     LEFT JOIN servicos s ON s.id = a.servico_id
@@ -222,7 +222,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
         <?php foreach ($agendamentos as $a): $ts = strtotime($a['data_hora']); ?>
         <tr>
             <td><strong><?= date('d/m/Y', $ts) ?></strong> <?= date('H:i', $ts) ?><span class="mini"><?= $diasSemana[(int)date('w', $ts)] ?><?= $a['duracao_minutos'] ? ' · ' . (int)$a['duracao_minutos'] . ' min' : '' ?></span></td>
-            <td><?= e($a['cliente_nome'] ?? '—') ?><?php if ($a['observacoes']): ?><span class="mini" title="<?= e($a['observacoes']) ?>">📝 <?= e(mb_strimwidth($a['observacoes'], 0, 40, '…')) ?></span><?php endif; ?></td>
+            <td><?php if ($a['cliente_id']): ?><a class="link" href="/empresa/clientes.php?ficha=<?= (int)$a['cliente_id'] ?>"><?= e($a['cliente_nome'] ?? '—') ?></a><?php else: ?><?= e($a['cliente_nome'] ?? '—') ?><?php endif; ?><?php if ((int)($a['faltas_cliente'] ?? 0) >= 2): ?> <span class="pill pill-aviso" title="Faltou <?= (int)$a['faltas_cliente'] ?> vezes — vale confirmar antes">⚠ <?= (int)$a['faltas_cliente'] ?> faltas</span><?php endif; ?><?php if ($a['observacoes']): ?><span class="mini" title="<?= e($a['observacoes']) ?>">📝 <?= e(mb_strimwidth($a['observacoes'], 0, 40, '…')) ?></span><?php endif; ?></td>
             <td><?= e($a['servico_nome'] ?? '—') ?><?php if (isset($a['valor']) && $a['valor'] !== null && (float)$a['valor'] > 0): ?><span class="mini">R$ <?= number_format((float)$a['valor'], 2, ',', '.') ?><?= !empty($a['cupom_codigo']) ? ' · cupom ' . e($a['cupom_codigo']) : '' ?></span><?php endif; ?></td>
             <td><?= e($a['profissional_nome'] ?? '—') ?><?php if (($a['origem'] ?? '') === 'site'): ?><span class="mini">🌐 pelo site</span><?php endif; ?><?php if (pg_bool($a['pago'] ?? false)): ?><span class="mini" style="color:var(--ok)">💰 <?= (float)($a['sinal_valor'] ?? 0) > 0 && (float)$a['sinal_valor'] < (float)($a['valor'] ?? 0) ? 'sinal de R$ ' . number_format((float)$a['sinal_valor'], 2, ',', '.') . ' pago' : 'pago no Pix' ?></span><?php endif; ?></td>
             <td>
@@ -240,6 +240,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
                 <?php elseif ($temComandas && !in_array($a['status'], ['cancelado', 'faltou'], true) && $ts < strtotime('tomorrow')): ?>
                 <a class="btn btn-sm" href="/empresa/caixa.php?agendamento=<?= (int)$a['id'] ?>" title="Fechar a conta deste atendimento"><?= icone('dinheiro', 14) ?> Fechar comanda</a>
                 <?php endif; ?>
+                <?php if ($a['cliente_id'] && $ts < time() + 7200): ?><a class="btn btn-ghost btn-sm" href="/empresa/clientes.php?ficha=<?= (int)$a['cliente_id'] ?>&nota=<?= (int)$a['id'] ?>#notas" title="Anotar o atendimento na ficha">📝</a><?php endif; ?>
                 <?php if ($a['telefone'] && $ts > time() && $a['status'] !== 'cancelado'): ?>
                 <a class="btn btn-ghost btn-sm" target="_blank" href="<?= e(link_whatsapp($a['telefone'], 'Olá, ' . explode(' ', (string)$a['cliente_nome'])[0] . '! Passando para lembrar do seu horário' . ($a['servico_nome'] ? ' de ' . $a['servico_nome'] : '') . ' em ' . date('d/m \à\s H:i', $ts) . ' na ' . $empresa['nome'] . '. Podemos confirmar?')) ?>" title="Lembrar pelo WhatsApp"><?= icone('chat', 14) ?> Lembrar</a>
                 <?php endif; ?>

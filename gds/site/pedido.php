@@ -29,6 +29,7 @@ $msg = '';
 if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['aprovar'])) {
     if (!hash_equals($_SESSION['gds_pedido_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
     elseif ($p['status'] !== 'orcado') $msg = 'Este orçamento não pode mais ser aprovado por aqui.';
+    elseif (!empty($p['validade']) && strtotime($p['validade']) < strtotime('today')) $msg = 'Este orçamento venceu. Fale com a empresa para atualizar.';
     else {
         // Aceite registrado (vale como comprovante: nome, data, hora e IP)
         $nomeAceite = mb_substr(trim(strip_tags((string)($_POST['aceite_nome'] ?? ''))), 0, 150) ?: $p['cliente_nome'];
@@ -139,7 +140,11 @@ main{width:100%;max-width:520px}
         <?php elseif ($pixPendente && $pixPendente['status'] === 'pago'): ?><div class="gds-alerta gds-alerta-ok" style="margin-top:12px">💰 Pagamento de <?= e(frag_preco($pixPendente['valor'])) ?> confirmado.</div><?php endif; ?>
 
         <div class="gds-acoes">
-            <?php if ($p['status'] === 'orcado'): ?>
+            <?php $vencido = $p['status'] === 'orcado' && !empty($p['validade']) && strtotime($p['validade']) < strtotime('today'); ?>
+            <?php if (!$delivery && (float)$p['valor'] > 0 && in_array($p['status'], ['orcado', 'aprovado', 'em_andamento', 'concluido'], true)): ?><a class="gds-btn-2" target="_blank" href="/site/orcamento_pdf.php?t=<?= e($token) ?>">📄 Baixar orçamento (PDF)</a><?php endif; ?>
+            <?php if ($vencido): ?><div class="gds-alerta gds-alerta-erro" style="width:100%">Este orçamento venceu em <?= date('d/m/Y', strtotime($p['validade'])) ?>. Fale com a empresa para atualizar os valores.</div><?php endif; ?>
+            <?php if ($p['status'] === 'orcado' && !$vencido): ?>
+            <?php if (!empty($p['validade'])): ?><p class="gds-mute" style="font-size:.85rem;margin:0;width:100%">Válido até <?= date('d/m/Y', strtotime($p['validade'])) ?>.</p><?php endif; ?>
             <form method="post" style="margin:0;display:grid;gap:8px;width:100%"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_pedido_csrf']) ?>">
                 <div class="gds-campo" style="margin:0"><label for="aceite_nome">Seu nome completo (fica registrado como aceite)</label><input type="text" id="aceite_nome" name="aceite_nome" required maxlength="150" value="<?= e($p['cliente_nome']) ?>"></div>
                 <?php if ((int)($p['orc_sinal_percentual'] ?? 0) > 0 && (float)$p['valor'] > 0 && pag_disponivel(['id' => $p['emp_id']] + $p)): ?><p class="gds-mute" style="font-size:.85rem;margin:0">Para reservar, o sinal de <?= (int)$p['orc_sinal_percentual'] ?>% (<?= e(frag_preco(round((float)$p['valor'] * (int)$p['orc_sinal_percentual'] / 100, 2))) ?>) é pago por Pix logo depois de aprovar.</p><?php endif; ?>

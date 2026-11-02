@@ -33,7 +33,7 @@ function wa_eventos() {
         'agendamento_confirmado' => ['grupo' => 'Agendamentos', 'rotulo' => 'Agendamento confirmado', 'quando' => 'Quando você marca o agendamento como "Confirmado"',
             'texto' => "✅ {nome}, seu horário está *confirmado*!\n\n📅 {data} às {hora}\n✂️ {servico}\n📍 {endereco}\n\nTe esperamos na *{empresa}*!"],
         'agendamento_lembrete' => ['grupo' => 'Agendamentos', 'rotulo' => 'Lembrete antes do horário', 'quando' => 'Algumas horas antes do agendamento',
-            'texto' => "⏰ Lembrete: {nome}, seu horário na *{empresa}* é {data} às {hora} ({servico}).\nSe não puder vir, avise por aqui ou cancele: {link}"],
+            'texto' => "⏰ Lembrete: {nome}, seu horário na *{empresa}* é {data} às {hora} ({servico}).\n👉 Confirme sua presença ou remarque em 1 toque: {link}"],
         'agendamento_cancelado' => ['grupo' => 'Agendamentos', 'rotulo' => 'Agendamento cancelado', 'quando' => 'Quando o agendamento é cancelado',
             'texto' => "{nome}, seu agendamento de {data} às {hora} na *{empresa}* foi *cancelado*.\nQuer marcar outro horário? É só responder esta mensagem."],
         'lista_espera_vaga' => ['grupo' => 'Agendamentos', 'rotulo' => 'Abriu um horário (lista de espera)', 'quando' => 'Quando alguém cancela e há cliente na lista de espera daquele dia',
