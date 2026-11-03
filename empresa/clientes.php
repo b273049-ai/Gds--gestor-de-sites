@@ -246,7 +246,7 @@ if (isset($_GET['editar'])) { $e = $pdo->prepare("SELECT * FROM clientes WHERE i
             <?php if ($temEtiquetas): ?>
             <div class="form-row">
                 <div><label>Aniversário</label><input type="date" name="nascimento" value="<?= e($editando['nascimento'] ?? '') ?>"></div>
-                <div><label>Etiquetas (separe com vírgula)</label><input type="text" name="etiquetas" maxlength="200" list="etqs" placeholder="Ex.: VIP, indica amigos, prefere manhã" value="<?= e($editando['etiquetas'] ?? '') ?>">
+                <div><label>Etiquetas</label><input type="hidden" name="etiquetas" data-editor-chips data-novo="1" data-opcoes="<?= e(implode('|', array_unique(array_merge(['VIP', 'Indica amigos', 'Prefere manhã', 'Prefere WhatsApp', 'Paga adiantado', 'Atenção'], array_keys($todasEtiquetas))))) ?>" value="<?= e($editando['etiquetas'] ?? '') ?>">
                     <datalist id="etqs"><?php foreach (array_keys($todasEtiquetas) as $t): ?><option value="<?= e($t) ?>"><?php endforeach; ?></datalist></div>
             </div>
             <label>Ficha (alergias, preferências, histórico importante)</label><textarea name="ficha" rows="3" maxlength="2000" placeholder="Ex.: alergia a amônia · gosta do degradê baixo · sempre pede refrigerante zero"><?= e($editando['ficha'] ?? '') ?></textarea>

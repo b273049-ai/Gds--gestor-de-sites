@@ -110,3 +110,27 @@ function opc_precificar($servico, $escolhas) {
     }
     return ['ok' => true, 'preco' => round($preco + $extras, 2), 'nome' => $servico['nome'] . ($partes ? ' (' . implode('; ', $partes) . ')' : '')];
 }
+
+// Opções montadas no editor visual do painel (botões) → mesma estrutura, validada
+function opc_normalizar($grupos) {
+    $out = [];
+    foreach (array_slice((array)$grupos, 0, 12) as $g) {
+        if (!is_array($g)) continue;
+        $nome = mb_substr(trim(strip_tags((string)($g['nome'] ?? ''))), 0, 60);
+        $itens = [];
+        foreach (array_slice((array)($g['itens'] ?? []), 0, 40) as $i) {
+            $n = mb_substr(trim(strip_tags((string)($i['nome'] ?? ''))), 0, 60);
+            if ($n === '') continue;
+            $itens[] = ['nome' => $n, 'preco' => max(0, round(is_numeric($i['preco'] ?? null) ? (float)$i['preco'] : opc_num($i['preco'] ?? 0), 2))];
+        }
+        if ($nome === '' || !$itens) continue;
+        $regra = ($g['regra'] ?? '') === 'maior' ? 'maior' : 'soma';
+        $qtd = $regra === 'soma' && !empty($g['qtd']);
+        $max = max(1, min($qtd ? 50 : count($itens), (int)($g['max'] ?? 1)));
+        $min = max(0, min($max, (int)($g['min'] ?? 0)));
+        $novo = ['nome' => $nome, 'min' => $min, 'max' => $max, 'regra' => $regra, 'itens' => $itens];
+        if ($qtd) $novo['qtd'] = true;
+        $out[] = $novo;
+    }
+    return $out;
+}

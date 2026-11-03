@@ -75,8 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_servico'])) {
     $sid = $id ?: (int)($pdo->query("SELECT MAX(id) FROM servicos WHERE empresa_id=" . (int)$empresaId)->fetchColumn());
     if ($sid && $nome !== '') {
         try {
-            $ops = opc_de_texto($_POST['opcoes'] ?? '');
-            $perg = array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim($x), 0, 160), preg_split('/\r?\n/', (string)($_POST['perguntas'] ?? ''))))), 0, 8);
+            $ops = isset($_POST['opcoes_json']) ? opc_normalizar(json_decode((string)$_POST['opcoes_json'], true) ?: []) : opc_de_texto($_POST['opcoes'] ?? '');
+            $pergBrutas = isset($_POST['perguntas_json']) ? (array)(json_decode((string)$_POST['perguntas_json'], true) ?: []) : preg_split('/\r?\n/', (string)($_POST['perguntas'] ?? ''));
+            $perg = array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim(strip_tags((string)$x)), 0, 160), $pergBrutas))), 0, 8);
             $de = valor_decimal($_POST['preco_de'] ?? '', 0);
             $est = trim((string)($_POST['estoque'] ?? ''));
             $pdo->prepare("UPDATE servicos SET preco_de=?, estoque=? WHERE id=? AND empresa_id=?")->execute([$de > $preco ? $de : null, $est === '' ? null : max(0, min(999999, (int)$est)), $sid, $empresaId]);
@@ -166,9 +167,9 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
             <div><label>Estoque (vazio = sem controle)</label><input type="number" name="estoque" min="0" placeholder="Ex.: 12" value="<?= isset($editando['estoque']) && $editando['estoque'] !== null ? (int)$editando['estoque'] : '' ?>"></div>
         </div>
         <p class="dica">Com estoque, cada pedido dá baixa sozinho e o item aparece "Esgotado" quando zera.</p>
-        <label>Opções do item (adicionais, ponto, tamanho, sabores, cor…) — uma linha por grupo</label>
-        <textarea name="opcoes" rows="5" placeholder="Ponto da carne* (1): Mal passado, Ao ponto, Bem passado&#10;Adicionais (até 5, qtd): Bacon +4, Cheddar +3,50, Ovo +2&#10;Retirar (até 4): Cebola, Tomate, Alface, Picles&#10;Molhos (mín 2, até 3): Barbecue, Maionese verde, Cheddar&#10;Sabores* (2, maior preço): Calabresa 45, Marguerita 42"><?= e(opc_para_texto(opc_ler($editando ?? []))) ?></textarea>
-        <p class="dica">* = obrigatório · (1) escolhe uma · (até 3) escolhe várias · <b>qtd</b> = o cliente escolhe a quantidade de cada (2x bacon) · <b>mín 2</b> = precisa escolher pelo menos 2 · "+4" soma ao preço · "maior preço" = meio a meio cobra o sabor mais caro. Serve também para tamanho (P, M +5, G +10). O cliente sempre tem o campo <b>"Alguma observação?"</b> no item.</p>
+        <label>Opções do item <small class="muted">(adicionais, ponto da carne, retirar ingredientes, molhos, tamanho, sabores…)</small></label>
+        <input type="hidden" name="opcoes_json" data-editor-opcoes value="<?= e(json_encode(opc_ler($editando ?? []), JSON_UNESCAPED_UNICODE)) ?>">
+        <p class="dica">Toque num modelo pronto e ajuste. O cliente sempre tem o campo <b>"Alguma observação?"</b> no item.</p>
         <label class="check"><input type="checkbox" name="sugerir" <?= $editando && pg_bool($editando['sugerir'] ?? false) ? 'checked' : '' ?>> Sugerir no carrinho ("Peça também") — ótimo para bebida, sobremesa e porção</label>
         <?php endif; ?>
         <?php if ($comAgenda): ?>
@@ -179,8 +180,8 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <label class="check"><input type="checkbox" name="experimental" <?= $editando && pg_bool($editando['experimental'] ?? false) ? 'checked' : '' ?>> É uma aula/avaliação experimental (vira botão em destaque no site)</label>
         <?php endif; ?>
         <?php if ($comOrc || !$comAgenda && !$ehCatalogo): ?>
-        <label>Perguntas do pedido de orçamento (uma por linha)</label>
-        <textarea name="perguntas" rows="3" placeholder="Quantos convidados?&#10;O local tem energia no palco?&#10;Qual a metragem?"><?= e(implode("\n", (array)json_decode((string)($editando['perguntas'] ?? ''), true))) ?></textarea>
+        <label>Perguntas do pedido de orçamento <small class="muted">(aparecem quando o cliente escolhe este serviço)</small></label>
+        <input type="hidden" name="perguntas_json" data-editor-lista="pergunta" data-sugestoes="Quantos convidados?|Qual a data e o horário?|Qual o endereço/local?|Qual a metragem (m²)?|Tem fotos do local ou do problema?|Qual o modelo e o ano?|Qual o seu orçamento aproximado?" value="<?= e(json_encode(array_values((array)json_decode((string)($editando['perguntas'] ?? ''), true)), JSON_UNESCAPED_UNICODE)) ?>">
         <?php endif; ?>
         <button type="submit" name="salvar_servico" value="1"><?= $editando ? 'Salvar alterações' : 'Adicionar ' . $item ?></button>
         <?php if ($editando): ?><a href="servicos.php" class="btn btn-ghost" style="margin-top:18px">Cancelar</a><?php endif; ?>
