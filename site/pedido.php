@@ -69,7 +69,7 @@ if ($p) { try { $q = $pdo->prepare("SELECT 1 FROM avaliacoes WHERE pedido_id=? L
 if ($p && !$jaAvaliou && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['avaliar_pedido'])) {
     $nota = max(1, min(5, (int)($_POST['nota'] ?? 0)));
     if (!hash_equals($_SESSION['gds_pedido_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
-    elseif ($p['status'] !== 'concluido') $msg = 'Você pode avaliar quando o pedido for entregue.';
+    elseif ($p['status'] !== 'concluido') $msg = 'Você pode avaliar quando o ' . (($p['tipo'] ?? '') === 'delivery' ? 'pedido for entregue.' : 'serviço for concluído.');
     else {
         try {
             $pdo->prepare("INSERT INTO avaliacoes (empresa_id, cliente_id, nota, comentario, nome_autor, aprovado, origem, pedido_id) VALUES (?,?,?,?,?,false,'pedido',?)")
@@ -201,13 +201,17 @@ main{width:100%;max-width:520px}
                 <button type="submit" name="cancelar_pedido" value="1" class="gds-btn" style="background:var(--gds-erro);color:#fff" onclick="return confirm('Cancelar este pedido?')">Confirmar cancelamento</button>
             </form><p class="gds-mute" style="font-size:.8rem">Depois que a loja aceitar, o cancelamento é só pelo WhatsApp.</p></details>
         <?php endif; ?>
-        <?php if ($delivery && $p['status'] === 'concluido' && !$jaAvaliou): ?>
+        <?php if ($p['status'] === 'concluido' && !$jaAvaliou): ?>
         <form method="post" class="gds-avaliar-pedido"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_pedido_csrf']) ?>">
-            <h4>Como foi seu pedido?</h4>
-            <div class="gds-estrelas" role="radiogroup" aria-label="Nota"><?php for ($n = 5; $n >= 1; $n--): ?><input type="radio" id="nota<?= $n ?>" name="nota" value="<?= $n ?>" required><label for="nota<?= $n ?>" title="<?= $n ?> estrela(s)">★</label><?php endfor; ?></div>
-            <textarea name="comentario" rows="2" maxlength="1000" placeholder="Conte o que achou (opcional)"></textarea>
+            <h4><?= $delivery ? 'Como foi seu pedido?' : 'Como foi o serviço?' ?></h4>
+            <div class="gds-estrelas" role="radiogroup" aria-label="Nota"><?php for ($n = 5; $n >= 1; $n--): ?><input type="radio" id="nota<?= $n ?>" name="nota" value="<?= $n ?>" required><label for="nota<?= $n ?>" title="<?= $n ?> estrela(s)" aria-label="<?= $n ?> estrela(s)">★</label><?php endfor; ?></div>
+            <label for="comentario" class="gds-mute" style="font-size:.85rem">Comentário (opcional)</label>
+            <textarea id="comentario" name="comentario" rows="2" maxlength="1000" placeholder="Conte o que achou…"></textarea>
             <button type="submit" name="avaliar_pedido" value="1" class="gds-btn">Enviar avaliação</button>
         </form>
+        <?php endif; ?>
+        <?php if (!$delivery && in_array($p['status'], ['concluido', 'cancelado'], true)): ?>
+        <a class="gds-btn gds-btn-bloco" style="margin-top:16px" href="/<?= e($p['slug']) ?><?= !empty($p['servico_id']) ? '?servico=' . (int)$p['servico_id'] : '' ?>#gds-orcamento">🔁 Pedir novo orçamento</a>
         <?php endif; ?>
         <?php if (!in_array($p['status'], ['concluido', 'cancelado'], true)): ?><p class="gds-mute" style="font-size:.8rem;margin-top:14px">Esta página se atualiza sozinha.</p><?php endif; ?>
     </div>

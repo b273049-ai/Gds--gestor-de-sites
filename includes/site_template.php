@@ -310,9 +310,9 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fontes) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
-<link rel="stylesheet" href="/assets/css/site-premium.css?v=2">
-<style>:root{--bg:<?= $E['bg'] ?>;--bg2:<?= $E['bg2'] ?>;--sup:<?= $E['superficie'] ?>;--txt:<?= $E['texto'] ?>;--suave:<?= $E['suave'] ?>;--linha:<?= $E['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= frag_cor_contraste($accent) ?>;--f-titulo:<?= $E['titulo'] ?>,Georgia,serif;--f-corpo:<?= $E['corpo'] ?>,system-ui,sans-serif;color-scheme:<?= $E['escuro'] ? 'dark' : 'light' ?>}</style>
-<?= frag_css_apoio(['accent' => $accent]) ?>
+<link rel="stylesheet" href="/assets/css/site-premium.css?v=5">
+<?php $fundosTxt = $E['escuro'] ? [$E['bg'], $E['bg2']] : [$E['bg'], $E['bg2'], '#ffffff']; ?><style>:root{--bg:<?= $E['bg'] ?>;--bg2:<?= $E['bg2'] ?>;--sup:<?= $E['superficie'] ?>;--txt:<?= $E['texto'] ?>;--suave:<?= $E['suave'] ?>;--linha:<?= $E['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= frag_cor_contraste($accent) ?>;--accent-txt:<?= frag_cor_legivel($accent, $fundosTxt) ?>;--f-titulo:<?= $E['titulo'] ?>,Georgia,serif;--f-corpo:<?= $E['corpo'] ?>,system-ui,sans-serif;color-scheme:<?= $E['escuro'] ? 'dark' : 'light' ?>}</style>
+<?= frag_css_apoio(['accent' => $accent, 'fundos' => $fundosTxt]) ?>
 <?= site_json_ld($empresa, $dados) ?>
 <?= $ld ? '<script type="application/ld+json">' . json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) . '</script>' : '' ?>
 <?= site_script_animacoes($anim) ?>
@@ -400,8 +400,8 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
     <div class="pt-container pt-rodape-grade">
         <div><a class="pt-marca" href="#inicio"><?php if ($empresa['logo']): ?><img src="<?= e($empresa['logo']) ?>" alt=""><?php else: ?><span class="pt-marca-ico"><?= $icone($N['icone']) ?></span><?php endif; ?><span><?= e($nome) ?></span></a>
             <p><?= e(mb_strimwidth($descricao, 0, 160, '…')) ?></p></div>
-        <div><h4>Navegação</h4><?php foreach ($ordem as $k): if (isset($sec[$k], $nav[$k])): ?><a href="#<?= e($k) ?>"><?= e($nav[$k]) ?></a><?php endif; endforeach; ?></div>
-        <div><h4>Contato</h4>
+        <div><h3 class="pt-rodape-tit">Navegação</h3><?php foreach ($ordem as $k): if (isset($sec[$k], $nav[$k])): ?><a href="#<?= e($k) ?>"><?= e($nav[$k]) ?></a><?php endif; endforeach; ?></div>
+        <div><h3 class="pt-rodape-tit">Contato</h3>
             <?php if ($linkWhats): ?><a href="<?= e($linkWhats) ?>" target="_blank" rel="noopener" data-ev="whatsapp">WhatsApp</a><?php endif; ?>
             <?php if (!empty($empresa['telefone'])): ?><a href="tel:<?= e(so_digitos_frag($empresa['telefone'])) ?>"><?= e($empresa['telefone']) ?></a><?php endif; ?>
             <?php if (!empty($empresa['instagram'])): ?><a href="https://instagram.com/<?= e(ltrim($empresa['instagram'], '@')) ?>" target="_blank" rel="noopener" data-ev="instagram">Instagram</a><?php endif; ?>
@@ -444,7 +444,7 @@ function site_script_animacoes($anim) {
     return '<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>'
          . '<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>'
          . '<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>'
-         . '<script src="/assets/js/gds-cinema.js?v=1" defer></script>';
+         . '<script src="/assets/js/gds-cinema.js?v=2" defer></script>';
 }
 
 // Contador de visitas e cliques do site (anônimo; vira o painel "Desempenho do site")

@@ -126,6 +126,7 @@ $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
 .gst-manual { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .gst-esc { display: block; margin: 1px 0 0 18px; color: var(--text-dim); font-size: 12.5px; }
 .gst-obs { display: block; margin: 2px 0 0 18px; color: #fbbf24; font-weight: 700; font-size: 12.5px; }
+.gst-rot-tempo { margin: 0; align-self: center; font-size: 12px; color: var(--text-dim); }
 .gst-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 60; padding: 16px; }
 .gst-modal-cx { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; width: min(360px, 100%); display: grid; gap: 8px; }
 .gst-modal-cx h3 { margin: 0 0 6px; }
@@ -140,6 +141,7 @@ $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
             <button type="button" class="btn btn-sm <?= $pausada ? 'btn-ghost' : '' ?>" id="btnLoja" onclick="GST.loja()"><?= $pausada ? '⏸ Loja pausada — abrir' : '🟢 Loja aberta — pausar' ?></button>
             <button type="button" class="btn btn-ghost btn-sm" id="btnSom" onclick="GST.som()">🔕 Ativar som</button>
             <label class="check" style="margin:0;align-self:center"><input type="checkbox" id="impAuto" <?= $imprimirAuto ? 'checked' : '' ?> onchange="GST.imprimirAuto(this)"> Imprimir comanda ao aceitar</label>
+            <label for="tempoEntrega" class="gst-rot-tempo">Tempo no site</label>
             <select id="tempoEntrega" onchange="GST.tempo(this.value)" title="Tempo de entrega que o cliente vê no site" style="width:auto;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
                 <?php foreach (array_unique(array_merge($tempoAtual !== '' && !in_array($tempoAtual, $tempos, true) ? [$tempoAtual] : [], $tempos)) as $t): ?><option value="<?= e($t) ?>" <?= $t === $tempoAtual ? 'selected' : '' ?>>⏱ <?= e($t) ?></option><?php endforeach; ?>
             </select>

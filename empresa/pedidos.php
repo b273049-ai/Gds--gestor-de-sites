@@ -148,7 +148,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
 <head><?= painel_head(($novos ? "($novos) " : '') . modulos_rotulo_pedidos() . ' - Meu Negócio') ?>
 <style>
 .gds-anexos{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.gds-anexos img{width:72px;height:72px;object-fit:cover;border-radius:8px;display:block}
-.pedido-etapas summary{cursor:pointer;font-size:.85rem;color:var(--muted,#667)}.gds-etapas h4{display:none}.gds-etapas ol{list-style:none;padding:0;margin:8px 0;display:grid;gap:8px}
+.pedido-etapas summary{cursor:pointer;font-size:.85rem;color:var(--text-dim)}.gds-etapas h4{display:none}.gds-etapas ol{list-style:none;padding:0;margin:8px 0;display:grid;gap:8px}
 .gds-etapas li{border-left:3px solid var(--primary,#2563eb);padding-left:10px}.gds-etapas time{font-size:.75rem;opacity:.7}.gds-etapas p{margin:2px 0}.gds-etapas img{max-width:160px;border-radius:8px}
 </style></head>
 <body>

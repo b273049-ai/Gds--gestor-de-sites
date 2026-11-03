@@ -63,6 +63,18 @@ function site_carregar_dados($empresa) {
             foreach ((array)json_decode((string)$r['itens'], true) as $i) if (!empty($i['id'])) $cont[(int)$i['id']] = ($cont[(int)$i['id']] ?? 0) + (int)($i['qtd'] ?? 1);
         arsort($cont);
         if (count($cont) >= 3) $d['mais_pedidos'] = array_slice(array_keys(array_filter($cont, fn($n) => $n >= 3)), 0, 3);
+        // Agenda e orçamento: os serviços mais procurados nos últimos 60 dias ("🔥 Mais procurado")
+        if (!$d['mais_pedidos']) {
+            $cont = [];
+            $mp = $pdo->prepare("SELECT servico_id, COUNT(*) n FROM agendamentos WHERE empresa_id=? AND servico_id IS NOT NULL AND status NOT IN ('cancelado') AND criado_em > NOW() - INTERVAL '60 days' GROUP BY servico_id
+                         UNION ALL SELECT servico_id, COUNT(*) n FROM pedidos WHERE empresa_id=? AND servico_id IS NOT NULL AND COALESCE(tipo,'') <> 'delivery' AND criado_em > NOW() - INTERVAL '60 days' GROUP BY servico_id");
+            $mp->execute([$id, $id]);
+            foreach ($mp->fetchAll() as $r)
+                $cont[(int)$r['servico_id']] = ($cont[(int)$r['servico_id']] ?? 0) + (int)$r['n'];
+            arsort($cont);
+            // 2–3 serviços com histórico: só o campeão ganha o selo; 4 ou mais: os 2 primeiros
+            if (count($cont) >= 2) $d['mais_pedidos'] = array_slice(array_keys(array_filter($cont, fn($n) => $n >= 3)), 0, count($cont) >= 4 ? 2 : 1);
+        }
     } catch (PDOException $e) {}
     require_once __DIR__ . '/imoveis.php';
     $d['imoveis'] = in_array('imoveis', modulos_da_empresa($empresa)['ativos'], true) ? imoveis_publicos($id) : [];
@@ -725,6 +737,7 @@ function site_render_ia($empresa, $dados, $estado, $preview = false) {
     if (site_pedido_online($empresa, $dados['modo'])) {
         $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], frag_carrinho($empresa, $estado['pedido'] ?? [], $dados['servicos'])) . '</body>', $html, 1);
     }
+    $html = site_garantir_main($html);
     $extras = frag_css_apoio($dados['tema']) . site_json_ld($empresa, $dados);
     if (!$preview) $extras .= site_script_analytics($dados['analytics_id']) . site_script_eventos($empresa);
     if (stripos($html, '</head>') !== false) {
@@ -736,6 +749,18 @@ function site_render_ia($empresa, $dados, $estado, $preview = false) {
         $html = stripos($html, '</body>') !== false ? preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], site_script_preview()) . '</body>', $html, 1) : $html . site_script_preview();
     }
     return $html;
+}
+
+// Site feito pela IA sem <main>: o conteúdo entre o cabeçalho e o rodapé vira a área principal
+// (leitores de tela e o "Pular para o conteúdo" dependem dela). Não mexe em sites que já têm.
+function site_garantir_main($html) {
+    if (stripos($html, '<main') !== false || stripos($html, '<body') === false) return $html;
+    $ini = stripos($html, '</header>');
+    $ini = $ini !== false ? $ini + 9 : (preg_match('/<body[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE) ? $m[0][1] + strlen($m[0][0]) : false);
+    $fim = stripos($html, '<footer', (int)$ini);
+    if ($fim === false) $fim = strripos($html, '</body>');
+    if ($ini === false || $fim === false || $fim <= $ini) return $html;
+    return substr($html, 0, $ini) . "\n<main id=\"conteudo\">" . substr($html, $ini, $fim - $ini) . "</main>\n" . substr($html, $fim);
 }
 
 function psite_icon($nome) {

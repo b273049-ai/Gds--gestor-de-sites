@@ -101,7 +101,7 @@ foreach ($imoveis as $im) { if ($im['situacao'] === 'disponivel' && pg_bool($im[
 .im-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
 .im-card.off { opacity: .5; }
 .im-card .foto { aspect-ratio: 16/10; background: var(--surface-2) center/cover; display: grid; place-items: center; font-size: 34px; position: relative; }
-.im-card .foto span { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--primary); color: #fff; }
+.im-card .foto span { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--primary-btn); color: #fff; }
 .im-card .foto span.sit { left: auto; right: 8px; background: #111827; }
 .im-card .corpo { padding: 10px 12px; flex: 1; } .im-card .corpo strong { font-size: 17px; } .im-card .mini { display: block; color: var(--text-dim); font-size: 12px; margin-top: 2px; }
 .im-card .acoes { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 12px; }

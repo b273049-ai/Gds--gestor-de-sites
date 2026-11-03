@@ -40,7 +40,7 @@ function icone($nome, $tamanho = 18) {
         'lixeira'   => '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
         'menu'      => '<path d="M3 6h18M3 12h18M3 18h18"/>',
     ];
-    return '<svg class="ico" width="' . (int)$tamanho . '" height="' . (int)$tamanho . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($p[$nome] ?? '') . '</svg>';
+    return '<svg class="ico" data-icone="' . e($nome) . '" width="' . (int)$tamanho . '" height="' . (int)$tamanho . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($p[$nome] ?? '') . '</svg>';
 }
 
 function menu_item($href, $arquivo, $icone, $rotulo, $extraClasse = '') {
@@ -54,6 +54,6 @@ function painel_head($titulo) {
          . '<title>' . e($titulo) . '</title>'
          . '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
          . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">'
-         . '<link rel="stylesheet" href="/assets/css/style.css?v=4"><script src="/assets/js/gds-painel-editores.js?v=1" defer></script>'
+         . '<link rel="stylesheet" href="/assets/css/style.css?v=6"><script src="/assets/js/gds-painel-editores.js?v=2" defer></script>'
          . '<meta name="csrf-token" content="' . csrf_token() . '">';
 }

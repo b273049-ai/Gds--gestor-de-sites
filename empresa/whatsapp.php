@@ -194,15 +194,15 @@ $statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pi
             <h4 style="margin:18px 0 8px"><?= e($grupo) ?></h4>
             <div class="wa-eventos">
             <?php foreach ($evs as $k => $ev): ?>
+                <div class="wa-evento-caixa"><label class="switch wa-sw" title="Ligar/desligar"><input type="checkbox" name="ativo[<?= $k ?>]" aria-label="Ligar a mensagem: <?= e($ev['rotulo']) ?>" <?= $cfgMsgs[$k]['ativo'] ? 'checked' : '' ?>><span></span></label>
                 <details class="wa-evento">
-                    <summary><span><strong><?= e($ev['rotulo']) ?></strong><small><?= e($ev['quando']) ?></small></span>
-                        <label class="switch wa-sw" onclick="event.stopPropagation()" title="Ligar/desligar"><input type="checkbox" name="ativo[<?= $k ?>]" <?= $cfgMsgs[$k]['ativo'] ? 'checked' : '' ?>><span></span></label></summary>
+                    <summary><span><strong><?= e($ev['rotulo']) ?></strong><small><?= e($ev['quando']) ?></small></span></summary>
                     <div class="wa-evento-corpo">
                         <div><textarea name="texto[<?= $k ?>]" rows="7" data-previa="previa-<?= $k ?>" data-padrao="<?= e($ev['texto']) ?>"><?= e($cfgMsgs[$k]['texto']) ?></textarea>
                             <button type="button" class="btn btn-ghost btn-sm" onclick="WA.padrao(this)">Restaurar texto padrão</button></div>
                         <div class="wa-previa" id="previa-<?= $k ?>"></div>
                     </div>
-                </details>
+                </details></div>
             <?php endforeach; ?>
             </div>
         <?php endforeach; ?>

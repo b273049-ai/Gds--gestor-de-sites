@@ -41,7 +41,7 @@ $sugestoes = [
 <body class="estudio-body">
 <div class="layout">
 <?php include $sidebar; ?>
-<div class="content estudio">
+<main class="content estudio" id="conteudo">
 
 <header class="estudio-topo">
     <div class="estudio-titulo">
@@ -84,7 +84,7 @@ $sugestoes = [
 <div class="estudio-grid">
     <!-- ===================== PAINEL ESQUERDO ===================== -->
     <section class="estudio-painel">
-        <div class="abas" role="tablist">
+        <div class="abas" role="group" aria-label="Seções do Estúdio">
             <button type="button" class="aba <?= $temSite ? 'ativa' : '' ?>" data-aba="chat"><?= icone('chat', 16) ?> Conversa</button>
             <button type="button" class="aba <?= $temSite ? '' : 'ativa' ?>" data-aba="novo"><?= icone('mais', 16) ?> Novo site</button>
             <button type="button" class="aba" data-aba="versoes"><?= icone('historico', 16) ?> Versões</button>
@@ -198,7 +198,7 @@ $sugestoes = [
     <div class="dialogo-rodape"><button type="button" class="btn" onclick="Estudio.salvarCodigo()">Salvar como nova versão</button></div>
 </dialog>
 
-</div>
+</main>
 </div>
 
 <script>

@@ -48,7 +48,8 @@ $link = fn($mesa) => $base . '?' . http_build_query(['mesa' => $mesa]) . '#gds-s
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 document.querySelectorAll('[data-qr]').forEach(function (el) {
-    if (window.QRCode) new QRCode(el, { text: el.getAttribute('data-qr'), width: 320, height: 320, correctLevel: QRCode.CorrectLevel.M });
+    if (window.QRCode) { new QRCode(el, { text: el.getAttribute('data-qr'), width: 320, height: 320, correctLevel: QRCode.CorrectLevel.M });
+        var mesa = el.closest('.qr-card').querySelector('.mesa'); el.querySelectorAll('img, canvas').forEach(function (i) { i.setAttribute('alt', 'QR Code — ' + (mesa ? mesa.textContent : 'mesa')); i.setAttribute('role', 'img'); i.setAttribute('aria-label', 'QR Code — ' + (mesa ? mesa.textContent : 'mesa')); }); }
     else el.textContent = el.getAttribute('data-qr');
 });
 </script>
