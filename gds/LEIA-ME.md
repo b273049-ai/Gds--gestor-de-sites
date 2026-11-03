@@ -352,6 +352,21 @@ atenção" com cobrança pelo WhatsApp, **orçamento em documento/PDF** para o c
   IPTU, quartos, suítes, banheiros, vagas, áreas, características, até 20 fotos, vídeo, proprietário), vitrine no site
   com filtros, ficha com galeria, link de cada imóvel, contagem de visualizações e **"Agendar visita"** que cai no funil.
 
+### Tela do produto como no iFood (v15, migração 26)
+- Todo item do cardápio abre a **tela do produto**: foto grande, descrição, "Serve X pessoas", opções, campo
+  **"Alguma observação?"** (ex.: tirar a cebola, maionese à parte) e quantidade antes de adicionar. No celular abre
+  como gaveta de baixo para cima.
+- **Adicionais com quantidade** (2x bacon): no Cardápio, escreva `Adicionais (até 5, qtd): Bacon +4, Cheddar +3`.
+  **Mínimo** de escolhas: `Molhos (mín 2, até 3): Barbecue, Verde, Alho`. Grupo para retirar ingredientes:
+  `Retirar (até 4): Cebola, Tomate, Alface`.
+- O pedido grava as escolhas com o nome do grupo ("Retirar: Cebola") e a **observação de cada item**, que aparece no
+  carrinho (com **editar**), no Gestor (⚠ em amarelo, uma escolha por linha), na comanda impressa (*** OBS ***), no
+  WhatsApp e no acompanhamento. "Pedir de novo" mantém a observação.
+- Cardápio no site: **busca** (sem precisar de acento), **categorias presas no topo** ao rolar e selo
+  **🔥 Mais pedido** nos 3 itens que mais saíram em 30 dias.
+- Acompanhamento do pedido: **previsão de entrega** ("até 20:35"), **cancelar** enquanto a loja não aceitou (devolve o
+  estoque e avisa a loja) e **avaliar o pedido** com estrelas depois de entregue (vai para Avaliações, para aprovar).
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)

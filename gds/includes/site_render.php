@@ -55,6 +55,15 @@ function site_carregar_dados($empresa) {
     $d['servicos'] = $q("SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY destaque DESC, ordem, nome",
                         "SELECT * FROM servicos WHERE empresa_id=? AND ativo=true ORDER BY nome");
     $d['profissionais'] = $q("SELECT * FROM profissionais WHERE empresa_id=? AND ativo=true ORDER BY nome");
+    // Os 3 itens mais pedidos nos últimos 30 dias (selo "🔥 Mais pedido", como no iFood)
+    $d['mais_pedidos'] = [];
+    try {
+        $cont = [];
+        foreach ($q("SELECT itens FROM pedidos WHERE empresa_id=? AND tipo='delivery' AND status <> 'cancelado' AND criado_em > NOW() - INTERVAL '30 days' ORDER BY id DESC LIMIT 1500") as $r)
+            foreach ((array)json_decode((string)$r['itens'], true) as $i) if (!empty($i['id'])) $cont[(int)$i['id']] = ($cont[(int)$i['id']] ?? 0) + (int)($i['qtd'] ?? 1);
+        arsort($cont);
+        if (count($cont) >= 3) $d['mais_pedidos'] = array_slice(array_keys(array_filter($cont, fn($n) => $n >= 3)), 0, 3);
+    } catch (PDOException $e) {}
     require_once __DIR__ . '/imoveis.php';
     $d['imoveis'] = in_array('imoveis', modulos_da_empresa($empresa)['ativos'], true) ? imoveis_publicos($id) : [];
     $d['cupons'] = $q("SELECT * FROM cupons WHERE empresa_id=? AND ativo=true AND (validade IS NULL OR validade >= CURRENT_DATE)");
@@ -475,7 +484,8 @@ function site_processar_pedido($empresa, $dados) {
         if (!$pr['ok']) { $erroOpcao = $pr['erro']; continue; }
         if ($pr['preco'] <= 0) continue;
         $preco = $pr['preco'];
-        $itens[] = ['id' => $id, 'nome' => $pr['nome'], 'qtd' => $qtd, 'preco' => $preco, 'opcoes' => array_values((array)($it['opcoes'] ?? []))];
+        $obsItem = mb_substr(trim(strip_tags(preg_replace('/\s+/u', ' ', (string)($it['obs'] ?? '')))), 0, 140); // "Alguma observação?" do item
+        $itens[] = ['id' => $id, 'nome' => $pr['nome'], 'qtd' => $qtd, 'preco' => $preco, 'opcoes' => array_values((array)($it['opcoes'] ?? []))] + ($obsItem !== '' ? ['obs' => $obsItem] : []);
         $subtotal += $preco * $qtd;
         if (count($itens) >= 50) break;
     }
@@ -521,7 +531,7 @@ function site_processar_pedido($empresa, $dados) {
     elseif ($troco !== null && $troco > 0 && $troco < $total) $erro = 'O troco precisa ser maior que o total do pedido.';
     if ($erro !== '') return ['erro' => $erro, 'post' => $p];
 
-    $linhas = array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'], $itens);
+    $linhas = array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'] . (!empty($i['obs']) ? ' — Obs: ' . $i['obs'] : ''), $itens);
     $descricao = implode(', ', $linhas);
     if ($cupom) { $linhas[] = 'Cupom ' . $cupom['codigo'] . ': -' . wa_dinheiro($desconto); $obs = trim('Cupom ' . $cupom['codigo'] . ' (-' . wa_dinheiro($desconto) . '). ' . $obs); }
     $token = bin2hex(random_bytes(16));
@@ -596,7 +606,7 @@ function site_fragmentos_marcadores($empresa, $dados, $estado, $extraServicos = 
     $temAgenda = $modoTemplate ? $modo === 'agendamento' : str_contains($html, '{{AGENDAMENTO}}');
     $temOrcamento = $modoTemplate ? $modo === 'orcamento' : str_contains($html, '{{ORCAMENTO}}');
     $optsServicos = ['modo' => $modo, 'tem_agendamento' => $temAgenda, 'tem_orcamento' => $temOrcamento, 'tem_contato' => true, 'whatsapp' => $empresa['whatsapp'],
-                     'carrinho' => site_pedido_online($empresa, $modo)] + $extraServicos;
+                     'carrinho' => site_pedido_online($empresa, $modo), 'mais_pedidos' => $dados['mais_pedidos'] ?? []] + $extraServicos;
     $info = atendimento_modos()[$modo];
     $linkWhats = so_digitos_frag($empresa['whatsapp'] ?? '') ? frag_link_whatsapp($empresa['whatsapp'], trim((string)($empresa['whatsapp_mensagem'] ?? '')) ?: 'Olá! Vim pelo site e gostaria de mais informações.') : '#gds-contato';
     $linkPrincipal = ['agendamento' => $temAgenda ? '#gds-agendamento' : $linkWhats, 'orcamento' => $temOrcamento ? '#gds-orcamento' : $linkWhats,

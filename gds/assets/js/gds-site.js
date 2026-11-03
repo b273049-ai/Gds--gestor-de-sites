@@ -54,13 +54,25 @@
 
     // ---------------- filtro de categorias dos serviços ----------------
     $$('[data-gds-filtravel]').forEach(function (box) {
+        var cat = '', busca = $('[data-gds-busca]', box), vazio = $('[data-gds-busca-vazio]', box);
+        var semAcento = function (t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); };
+        function aplicar() {
+            var q = busca ? semAcento(busca.value.trim()) : '', vis = 0;
+            $$('.gds-svc', box).forEach(function (c) {
+                var m = (cat === '' || c.getAttribute('data-gds-cat') === cat) && (!q || semAcento(c.getAttribute('data-busca')).indexOf(q) >= 0);
+                c.hidden = !m; if (m) vis++;
+            });
+            if (vazio) vazio.hidden = vis > 0;
+        }
         $$('[data-gds-filtro]', box).forEach(function (btn) {
             btn.addEventListener('click', function () {
-                var cat = btn.getAttribute('data-gds-filtro');
+                cat = btn.getAttribute('data-gds-filtro');
                 $$('[data-gds-filtro]', box).forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
-                $$('.gds-svc', box).forEach(function (c) { c.hidden = cat !== '' && c.getAttribute('data-gds-cat') !== cat; });
+                aplicar();
+                var f = $('.gds-filtros-fixo', box); if (f && f.getBoundingClientRect().top < 100) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
         });
+        if (busca) busca.addEventListener('input', aplicar);
     });
 
     // ---------------- galeria ampliada ----------------
@@ -530,8 +542,19 @@
             lista.innerHTML = '';
             itens.forEach(function (i, idx) {
                 var li = document.createElement('li');
-                li.innerHTML = '<span class="gds-ci-nome"></span><span class="gds-ci-qtd"><button type="button" aria-label="Menos">−</button><b></b><button type="button" aria-label="Mais">+</button></span><span class="gds-ci-preco"></span>';
-                $('.gds-ci-nome', li).textContent = i.nome;
+                li.innerHTML = '<span class="gds-ci-nome"></span><span class="gds-ci-qtd"><button type="button" aria-label="Menos">−</button><b></b><button type="button" aria-label="Mais">+</button></span><span class="gds-ci-preco"></span>'
+                    + '<span class="gds-ci-obs"><span data-obs-txt></span> <button type="button" class="gds-ci-editar" data-editar>' + (i.obs ? '✏️ editar' : '+ observação') + '</button></span>';
+                // "Smash burger (Ponto: Ao ponto; Adicionais: 2x Bacon)" → nome em destaque + escolhas embaixo
+                var pAbre = i.nome.indexOf(' ('), nomeEl = $('.gds-ci-nome', li);
+                if (pAbre > 0 && i.nome.slice(-1) === ')') { nomeEl.textContent = i.nome.slice(0, pAbre); var sub = document.createElement('small'); sub.className = 'gds-ci-escolhas'; sub.textContent = i.nome.slice(pAbre + 2, -1).split('; ').join(' · '); nomeEl.appendChild(sub); }
+                else nomeEl.textContent = i.nome;
+                $('[data-obs-txt]', li).textContent = i.obs ? '📝 ' + i.obs : '';
+                $('[data-editar]', li).addEventListener('click', function () {
+                    var orig = document.querySelector('.gds-svc [data-gds-add="' + i.id + '"], [data-gds-add="' + i.id + '"]');
+                    if (!orig) { var o = prompt('Observação para ' + i.nome + ':', i.obs || ''); if (o !== null) { i.obs = o.trim().slice(0, 140); gravar(); render(); } return; }
+                    var gr = []; try { gr = JSON.parse(orig.getAttribute('data-gds-opcoes') || '[]'); } catch (e) { }
+                    abrirProduto(orig, gr, function (op, preco, nome, obs, qtd) { itens.splice(idx, 1); gravar(); adicionar(null, i.id, op, preco, nome, obs, qtd); }, { opcoes: i.opcoes, obs: i.obs, qtd: i.qtd, editando: true });
+                });
                 $('b', li).textContent = i.qtd;
                 $('.gds-ci-preco', li).textContent = dinheiro(i.preco * i.qtd);
                 var bts = $$('button', li);
@@ -575,7 +598,7 @@
             var aviso = $('[data-gds-minimo-aviso]', form);
             if (aviso) aviso.hidden = !abaixo;
             $('[data-gds-finalizar]', form).disabled = itens.length === 0 || abaixo;
-            $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco, opcoes: i.opcoes || [] }; }));
+            $('[data-gds-itens]', form).value = JSON.stringify(itens.map(function (i) { return { id: i.id, nome: i.nome, qtd: i.qtd, preco: i.preco, opcoes: i.opcoes || [], obs: i.obs || '' }; }));
         }
 
         // Endereço: CEP preenche rua, bairro e cidade (ViaCEP); "sem número" exige referência;
@@ -648,7 +671,7 @@
                     var b = document.querySelector('[data-gds-add="' + parseInt(x.id, 10) + '"]');
                     if (!b || b.disabled) return; // saiu do cardápio ou esgotou
                     var semOp = !(x.opcoes && x.opcoes.length);
-                    novos.push({ id: parseInt(x.id, 10), nome: semOp ? b.getAttribute('data-nome') : String(x.nome || ''), preco: semOp ? parseFloat(b.getAttribute('data-preco')) || 0 : parseFloat(x.preco) || 0, qtd: Math.max(1, Math.min(99, parseInt(x.qtd, 10) || 1)), opcoes: x.opcoes || [] });
+                    novos.push({ id: parseInt(x.id, 10), nome: semOp ? b.getAttribute('data-nome') : String(x.nome || ''), preco: semOp ? parseFloat(b.getAttribute('data-preco')) || 0 : parseFloat(x.preco) || 0, qtd: Math.max(1, Math.min(99, parseInt(x.qtd, 10) || 1)), opcoes: x.opcoes || [], obs: String(x.obs || '').slice(0, 140) });
                 });
                 if (novos.length) { itens = novos; gravar(); }
                 history.replaceState(null, '', location.pathname + location.search);
@@ -656,67 +679,128 @@
             } catch (e) { }
         })();
 
-        // Item com opções (adicionais, ponto, meio a meio, tamanho...): janela de escolha com preço ao vivo
-        function escolherOpcoes(b, grupos, pronto) {
+        // TELA DO PRODUTO (como no iFood): foto, descrição, opções (com quantidade por adicional),
+        // "Alguma observação?" e quantidade antes de adicionar. Preço calculado ao vivo.
+        function abrirProduto(b, grupos, pronto, inicial) {
+            inicial = inicial || {};
             var base = parseFloat(b.getAttribute('data-preco')) || 0, nome = b.getAttribute('data-nome');
+            var img = b.getAttribute('data-img') || '', desc = b.getAttribute('data-desc') || '', serve = parseInt(b.getAttribute('data-serve') || '0', 10);
             var fundo = document.createElement('div'); fundo.className = 'gds-op-fundo';
-            var box = document.createElement('div'); box.className = 'gds-op-janela'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
-            var h = '<h3></h3>';
+            var box = document.createElement('div'); box.className = 'gds-op-janela gds-produto'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+            var h = (img ? '<div class="gds-prod-foto" style="background-image:url(\'' + encodeURI(img) + '\')"></div>' : '') + '<button type="button" class="gds-prod-x" data-x aria-label="Fechar">✕</button>'
+                + '<div class="gds-prod-cab"><h3></h3>' + (desc ? '<p class="gds-mute gds-prod-desc"></p>' : '') + (serve ? '<p class="gds-prod-serve">👥 Serve ' + serve + (serve > 1 ? ' pessoas' : ' pessoa') + '</p>' : '') + '<strong class="gds-prod-base">' + (base > 0 ? dinheiro(base) : '') + '</strong></div>';
             grupos.forEach(function (g, gi) {
                 var tipo = g.max > 1 ? 'checkbox' : 'radio';
-                h += '<fieldset class="gds-op-grupo" data-g="' + gi + '"><legend><span></span><small>' + (g.min > 0 ? 'obrigatório' : 'opcional') + (g.max > 1 ? ' · até ' + g.max : '') + (g.regra === 'maior' ? ' · vale o maior preço' : '') + '</small></legend>';
+                var regra = g.min > 0 ? (g.min > 1 ? 'escolha ' + g.min + (g.max > g.min ? ' a ' + g.max : '') : 'obrigatório') : 'opcional' + (g.max > 1 ? ' · até ' + g.max : '');
+                h += '<fieldset class="gds-op-grupo" data-g="' + gi + '"><legend><span></span><small class="gds-op-regra' + (g.min > 0 ? ' obrig' : '') + '">' + regra + (g.regra === 'maior' ? ' · vale o maior preço' : '') + '</small></legend>';
                 g.itens.forEach(function (it, ii) {
                     var preco = it.preco > 0 ? (g.regra === 'maior' ? dinheiro(it.preco) : '+ ' + dinheiro(it.preco)) : '';
-                    h += '<label class="gds-op-item"><input type="' + tipo + '" name="og' + gi + '" value="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span></label>';
+                    if (g.qtd) h += '<div class="gds-op-item gds-op-qtd" data-i="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span><span class="gds-ci-qtd"><button type="button" data-menos aria-label="Menos">−</button><b>0</b><button type="button" data-mais aria-label="Mais">+</button></span></div>';
+                    else h += '<label class="gds-op-item"><input type="' + tipo + '" name="og' + gi + '" value="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span></label>';
                 });
                 h += '</fieldset>';
             });
-            h += '<p class="gds-op-erro" hidden></p><div class="gds-op-acoes"><button type="button" class="gds-btn-2" data-x>Cancelar</button><button type="button" class="gds-btn" data-ok>Adicionar · <span data-total></span></button></div>';
+            h += '<div class="gds-campo gds-prod-obs"><label>Alguma observação? <small class="gds-mute">(opcional)</small></label><textarea rows="2" maxlength="140" data-obs placeholder="Ex.: tirar a cebola, maionese à parte, bem passado…"></textarea><small class="gds-mute" data-obs-cont>0/140</small></div>'
+               + '<p class="gds-op-erro" hidden></p><div class="gds-op-acoes gds-prod-rodape"><span class="gds-ci-qtd gds-prod-qtd"><button type="button" data-qmenos aria-label="Menos">−</button><b data-q>1</b><button type="button" data-qmais aria-label="Mais">+</button></span>'
+               + '<button type="button" class="gds-btn" data-ok>' + (inicial.editando ? 'Salvar' : 'Adicionar') + ' · <span data-total></span></button></div>';
             box.innerHTML = h;
             box.querySelector('h3').textContent = nome;
+            var pd = box.querySelector('.gds-prod-desc'); if (pd) pd.textContent = desc;
             grupos.forEach(function (g, gi) {
                 var fs = box.querySelector('[data-g="' + gi + '"]'); fs.querySelector('legend span').textContent = g.nome;
                 fs.querySelectorAll('.gds-op-nome').forEach(function (el, ii) { el.textContent = g.itens[ii].nome; });
             });
-            var escolhas = function () { var r = []; box.querySelectorAll('input:checked').forEach(function (c) { r.push([parseInt(c.closest('[data-g]').dataset.g, 10), parseInt(c.value, 10)]); }); return r; };
+            var qtdItem = Math.max(1, inicial.qtd || 1), obsEl = box.querySelector('[data-obs]');
+            if (inicial.obs) obsEl.value = inicial.obs;
+            var contQ = {}; // grupos com quantidade: "g:i" → n
+            (inicial.opcoes || []).forEach(function (e) {
+                var g = grupos[e[0]]; if (!g) return;
+                if (g.qtd) contQ[e[0] + ':' + e[1]] = (contQ[e[0] + ':' + e[1]] || 0) + 1;
+                else { var c = box.querySelector('[data-g="' + e[0] + '"] input[value="' + e[1] + '"]'); if (c) c.checked = true; }
+            });
+            var totalGrupo = function (gi) { var t = 0; Object.keys(contQ).forEach(function (k) { if (k.split(':')[0] == gi) t += contQ[k]; }); return t; };
+            var escolhas = function () {
+                var r = [];
+                box.querySelectorAll('input:checked').forEach(function (c) { r.push([parseInt(c.closest('[data-g]').dataset.g, 10), parseInt(c.value, 10)]); });
+                Object.keys(contQ).forEach(function (k) { var p = k.split(':'); for (var n = 0; n < contQ[k]; n++) r.push([+p[0], +p[1]]); });
+                return r;
+            };
             var calcular = function () {
                 var p = base, extra = 0, partes = [];
                 grupos.forEach(function (g, gi) {
+                    if (g.qtd) {
+                        var ns = [];
+                        g.itens.forEach(function (it, ii) { var n = contQ[gi + ':' + ii] || 0; if (n) { extra += it.preco * n; ns.push((n > 1 ? n + 'x ' : '') + it.nome); } });
+                        if (ns.length) partes.push(g.nome + ': ' + ns.join(', '));
+                        return;
+                    }
                     var sel = escolhas().filter(function (e) { return e[0] === gi; }).map(function (e) { return g.itens[e[1]]; });
                     if (!sel.length) return;
                     if (g.regra === 'maior') { p = Math.max(p, Math.max.apply(null, sel.map(function (x) { return x.preco; }))); partes.push(sel.map(function (x) { return x.nome; }).join(' / ')); }
-                    else { extra += sel.reduce(function (t, x) { return t + x.preco; }, 0); partes.push(sel.map(function (x) { return x.nome; }).join(', ')); }
+                    else { extra += sel.reduce(function (t, x) { return t + x.preco; }, 0); partes.push(g.nome + ': ' + sel.map(function (x) { return x.nome; }).join(', ')); }
                 });
                 return { preco: Math.round((p + extra) * 100) / 100, nome: nome + (partes.length ? ' (' + partes.join('; ') + ')' : '') };
             };
             var atualizar = function () {
-                grupos.forEach(function (g, gi) { // trava o máximo de cada grupo
+                grupos.forEach(function (g, gi) {
+                    if (g.qtd) {
+                        var t = totalGrupo(gi);
+                        box.querySelectorAll('[data-g="' + gi + '"] .gds-op-qtd').forEach(function (l) {
+                            var n = contQ[gi + ':' + l.dataset.i] || 0; l.querySelector('b').textContent = n;
+                            l.querySelector('[data-mais]').disabled = t >= g.max; l.querySelector('[data-menos]').disabled = n === 0; l.classList.toggle('marcado', n > 0);
+                        });
+                        return;
+                    }
                     var cs = box.querySelectorAll('[data-g="' + gi + '"] input'), n = 0; cs.forEach(function (c) { if (c.checked) n++; });
                     if (g.max > 1) cs.forEach(function (c) { c.disabled = !c.checked && n >= g.max; });
                 });
-                box.querySelector('[data-total]').textContent = dinheiro(calcular().preco);
+                // escolheu o que faltava: some o aviso
+                var errEl = box.querySelector('.gds-op-erro'), escAgora = escolhas();
+                box.querySelectorAll('.gds-op-falta').forEach(function (fs) { var gi = +fs.dataset.g; if (escAgora.filter(function (e) { return e[0] === gi; }).length >= grupos[gi].min) fs.classList.remove('gds-op-falta'); });
+                if (!box.querySelector('.gds-op-falta')) errEl.hidden = true;
+                box.querySelector('[data-q]').textContent = qtdItem;
+                box.querySelector('[data-total]').textContent = dinheiro(calcular().preco * qtdItem);
+                box.querySelector('[data-obs-cont]').textContent = obsEl.value.length + '/140';
             };
-            var fechar = function () { fundo.remove(); box.remove(); };
+            var fechar = function () { fundo.remove(); box.remove(); document.documentElement.classList.remove('gds-sem-rolagem-prod'); };
             box.addEventListener('change', atualizar);
+            obsEl.addEventListener('input', atualizar);
+            box.addEventListener('click', function (e) {
+                var l = e.target.closest('.gds-op-qtd');
+                if (l) {
+                    var gi = +l.closest('[data-g]').dataset.g, k = gi + ':' + l.dataset.i;
+                    if (e.target.closest('[data-mais]') && totalGrupo(gi) < grupos[gi].max) contQ[k] = (contQ[k] || 0) + 1;
+                    if (e.target.closest('[data-menos]') && contQ[k]) { contQ[k]--; if (!contQ[k]) delete contQ[k]; }
+                    atualizar(); return;
+                }
+                if (e.target.closest('[data-qmais]') && qtdItem < 99) { qtdItem++; atualizar(); }
+                if (e.target.closest('[data-qmenos]') && qtdItem > 1) { qtdItem--; atualizar(); }
+            });
             box.querySelector('[data-x]').onclick = fechar; fundo.onclick = fechar;
             box.querySelector('[data-ok]').onclick = function () {
-                var falta = grupos.filter(function (g, gi) { return g.min > 0 && !escolhas().some(function (e) { return e[0] === gi; }); })[0];
-                var erro = box.querySelector('.gds-op-erro');
-                if (falta) { erro.hidden = false; erro.textContent = 'Escolha: ' + falta.nome; return; }
-                var c = calcular(); fechar(); pronto(escolhas(), c.preco, c.nome);
+                var erro = box.querySelector('.gds-op-erro'), esc = escolhas();
+                var falta = grupos.filter(function (g, gi) { return g.min > 0 && esc.filter(function (e) { return e[0] === gi; }).length < g.min; })[0];
+                if (falta) {
+                    erro.hidden = false; erro.textContent = 'Escolha: ' + falta.nome + (falta.min > 1 ? ' (' + falta.min + ')' : '');
+                    var fs = box.querySelector('[data-g="' + grupos.indexOf(falta) + '"]'); fs.classList.add('gds-op-falta'); fs.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+                }
+                var c = calcular(); fechar(); pronto(esc, c.preco, c.nome, obsEl.value.trim().slice(0, 140), qtdItem);
             };
             raiz.appendChild(fundo); raiz.appendChild(box); atualizar();
-            var primeiro = box.querySelector('input'); if (primeiro) primeiro.focus();
+            document.documentElement.classList.add('gds-sem-rolagem-prod');
         }
-        function adicionar(b, id, opcoes, preco, nome) {
-            var chave = id + '|' + JSON.stringify(opcoes || []);
-            var it = itens.filter(function (i) { return (i.id + '|' + JSON.stringify(i.opcoes || [])) === chave; })[0];
-            if (it) it.qtd = Math.min(99, it.qtd + 1);
-            else itens.push({ id: id, nome: nome, preco: preco, qtd: 1, opcoes: opcoes || [] });
+        function adicionar(b, id, opcoes, preco, nome, obs, qtd) {
+            obs = obs || ''; qtd = Math.max(1, qtd || 1);
+            var chave = id + '|' + JSON.stringify(opcoes || []) + '|' + obs;
+            var it = itens.filter(function (i) { return (i.id + '|' + JSON.stringify(i.opcoes || []) + '|' + (i.obs || '')) === chave; })[0];
+            if (it) it.qtd = Math.min(99, it.qtd + qtd);
+            else itens.push({ id: id, nome: nome, preco: preco, qtd: qtd, opcoes: opcoes || [], obs: obs });
             gravar(); render();
-            b.classList.add('gds-adicionado');
-            var txt = b.innerHTML; b.innerHTML = '✓ Adicionado';
-            setTimeout(function () { b.innerHTML = txt; b.classList.remove('gds-adicionado'); }, 1100);
+            if (b && b.classList) {
+                b.classList.add('gds-adicionado');
+                var txt = b.innerHTML; b.innerHTML = '✓ Adicionado';
+                setTimeout(function () { b.innerHTML = txt; b.classList.remove('gds-adicionado'); }, 1100);
+            }
             barra.classList.remove('gds-pulo'); void barra.offsetWidth; barra.classList.add('gds-pulo');
         }
         document.addEventListener('click', function (ev) {
@@ -725,8 +809,9 @@
             ev.preventDefault();
             var id = parseInt(b.getAttribute('data-gds-add'), 10);
             var grupos = []; try { grupos = JSON.parse(b.getAttribute('data-gds-opcoes') || '[]'); } catch (e) { grupos = []; }
-            if (grupos.length) { escolherOpcoes(b, grupos, function (op, preco, nome) { adicionar(b, id, op, preco, nome); }); return; }
-            adicionar(b, id, [], parseFloat(b.getAttribute('data-preco')) || 0, b.getAttribute('data-nome'));
+            // "Peça também" sem opções entra direto; o resto abre a tela do produto
+            if (!grupos.length && b.closest('[data-gds-sugestoes]')) { adicionar(b, id, [], parseFloat(b.getAttribute('data-preco')) || 0, b.getAttribute('data-nome')); return; }
+            abrirProduto(b, grupos, function (op, preco, nome, obs, qtd) { adicionar(b, id, op, preco, nome, obs, qtd); });
         });
         barra.addEventListener('click', function () { abrir(); render(); });
         $$('[data-gds-carrinho-fechar]', raiz).forEach(function (el) { el.addEventListener('click', function () { fechar(); render(); }); });

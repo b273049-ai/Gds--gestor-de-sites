@@ -61,7 +61,7 @@ if (isset($_GET['dados'])) {
         // Idade calculada no banco (mesmo fuso do criado_em) → horário de chegada no relógio do servidor
         $pedidos[] = ['id' => (int)$p['id'], 'status' => $p['status'], 'ts' => time() - max(0, (int)$p['idade_seg']), 'cliente' => $p['cliente_nome'] ?: 'Cliente',
             'telefone' => preg_replace('/\D/', '', (string)$p['cliente_telefone']), 'novo_cliente' => (int)$p['pedidos_antes'] === 0, 'origem' => (string)$p['origem'], 'entregador' => $p['entregador_nome'],
-            'itens' => array_map(fn($i) => ['qtd' => (int)$i['qtd'], 'nome' => (string)$i['nome'], 'preco' => (float)$i['preco']], json_decode((string)$p['itens'], true) ?: []),
+            'itens' => array_map(fn($i) => ['qtd' => (int)$i['qtd'], 'nome' => (string)$i['nome'], 'preco' => (float)$i['preco'], 'obs' => (string)($i['obs'] ?? '')], json_decode((string)$p['itens'], true) ?: []),
             'total' => (float)$p['valor'], 'taxa' => (float)$p['taxa_entrega'], 'entrega' => $p['mesa'] ? 'mesa' : ($p['tipo_entrega'] ?: 'entrega'), 'mesa' => $p['mesa'],
             'endereco' => $p['endereco_entrega'], 'pagamento' => $p['forma_pagamento'], 'troco' => $p['troco_para'] !== null ? (float)$p['troco_para'] : null,
             'pago' => pg_bool($p['pago'] ?? false), 'obs' => $p['observacoes'], 'agendado' => $p['agendado_para'],
@@ -124,6 +124,8 @@ $imprimirAuto = pg_bool($empresa['gestor_imprimir'] ?? false);
 .gst-vazio { color: var(--text-dim); font-size: 13px; text-align: center; padding: 24px 8px; }
 @media (max-width: 1100px) { .gst-quadro { grid-template-columns: repeat(4, 280px); } }
 .gst-manual { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gst-esc { display: block; margin: 1px 0 0 18px; color: var(--text-dim); font-size: 12.5px; }
+.gst-obs { display: block; margin: 2px 0 0 18px; color: #fbbf24; font-weight: 700; font-size: 12.5px; }
 .gst-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 60; padding: 16px; }
 .gst-modal-cx { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; width: min(360px, 100%); display: grid; gap: 8px; }
 .gst-modal-cx h3 { margin: 0 0 6px; }
@@ -210,7 +212,14 @@ const GST = (() => {
         if (p.status === 'cancelado') tags.append(el('span', '', '❌ Cancelado'));
         c.append(tags);
         const ul = el('ul', 'gst-itens');
-        p.itens.forEach(i => { const li = el('li'); li.append(el('b', '', i.qtd + '×'), document.createTextNode(i.nome)); ul.append(li); });
+        p.itens.forEach(i => {
+            const li = el('li'), a = i.nome.indexOf(' (');
+            const temEsc = a > 0 && i.nome.endsWith(')');
+            li.append(el('b', '', i.qtd + '×'), document.createTextNode(temEsc ? i.nome.slice(0, a) : i.nome));
+            if (temEsc) i.nome.slice(a + 2, -1).split('; ').forEach(x => li.append(el('span', 'gst-esc', '• ' + x)));
+            if (i.obs) li.append(el('span', 'gst-obs', '⚠ ' + i.obs));
+            ul.append(li);
+        });
         c.append(ul);
         const info = el('div', 'gst-info');
         if (p.entrega === 'entrega' && p.endereco) info.append(el('span', '', '📍 ' + p.endereco));

@@ -477,3 +477,56 @@ html.gds-sem-rolagem { overflow: hidden; }
 .gds-c .gds-im-desc { white-space: pre-line; font-size: .93rem; line-height: 1.6; color: #374151; }
 .gds-c .gds-im-visita { padding: 16px 20px 20px; border-top: 1px solid #eef0f4; margin-top: 10px; display: grid; gap: 8px; }
 .gds-c .gds-im-visita h4 { margin: 0; }
+
+/* ---- Tela do produto estilo iFood (v15) ---- */
+html.gds-sem-rolagem-prod { overflow: hidden; }
+.gds-c .gds-op-janela.gds-produto { padding: 0 0 0; gap: 0; width: min(520px, calc(100vw - 24px)); }
+.gds-c .gds-produto > * { margin-left: 20px; margin-right: 20px; }
+.gds-c .gds-produto .gds-op-grupo { margin-top: 12px; }
+.gds-c .gds-prod-foto { margin: 0 !important; aspect-ratio: 16 / 10; background: #f1f2f5 center / cover no-repeat; }
+.gds-c .gds-prod-x { position: absolute; top: 10px; right: 10px; margin: 0 !important; width: 38px; height: 38px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .95); box-shadow: 0 2px 8px rgba(0, 0, 0, .15); font-size: 16px; cursor: pointer; z-index: 2; }
+.gds-c .gds-prod-cab { padding-top: 18px; display: grid; gap: 6px; }
+.gds-c .gds-prod-cab h3 { padding-right: 44px; }
+.gds-c .gds-prod-desc { margin: 0; font-size: .92rem; line-height: 1.5; white-space: pre-line; }
+.gds-c .gds-prod-serve { margin: 0; font-size: .85rem; color: #4b5060; }
+.gds-c .gds-prod-base { font-size: 1.05rem; }
+.gds-c .gds-op-regra.obrig { background: #1c1f2b; color: #fff !important; padding: 2px 8px; border-radius: 999px; font-size: .7rem !important; text-transform: uppercase; letter-spacing: .03em; }
+.gds-c .gds-op-falta { border-color: #e11d48 !important; box-shadow: 0 0 0 3px rgba(225, 29, 72, .15); }
+.gds-c .gds-op-qtd { cursor: default; }
+.gds-c .gds-op-qtd.marcado .gds-op-nome { font-weight: 700; }
+.gds-c .gds-op-qtd .gds-ci-qtd button { width: 30px; height: 30px; }
+.gds-c .gds-op-qtd .gds-ci-qtd button:disabled { opacity: .35; cursor: not-allowed; }
+.gds-c .gds-prod-obs { margin-top: 14px; }
+.gds-c .gds-prod-obs textarea { width: 100%; resize: vertical; min-height: 64px; }
+.gds-c .gds-prod-obs small[data-obs-cont] { display: block; text-align: right; font-size: .75rem; }
+.gds-c .gds-produto .gds-op-erro { margin-top: 8px; }
+.gds-c .gds-prod-rodape { margin: 12px 0 0 !important; padding: 12px 20px 16px !important; bottom: 0 !important; justify-content: space-between !important; flex-wrap: nowrap !important; border-top: 1px solid #eef0f4; box-shadow: 0 -6px 16px rgba(0, 0, 0, .04); }
+.gds-c .gds-prod-rodape .gds-btn { flex: 1; justify-content: space-between; }
+.gds-c .gds-ci-obs { grid-column: 1 / -1; font-size: .8rem; color: #6b7080; margin-top: -4px; }
+.gds-c .gds-ci-editar { border: 0; background: none; color: var(--gds-accent, #2563eb); font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; padding: 0; }
+@media (max-width: 600px) {
+  .gds-c .gds-op-janela.gds-produto { top: auto; bottom: 0; left: 0; transform: none; width: 100vw; max-height: 92vh; border-radius: 20px 20px 0 0; animation: gds-sobe .32s cubic-bezier(.16, 1, .3, 1); }
+}
+@keyframes gds-sobe { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.gds-c .gds-ci-escolhas { display: block; font-weight: 500; font-size: .78rem; color: #6b7080; margin-top: 2px; line-height: 1.35; }
+
+/* Cardápio: busca e categorias presas no topo ao rolar (v15) */
+.gds-c .gds-busca-cardapio { margin-bottom: 10px; }
+.gds-c .gds-busca-cardapio input { width: 100%; padding: 13px 16px; border-radius: 14px; border: 1px solid var(--gds-line, #e3e5ea); background: #fff; color: #1c1f2b; font: inherit; font-size: .95rem; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
+.gds-c .gds-filtros-fixo { position: sticky; top: 70px; z-index: 30; flex-wrap: nowrap; overflow-x: auto; padding: 8px 2px; background: inherit; scrollbar-width: none; }
+.gds-c .gds-filtros-fixo::-webkit-scrollbar { display: none; }
+.gds-c .gds-filtros-fixo .gds-filtro { flex: none; background: #fff; color: #1c1f2b; }
+.gds-c .gds-svc-serve { font-size: .8rem; margin: 4px 0 0; }
+
+/* Acompanhamento do pedido (v15) */
+.gds-c .gds-previsao { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 12px 0 4px; padding: 12px 14px; border-radius: 14px; background: var(--gds-soft, #f4f5f8); }
+.gds-c .gds-previsao span { font-size: .85rem; color: #6b7080; } .gds-c .gds-previsao strong { font-size: 1.15rem; }
+.gds-c .gds-avaliar-pedido { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eef0f4; display: grid; gap: 8px; }
+.gds-c .gds-avaliar-pedido h4 { margin: 0; }
+.gds-c .gds-avaliar-pedido textarea { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid #e3e5ea; font: inherit; }
+.gds-c .gds-estrelas { display: inline-flex; flex-direction: row-reverse; justify-content: flex-end; gap: 4px; }
+.gds-c .gds-estrelas input { position: absolute; opacity: 0; pointer-events: none; }
+.gds-c .gds-estrelas label { font-size: 34px; color: #d6d9e0; cursor: pointer; line-height: 1; transition: color .15s, transform .15s; }
+.gds-c .gds-estrelas label:hover, .gds-c .gds-estrelas label:hover ~ label, .gds-c .gds-estrelas input:checked ~ label { color: #f5a524; }
+.gds-c .gds-estrelas label:active { transform: scale(1.2); }

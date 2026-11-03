@@ -241,7 +241,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                 </div>
                 <div class="pedido-detalhe">
                     <?php if ($itens && $tipo === 'delivery'): ?>
-                        <ul class="pedido-itens"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul>
+                        <ul class="pedido-itens"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?><?= !empty($i['obs']) ? '<em style="display:block;color:#fbbf24;font-style:normal;font-weight:600">⚠ ' . e($i['obs']) . '</em>' : '' ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul>
                         <p><?= !empty($p['mesa']) ? '🍽 Consumo no local — mesa ' . e($p['mesa']) : (($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local' : '🛵 Entrega: ' . e($p['endereco_entrega'])) ?><?= (float)$p['taxa_entrega'] > 0 ? ' (taxa R$ ' . number_format((float)$p['taxa_entrega'], 2, ',', '.') . ')' : '' ?></p>
                         <p>💳 <?= e($p['forma_pagamento']) ?><?= $p['troco_para'] ? ' — troco para R$ ' . number_format((float)$p['troco_para'], 2, ',', '.') : '' ?></p>
                     <?php else: ?>
@@ -249,7 +249,7 @@ $tipos = ['delivery' => '🛵 Delivery', 'orcamento' => '📝 Orçamento', 'manu
                         <?php if (!empty($p['data_evento'])): ?><span class="mini">📅 <?= date('d/m/Y', strtotime($p['data_evento'])) ?></span><?php endif; ?>
                         <?php if (!empty($p['local_evento'])): ?><span class="mini">📍 <?= e($p['local_evento']) ?></span><?php endif; ?>
                         <?php if ($p['veiculo_info']): ?><span class="mini">🚗 <?= e($p['veiculo_info']) ?></span><?php endif; ?>
-                        <?php if ($itens): ?><ul class="pedido-itens" style="margin-top:8px"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul><?php endif; ?>
+                        <?php if ($itens): ?><ul class="pedido-itens" style="margin-top:8px"><?php foreach ($itens as $i): ?><li><b><?= (int)$i['qtd'] ?>×</b> <?= e($i['nome']) ?><?= !empty($i['obs']) ? '<em style="display:block;color:#fbbf24;font-style:normal;font-weight:600">⚠ ' . e($i['obs']) . '</em>' : '' ?> <span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></li><?php endforeach; ?></ul><?php endif; ?>
                     <?php endif; ?>
                     <?php if (!empty($p['observacoes'])): ?><p class="pedido-obs">📝 <?= e($p['observacoes']) ?></p><?php endif; ?>
                     <?php if (!empty($p['resposta'])): ?><p class="pedido-obs">💬 <?= nl2br(e($p['resposta'])) ?></p><?php endif; ?>

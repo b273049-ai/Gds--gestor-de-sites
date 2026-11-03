@@ -108,9 +108,13 @@ function frag_servicos($servicos, $opts = []) {
     if (empty($servicos)) return '<div class="gds-c"><p class="gds-vazio">Em breve, ' . (($opts['modo'] ?? '') === 'catalogo' ? 'nosso cardápio/produtos' : 'nossos serviços') . ' aparecerão aqui.</p></div>';
     $categorias = array_values(array_unique(array_filter(array_map(fn($s) => trim((string)($s['categoria'] ?? '')), $servicos))));
 
+    $cardapio = ($opts['modo'] ?? '') === 'catalogo';
+    $maisPedidos = array_flip(array_map('intval', (array)($opts['mais_pedidos'] ?? [])));
     $html = '<div class="gds-c gds-servicos" id="gds-servicos" data-gds-filtravel>';
+    // Cardápio grande: busca (como no iFood) e categorias presas no topo ao rolar
+    if ($cardapio && count($servicos) >= 6) $html .= '<div class="gds-busca-cardapio"><input type="search" data-gds-busca placeholder="🔎 Buscar no cardápio (ex.: bacon, coca…)" aria-label="Buscar no cardápio"></div>';
     if (count($categorias) > 1) {
-        $html .= '<div class="gds-filtros" role="group" aria-label="Filtrar serviços"><button type="button" class="gds-filtro" aria-pressed="true" data-gds-filtro="">Todos</button>';
+        $html .= '<div class="gds-filtros' . ($cardapio ? ' gds-filtros-fixo' : '') . '" role="group" aria-label="Filtrar serviços"><button type="button" class="gds-filtro" aria-pressed="true" data-gds-filtro="">Todos</button>';
         foreach ($categorias as $c) $html .= '<button type="button" class="gds-filtro" aria-pressed="false" data-gds-filtro="' . e($c) . '">' . e($c) . '</button>';
         $html .= '</div>';
     }
@@ -118,10 +122,11 @@ function frag_servicos($servicos, $opts = []) {
     foreach ($servicos as $s) {
         $destaque = !empty($s['destaque']) && $s['destaque'] !== 'f' && $s['destaque'] !== false;
         $aPartir = !empty($s['preco_a_partir']) && $s['preco_a_partir'] !== 'f' && $s['preco_a_partir'] !== false;
-        $html .= '<article class="gds-svc' . ($destaque ? ' gds-svc-destaque' : '') . '" data-gds-cat="' . e(trim((string)($s['categoria'] ?? ''))) . '">';
+        $html .= '<article class="gds-svc' . ($destaque ? ' gds-svc-destaque' : '') . '" data-gds-cat="' . e(trim((string)($s['categoria'] ?? ''))) . '" data-busca="' . e(mb_strtolower($s['nome'] . ' ' . ($s['descricao'] ?? '') . ' ' . ($s['categoria'] ?? ''))) . '">';
         if (!empty($s['imagem'])) $html .= '<img class="gds-svc-img" src="' . e($s['imagem']) . '" alt="' . e($s['nome']) . '" loading="lazy">';
         $html .= '<div class="gds-svc-corpo"><div class="gds-svc-topo"><h3>' . e($s['nome']) . '</h3>'
-               . ($destaque ? '<span class="gds-chip gds-chip-accent">' . frag_icone('estrela') . ' Destaque</span>' : '') . '</div>';
+               . ($destaque ? '<span class="gds-chip gds-chip-accent">' . frag_icone('estrela') . ' Destaque</span>' : (isset($maisPedidos[(int)$s['id']]) ? '<span class="gds-chip gds-chip-accent">🔥 Mais pedido</span>' : '')) . '</div>';
+        if ($cardapio && !empty($s['serve'])) $html .= '<p class="gds-mute gds-svc-serve">👥 Serve ' . (int)$s['serve'] . ((int)$s['serve'] > 1 ? ' pessoas' : ' pessoa') . '</p>';
         if (!empty($s['descricao'])) $html .= '<p class="gds-svc-desc">' . e($s['descricao']) . '</p>';
         $meta = '';
         if (($opts['modo'] ?? 'agendamento') === 'agendamento' && ($d = frag_duracao($s['duracao_minutos'] ?? 0))) $meta .= '<span class="gds-chip">' . frag_icone('relogio') . ' ' . $d . '</span>';
@@ -132,6 +137,7 @@ function frag_servicos($servicos, $opts = []) {
         $html .= '</div><div class="gds-svc-rodape"><div class="gds-preco">' . frag_preco_de($s) . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de</small>R$ ' . number_format((float)$s['preco'], 2, ',', '.') : frag_preco($s['preco'])) . '</div>';
         $html .= frag_botao_servico($s, $opts) . '</div></article>';
     }
+    if ($cardapio && count($servicos) >= 6) $html .= '</div><p class="gds-mute" data-gds-busca-vazio hidden>Nada encontrado. Tente outra palavra.</p><div>';
     return $html . '</div></div>';
 }
 
@@ -185,6 +191,7 @@ function frag_botao_servico($s, $opts) {
         if ((float)$s['preco'] > 0 || $grupos) {
             $obrig = array_filter($grupos, fn($g) => (int)($g['min'] ?? 0) > 0);
             return '<button type="button" class="gds-btn" data-gds-add="' . $id . '" data-nome="' . e($s['nome']) . '" data-preco="' . (float)$s['preco'] . '"'
+                 . ' data-desc="' . e(mb_substr((string)($s['descricao'] ?? ''), 0, 400)) . '" data-img="' . e((string)($s['imagem'] ?? '')) . '"' . (!empty($s['serve']) ? ' data-serve="' . (int)$s['serve'] . '"' : '')
                  . ($grupos ? " data-gds-opcoes='" . htmlspecialchars(json_encode($grupos, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') . "'" : '') . '>'
                  . frag_icone('sacola') . ($obrig ? ' Escolher' : ' Adicionar') . '</button>';
         }
@@ -598,10 +605,10 @@ function frag_agendamento_confirmado($estado, $empresa) {
 // ------------------------------------------------------------
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=10">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=12">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
-         . '<script src="/assets/js/gds-site.js?v=11" defer></script>'
+         . '<script src="/assets/js/gds-site.js?v=12" defer></script>'
          . '<script src="/assets/js/gds-motion.js?v=1" defer></script>';
 }
 
@@ -652,7 +659,7 @@ function frag_carrinho($empresa, $estado = [], $servicos = []) {
                . '<h3>Pedido nº ' . (int)$d['codigo'] . ' recebido!</h3><p class="gds-mute">' . e(explode(' ', $d['nome'] ?? '')[0]) . ', já estamos cuidando dele.</p>'
                . (!empty($d['wa_automatico']) ? '<p class="gds-aviso-wa">' . frag_icone('whats') . ' Você vai receber as atualizações no seu WhatsApp.</p>' : '')
                . '<div class="gds-resumo">';
-        foreach ($d['itens'] as $i) $html .= '<div><span>' . (int)$i['qtd'] . '× ' . e($i['nome']) . '</span><span>' . e(frag_preco($i['preco'] * $i['qtd'])) . '</span></div>';
+        foreach ($d['itens'] as $i) $html .= '<div><span>' . (int)$i['qtd'] . '× ' . e($i['nome']) . (!empty($i['obs']) ? '<small class="gds-mute" style="display:block">📝 ' . e($i['obs']) . '</small>' : '') . '</span><span>' . e(frag_preco($i['preco'] * $i['qtd'])) . '</span></div>';
         if (!empty($d['desconto'])) $html .= '<div><span>Cupom ' . e($d['cupom'] ?? '') . '</span><span>−' . e(frag_preco($d['desconto'])) . '</span></div>';
         if ($d['taxa'] > 0) $html .= '<div><span>Entrega</span><span>' . e(frag_preco($d['taxa'])) . '</span></div>';
         $html .= '<div class="gds-total"><span>Total</span><span>' . e(frag_preco($d['total'])) . '</span></div></div>'
