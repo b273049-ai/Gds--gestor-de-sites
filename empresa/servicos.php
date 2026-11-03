@@ -80,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_servico'])) {
             $de = valor_decimal($_POST['preco_de'] ?? '', 0);
             $est = trim((string)($_POST['estoque'] ?? ''));
             $pdo->prepare("UPDATE servicos SET preco_de=?, estoque=? WHERE id=? AND empresa_id=?")->execute([$de > $preco ? $de : null, $est === '' ? null : max(0, min(999999, (int)$est)), $sid, $empresaId]);
+            try { $pdo->prepare("UPDATE servicos SET serve=? WHERE id=? AND empresa_id=?")->execute([(int)($_POST['serve'] ?? 0) ?: null, $sid, $empresaId]); } catch (PDOException $e) {}
             if ($est !== '' && (int)$est > 0) $pdo->prepare("UPDATE servicos SET esgotado=false WHERE id=? AND empresa_id=?")->execute([$sid, $empresaId]);
             $pdo->prepare("UPDATE servicos SET opcoes=?, sugerir=?, retorno_dias=?, vagas=?, experimental=?, perguntas=? WHERE id=? AND empresa_id=?")->execute([
                 $ops ? json_encode($ops, JSON_UNESCAPED_UNICODE) : null, isset($_POST['sugerir']) ? 'true' : 'false', max(0, min(365, (int)($_POST['retorno_dias'] ?? 0))),
@@ -161,12 +162,13 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <?php if ($ehCatalogo): ?>
         <div class="form-row">
             <div><label>Preço "de" (promoção: aparece riscado)</label><input type="text" inputmode="decimal" name="preco_de" placeholder="Ex.: 39,90" value="<?= !empty($editando['preco_de']) ? number_format((float)$editando['preco_de'], 2, ',', '') : '' ?>"></div>
+            <div><label>Serve quantas pessoas? <small class="muted">(opcional)</small></label><input type="number" name="serve" min="0" max="50" value="<?= (int)($editando['serve'] ?? 0) ?: '' ?>" placeholder="Ex.: 2"></div>
             <div><label>Estoque (vazio = sem controle)</label><input type="number" name="estoque" min="0" placeholder="Ex.: 12" value="<?= isset($editando['estoque']) && $editando['estoque'] !== null ? (int)$editando['estoque'] : '' ?>"></div>
         </div>
         <p class="dica">Com estoque, cada pedido dá baixa sozinho e o item aparece "Esgotado" quando zera.</p>
         <label>Opções do item (adicionais, ponto, tamanho, sabores, cor…) — uma linha por grupo</label>
-        <textarea name="opcoes" rows="4" placeholder="Ponto da carne* (1): Mal passado, Ao ponto, Bem passado&#10;Adicionais (até 3): Bacon +4, Cheddar +3,50, Ovo +2&#10;Sabores* (2, maior preço): Calabresa 45, Marguerita 42"><?= e(opc_para_texto(opc_ler($editando ?? []))) ?></textarea>
-        <p class="dica">* = obrigatório · (1) escolhe uma · (até 3) escolhe várias · "+4" soma ao preço · "maior preço" = meio a meio cobra o sabor mais caro. Serve também para tamanho (P, M +5, G +10) e cor.</p>
+        <textarea name="opcoes" rows="5" placeholder="Ponto da carne* (1): Mal passado, Ao ponto, Bem passado&#10;Adicionais (até 5, qtd): Bacon +4, Cheddar +3,50, Ovo +2&#10;Retirar (até 4): Cebola, Tomate, Alface, Picles&#10;Molhos (mín 2, até 3): Barbecue, Maionese verde, Cheddar&#10;Sabores* (2, maior preço): Calabresa 45, Marguerita 42"><?= e(opc_para_texto(opc_ler($editando ?? []))) ?></textarea>
+        <p class="dica">* = obrigatório · (1) escolhe uma · (até 3) escolhe várias · <b>qtd</b> = o cliente escolhe a quantidade de cada (2x bacon) · <b>mín 2</b> = precisa escolher pelo menos 2 · "+4" soma ao preço · "maior preço" = meio a meio cobra o sabor mais caro. Serve também para tamanho (P, M +5, G +10). O cliente sempre tem o campo <b>"Alguma observação?"</b> no item.</p>
         <label class="check"><input type="checkbox" name="sugerir" <?= $editando && pg_bool($editando['sugerir'] ?? false) ? 'checked' : '' ?>> Sugerir no carrinho ("Peça também") — ótimo para bebida, sobremesa e porção</label>
         <?php endif; ?>
         <?php if ($comAgenda): ?>

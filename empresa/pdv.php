@@ -46,10 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancar'])) {
         if ($qtd < 1 || !isset($porId[$id])) continue;
         $pr = opc_precificar($porId[$id], (array)($it['opcoes'] ?? []));   // preço sempre do banco
         if (!$pr['ok']) { $erro = $pr['erro']; break; }
-        $nome = $pr['nome'];
-        $obsItem = mb_substr(trim(strip_tags((string)($it['obs'] ?? ''))), 0, 80);
-        if ($obsItem !== '') $nome .= ' — ' . $obsItem;
-        $itens[] = ['id' => $id, 'nome' => $nome, 'qtd' => $qtd, 'preco' => $pr['preco'], 'opcoes' => array_values((array)($it['opcoes'] ?? []))];
+        $obsItem = mb_substr(trim(strip_tags((string)($it['obs'] ?? ''))), 0, 140);
+        $itens[] = ['id' => $id, 'nome' => $pr['nome'], 'qtd' => $qtd, 'preco' => $pr['preco'], 'opcoes' => array_values((array)($it['opcoes'] ?? []))] + ($obsItem !== '' ? ['obs' => $obsItem] : []);
         $subtotal += $pr['preco'] * $qtd;
     }
     $tipo = in_array($_POST['tipo'] ?? '', ['retirada', 'entrega', 'mesa'], true) ? $_POST['tipo'] : 'retirada';
@@ -94,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancar'])) {
         $clienteId = (int)$n->fetch()['id'];
     }
     $endereco = $tipo === 'entrega' ? pedido_endereco_texto($end) : '';
-    $descricao = implode(', ', array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'], $itens));
+    $descricao = implode(', ', array_map(fn($i) => $i['qtd'] . 'x ' . $i['nome'] . (!empty($i['obs']) ? ' (obs: ' . $i['obs'] . ')' : ''), $itens));
     if ($desconto > 0) $obs = trim('Desconto de R$ ' . number_format($desconto, 2, ',', '.') . '. ' . $obs);
     $origem = ['retirada' => 'balcao', 'entrega' => 'telefone', 'mesa' => 'mesa'][$tipo];
     $ins = $pdo->prepare("INSERT INTO pedidos (empresa_id, cliente_id, descricao, valor, status, origem, tipo, itens, tipo_entrega, endereco_entrega, forma_pagamento, troco_para, taxa_entrega, observacoes, token, mesa, pago, aceito_em)
@@ -240,7 +238,7 @@ $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
     }
     function nomeCom(p, esc) {
         var partes = [];
-        p.opcoes.forEach(function (g, gi) { var n = esc.filter(function (e) { return e[0] === gi; }).map(function (e) { return g.itens[e[1]].nome; }); if (n.length) partes.push(n.join(', ')); });
+        p.opcoes.forEach(function (g, gi) { var n = esc.filter(function (e) { return e[0] === gi; }).map(function (e) { return g.itens[e[1]].nome; }); if (n.length) partes.push(g.regra === 'maior' ? n.join(' / ') : g.nome + ': ' + n.join(', ')); });
         return p.nome + (partes.length ? ' (' + partes.join('; ') + ')' : '');
     }
     var emEdicao = null;

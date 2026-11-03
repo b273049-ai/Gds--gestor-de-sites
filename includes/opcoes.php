@@ -9,6 +9,8 @@
 //   Ponto da carne* (1): Mal passado, Ao ponto, Bem passado
 //   Adicionais (até 3): Bacon +4, Cheddar +3,50, Ovo +2
 //   Sabores* (2, maior preço): Calabresa 45, Marguerita 42, Portuguesa 48
+//   Adicionais (até 5, qtd): Bacon +4, Cheddar +3   → o cliente escolhe a quantidade de cada (2x bacon), como no iFood
+//   Molhos* (mín 2, até 3): Barbecue, Maionese verde, Cheddar   → "mín" exige uma quantidade mínima
 // ============================================================
 
 function opc_ler($servico) {
@@ -34,6 +36,9 @@ function opc_de_texto($texto) {
         $nome = trim(preg_replace('/\([^)]*\)|\*/u', '', $cab));
         $max = preg_match('/(\d+)/', $spec, $n) ? max(1, (int)$n[1]) : 1;
         $regra = str_contains($spec, 'maior') ? 'maior' : 'soma';
+        $qtd = $regra === 'soma' && preg_match('/\bqtd|quant/u', $spec);
+        $min = preg_match('/m[ií]n\.?\s*(\d+)/u', $spec, $mn) ? max(1, (int)$mn[1]) : 0;
+        if ($min && preg_match_all('/(\d+)/', $spec, $todos) && count($todos[1]) > 1) $max = max(array_map('intval', $todos[1]));
         $itens = [];
         foreach (preg_split('/\s*[,;]\s*(?=[^\d])/u', $lista) as $it) {
             $it = trim($it);
@@ -43,7 +48,10 @@ function opc_de_texto($texto) {
             if (count($itens) >= 40) break;
         }
         if ($nome === '' || !$itens) continue;
-        $grupos[] = ['nome' => mb_substr($nome, 0, 60), 'min' => $obrig ? min($max, $regra === 'maior' ? 1 : 1) : 0, 'max' => min($max, count($itens)), 'regra' => $regra, 'itens' => $itens];
+        $maxFinal = $qtd ? $max : min($max, count($itens));
+        $g = ['nome' => mb_substr($nome, 0, 60), 'min' => $min ? min($min, $maxFinal) : ($obrig ? 1 : 0), 'max' => max(1, $maxFinal), 'regra' => $regra, 'itens' => $itens];
+        if ($qtd) $g['qtd'] = true;
+        $grupos[] = $g;
         if (count($grupos) >= 8) break;
     }
     return $grupos;
@@ -53,9 +61,11 @@ function opc_para_texto($grupos) {
     $l = [];
     foreach ((array)$grupos as $g) {
         $spec = ($g['max'] ?? 1) > 1 ? 'até ' . $g['max'] : '1';
+        if (($g['min'] ?? 0) > 1) $spec = 'mín ' . $g['min'] . ', ' . $spec;
+        if (!empty($g['qtd'])) $spec .= ', qtd';
         if (($g['regra'] ?? '') === 'maior') $spec = ($g['max'] ?? 2) . ', maior preço';
         $itens = array_map(fn($i) => $i['nome'] . ((float)$i['preco'] > 0 ? ' ' . (($g['regra'] ?? '') === 'maior' ? '' : '+') . number_format((float)$i['preco'], 2, ',', '') : ''), $g['itens']);
-        $l[] = $g['nome'] . (($g['min'] ?? 0) > 0 ? '*' : '') . " ($spec): " . implode(', ', $itens);
+        $l[] = $g['nome'] . (($g['min'] ?? 0) > 0 && ($g['min'] ?? 0) <= 1 ? '*' : '') . " ($spec): " . implode(', ', $itens);
     }
     return implode("\n", $l);
 }
@@ -70,10 +80,20 @@ function opc_precificar($servico, $escolhas) {
     foreach ((array)$escolhas as $e) {
         $g = (int)($e[0] ?? -1); $i = (int)($e[1] ?? -1);
         if (!isset($grupos[$g]['itens'][$i])) continue;
-        $porGrupo[$g][$i] = true;
+        $porGrupo[$g][$i] = !empty($grupos[$g]['qtd']) ? ($porGrupo[$g][$i] ?? 0) + 1 : 1; // grupo com quantidade: [g,i] repetido = 2x
     }
     $preco = $base; $extras = 0.0; $partes = [];
     foreach ($grupos as $gi => $g) {
+        if (!empty($g['qtd'])) {
+            $cont = $porGrupo[$gi] ?? []; $total = array_sum($cont);
+            if ($total < (int)($g['min'] ?? 0)) return ['ok' => false, 'erro' => 'Escolha: ' . $g['nome'] . ' (' . $servico['nome'] . ').'];
+            if ($total > (int)$g['max']) return ['ok' => false, 'erro' => 'No máximo ' . (int)$g['max'] . ' em ' . $g['nome'] . '.'];
+            if (!$cont) continue;
+            $nomes = [];
+            foreach ($cont as $i => $n) { $extras += (float)$g['itens'][$i]['preco'] * $n; $nomes[] = ($n > 1 ? $n . 'x ' : '') . $g['itens'][$i]['nome']; }
+            $partes[] = $g['nome'] . ': ' . implode(', ', $nomes);
+            continue;
+        }
         $sel = array_keys($porGrupo[$gi] ?? []);
         if (count($sel) < (int)($g['min'] ?? 0)) return ['ok' => false, 'erro' => 'Escolha: ' . $g['nome'] . ' (' . $servico['nome'] . ').'];
         if (count($sel) > (int)($g['max'] ?? 1)) $sel = array_slice($sel, 0, (int)$g['max']);
@@ -82,10 +102,10 @@ function opc_precificar($servico, $escolhas) {
         $precos = array_map(fn($i) => (float)$g['itens'][$i]['preco'], $sel);
         if (($g['regra'] ?? 'soma') === 'maior') {
             $preco = max($preco, max($precos));
-            $partes[] = (count($sel) > 1 ? implode(' / ', $nomes) : $nomes[0]);
+            $partes[] = (count($sel) > 1 ? implode(' / ', $nomes) : $nomes[0]); // sabores: "Calabresa / Portuguesa"
         } else {
             $extras += array_sum($precos);
-            $partes[] = implode(', ', $nomes);
+            $partes[] = $g['nome'] . ': ' . implode(', ', $nomes); // "Retirar: Cebola" — a cozinha entende sem adivinhar
         }
     }
     return ['ok' => true, 'preco' => round($preco + $extras, 2), 'nome' => $servico['nome'] . ($partes ? ' (' . implode('; ', $partes) . ')' : '')];

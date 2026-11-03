@@ -14,7 +14,7 @@ $p = false;
 if (strlen($token) === 32) {
     try {
         $st = $pdo->prepare("SELECT p.*, c.nome AS cliente_nome, sv.nome AS servico_nome, e.nome AS empresa_nome, e.slug, e.whatsapp, e.endereco, e.id AS emp_id,
-                e.pix_ativo, e.mercadopago_access_token, e.orc_sinal_percentual,
+                e.pix_ativo, e.mercadopago_access_token, e.orc_sinal_percentual, e.tempo_entrega, e.email AS empresa_email, e.notificar_email,
                 si.cor_primaria, si.ia_tema, si.html_gerado, si.ia_modo_total
             FROM pedidos p JOIN empresas e ON e.id = p.empresa_id JOIN sites si ON si.empresa_id = e.id
             LEFT JOIN clientes c ON c.id = p.cliente_id LEFT JOIN servicos sv ON sv.id = p.servico_id
@@ -50,7 +50,41 @@ if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['aprovar
         $msg = 'ok';
     }
 }
+// Cliente cancela enquanto a loja ainda não aceitou (como no iFood)
+if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['cancelar_pedido'])) {
+    if (!hash_equals($_SESSION['gds_pedido_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
+    elseif ($p['status'] !== 'novo' || ($p['tipo'] ?? '') !== 'delivery') $msg = 'A loja já começou a preparar. Para cancelar, fale com ela pelo WhatsApp.';
+    else {
+        $motivo = mb_substr(trim(strip_tags((string)($_POST['motivo'] ?? ''))), 0, 200) ?: 'Cancelado pelo cliente';
+        $pdo->prepare("UPDATE pedidos SET status='cancelado', resposta=?, atualizado_em=NOW() WHERE id=? AND status='novo'")->execute(['Cancelado pelo cliente: ' . $motivo, $p['id']]);
+        try { foreach ((array)json_decode((string)$p['itens'], true) as $i) if (!empty($i['id'])) $pdo->prepare("UPDATE servicos SET estoque = estoque + ? WHERE id=? AND estoque IS NOT NULL")->execute([(int)$i['qtd'], (int)$i['id']]); } catch (PDOException $e) {}
+        site_notificar_empresa(['nome' => $p['empresa_nome'], 'email' => $p['empresa_email'], 'notificar_email' => $p['notificar_email']], 'Pedido nº ' . $p['id'] . ' cancelado pelo cliente', [$p['cliente_nome'] . ' cancelou o pedido nº ' . $p['id'] . '.', 'Motivo: ' . $motivo]);
+        if ($empresaWa = wa_carregar_empresa($p['emp_id'])) { wa_adiar(); wa_notificar_empresa($empresaWa, 'contato', ['nome' => $p['cliente_nome'], 'telefone' => '', 'mensagem' => '❌ Cancelou o pedido nº ' . $p['id'] . ' (antes de você aceitar). Motivo: ' . $motivo], 'pedido', $p['id']); }
+        $p['status'] = 'cancelado'; $msg = 'cancelado';
+    }
+}
+// Avaliação do pedido (estrelas + comentário) — vai para Avaliações no painel
+$jaAvaliou = false;
+if ($p) { try { $q = $pdo->prepare("SELECT 1 FROM avaliacoes WHERE pedido_id=? LIMIT 1"); $q->execute([$p['id']]); $jaAvaliou = (bool)$q->fetchColumn(); } catch (PDOException $e) {} }
+if ($p && !$jaAvaliou && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['avaliar_pedido'])) {
+    $nota = max(1, min(5, (int)($_POST['nota'] ?? 0)));
+    if (!hash_equals($_SESSION['gds_pedido_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
+    elseif ($p['status'] !== 'concluido') $msg = 'Você pode avaliar quando o pedido for entregue.';
+    else {
+        try {
+            $pdo->prepare("INSERT INTO avaliacoes (empresa_id, cliente_id, nota, comentario, nome_autor, aprovado, origem, pedido_id) VALUES (?,?,?,?,?,false,'pedido',?)")
+                ->execute([$p['emp_id'], $p['cliente_id'], $nota, mb_substr(trim(strip_tags((string)($_POST['comentario'] ?? ''))), 0, 1000) ?: null, mb_substr((string)$p['cliente_nome'], 0, 100) ?: 'Cliente', $p['id']]);
+            $jaAvaliou = true; $msg = 'avaliado';
+        } catch (PDOException $e) { $msg = 'Não deu para enviar agora. Tente de novo.'; }
+    }
+}
 $_SESSION['gds_pedido_csrf'] = bin2hex(random_bytes(16));
+// Previsão de chegada: maior número do "tempo de entrega" (ex.: "40–60 min" → 60) a partir do pedido
+$previsao = null;
+if ($p && ($p['tipo'] ?? '') === 'delivery' && empty($p['mesa']) && in_array($p['status'], ['novo', 'em_andamento', 'pronto', 'saiu_entrega'], true) && empty($p['agendado_para'])) {
+    $mins = preg_match_all('/\d+/', (string)($p['tempo_entrega'] ?? ''), $mm) ? max(array_map('intval', $mm[0])) : 0;
+    if ($mins >= 5 && $mins <= 240) $previsao = strtotime($p['criado_em']) + $mins * 60;
+}
 
 $pixPendente = null;
 if ($p) {
@@ -105,11 +139,15 @@ main{width:100%;max-width:520px}
         <p class="gds-mute" style="font-size:.85rem"><?= e($p['empresa_nome']) ?></p>
         <h3 style="font-size:1.4rem;margin:4px 0 6px"><?= $delivery ? 'Seu pedido' : 'Seu orçamento' ?> nº <?= (int)$p['id'] ?></h3>
         <?php if ($msg === 'ok'): ?><div class="gds-alerta gds-alerta-ok">Orçamento aprovado! Avisamos a empresa.</div>
+        <?php elseif ($msg === 'cancelado'): ?><div class="gds-alerta gds-alerta-ok">Pedido cancelado. Avisamos a loja.</div>
+        <?php elseif ($msg === 'avaliado'): ?><div class="gds-alerta gds-alerta-ok">Obrigado pela avaliação! 💛</div>
         <?php elseif ($msg): ?><div class="gds-alerta gds-alerta-erro"><?= e($msg) ?></div><?php endif; ?>
 
         <?php if ($p['status'] === 'cancelado'): ?>
             <div class="gds-alerta gds-alerta-erro" style="margin-top:12px">Este <?= $delivery ? 'pedido' : 'orçamento' ?> foi cancelado.</div>
         <?php else: ?>
+            <?php if ($previsao): ?><div class="gds-previsao"><span><?= ($p['tipo_entrega'] ?? '') === 'retirada' ? 'Pronto por volta de' : 'Previsão de entrega' ?></span><strong><?= $previsao < time() ? 'em instantes' : 'até ' . date('H:i', $previsao) ?></strong></div><?php endif; ?>
+            <?php if (!empty($p['agendado_para']) && $delivery): ?><div class="gds-previsao"><span>Agendado para</span><strong><?= e($p['agendado_para']) ?></strong></div><?php endif; ?>
             <ol class="linha">
             <?php foreach ($etapas as $k => $rot): $i = array_search($k, $ordem, true); ?>
                 <li class="<?= $idxAtual !== false && $i < $idxAtual ? 'feito' : ($i === $idxAtual ? 'atual' : '') ?>"><?= e($rot) ?></li>
@@ -120,7 +158,7 @@ main{width:100%;max-width:520px}
         <div class="gds-resumo">
             <?php if ($itens && !$delivery && ($p['servico_nome'] ?: $p['descricao'])): ?><div><span>Pedido</span><span style="white-space:pre-line;text-align:right"><?= e($p['servico_nome'] ?: $p['descricao']) ?></span></div><?php endif; ?>
             <?php if ($itens): foreach ($itens as $i): ?>
-                <div><span><?= (int)$i['qtd'] ?>× <?= e($i['nome']) ?></span><span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></div>
+                <div><span><?= (int)$i['qtd'] ?>× <?= e($i['nome']) ?><?php if (!empty($i['obs'])): ?><small class="gds-mute" style="display:block">📝 <?= e($i['obs']) ?></small><?php endif; ?></span><span>R$ <?= number_format($i['preco'] * $i['qtd'], 2, ',', '.') ?></span></div>
             <?php endforeach; else: ?>
                 <div><span>Pedido</span><span style="white-space:pre-line;text-align:right"><?= e($p['servico_nome'] ?: $p['descricao']) ?></span></div>
             <?php endif; ?>
@@ -151,11 +189,26 @@ main{width:100%;max-width:520px}
                 <button type="submit" name="aprovar" value="1" class="gds-btn"><?= frag_icone('check') ?> Aprovar orçamento</button></form>
             <?php endif; ?>
             <?php if ($delivery && $itens && empty($p['mesa']) && in_array($p['status'], ['concluido', 'saiu_entrega', 'pronto'], true)):
-                $rep = array_map(fn($i) => ['id' => (int)($i['id'] ?? 0), 'qtd' => (int)($i['qtd'] ?? 1), 'opcoes' => $i['opcoes'] ?? [], 'nome' => (string)($i['nome'] ?? ''), 'preco' => (float)($i['preco'] ?? 0)], array_filter($itens, fn($i) => !empty($i['id']))); ?>
+                $rep = array_map(fn($i) => ['id' => (int)($i['id'] ?? 0), 'qtd' => (int)($i['qtd'] ?? 1), 'opcoes' => $i['opcoes'] ?? [], 'nome' => (string)($i['nome'] ?? ''), 'preco' => (float)($i['preco'] ?? 0), 'obs' => (string)($i['obs'] ?? '')], array_filter($itens, fn($i) => !empty($i['id']))); ?>
             <?php if ($rep): ?><a class="gds-btn" href="/<?= e($p['slug']) ?>#gds-repetir=<?= e(rawurlencode(json_encode(array_values($rep), JSON_UNESCAPED_UNICODE))) ?>">🔁 Pedir de novo</a><?php endif; ?>
             <?php endif; ?>
             <?php if ($p['whatsapp']): ?><a class="gds-btn gds-btn-wa" target="_blank" rel="noopener" href="<?= e(frag_link_whatsapp($p['whatsapp'], 'Olá! Sobre o meu ' . ($delivery ? 'pedido' : 'orçamento') . ' nº ' . $p['id'] . ':')) ?>"><?= frag_icone('whats') ?> Falar com a empresa</a><?php endif; ?>
         </div>
+        <?php if ($delivery && $p['status'] === 'novo'): ?>
+        <details style="margin-top:16px"><summary class="gds-btn-2" style="color:var(--gds-erro)">Cancelar pedido</summary>
+            <form method="post" style="margin-top:10px"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_pedido_csrf']) ?>">
+                <div class="gds-campo"><label for="motivo">Motivo (opcional)</label><select id="motivo" name="motivo"><option>Pedi errado</option><option>Demorou para aceitar</option><option>Mudei de ideia</option><option>Vou pedir de novo com outra coisa</option><option>Outro motivo</option></select></div>
+                <button type="submit" name="cancelar_pedido" value="1" class="gds-btn" style="background:var(--gds-erro);color:#fff" onclick="return confirm('Cancelar este pedido?')">Confirmar cancelamento</button>
+            </form><p class="gds-mute" style="font-size:.8rem">Depois que a loja aceitar, o cancelamento é só pelo WhatsApp.</p></details>
+        <?php endif; ?>
+        <?php if ($delivery && $p['status'] === 'concluido' && !$jaAvaliou): ?>
+        <form method="post" class="gds-avaliar-pedido"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_pedido_csrf']) ?>">
+            <h4>Como foi seu pedido?</h4>
+            <div class="gds-estrelas" role="radiogroup" aria-label="Nota"><?php for ($n = 5; $n >= 1; $n--): ?><input type="radio" id="nota<?= $n ?>" name="nota" value="<?= $n ?>" required><label for="nota<?= $n ?>" title="<?= $n ?> estrela(s)">★</label><?php endfor; ?></div>
+            <textarea name="comentario" rows="2" maxlength="1000" placeholder="Conte o que achou (opcional)"></textarea>
+            <button type="submit" name="avaliar_pedido" value="1" class="gds-btn">Enviar avaliação</button>
+        </form>
+        <?php endif; ?>
         <?php if (!in_array($p['status'], ['concluido', 'cancelado'], true)): ?><p class="gds-mute" style="font-size:.8rem;margin-top:14px">Esta página se atualiza sozinha.</p><?php endif; ?>
     </div>
     <p style="text-align:center;margin-top:16px;font-size:.85rem"><a href="/<?= e($p['slug']) ?>" style="color:inherit">← Voltar ao site</a></p>

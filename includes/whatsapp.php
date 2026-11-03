@@ -493,7 +493,7 @@ function wa_dinheiro($v) {
 // Variáveis de um pedido/orçamento (linha de pedidos + cliente_nome/telefone + servico_nome)
 function wa_vars_pedido($p, $empresa) {
     $itens = json_decode((string)($p['itens'] ?? ''), true) ?: [];
-    $linhas = array_map(fn($i) => (int)$i['qtd'] . 'x ' . $i['nome'] . ' — ' . wa_dinheiro($i['preco'] * $i['qtd']), $itens);
+    $linhas = array_map(fn($i) => (int)$i['qtd'] . 'x ' . $i['nome'] . ' — ' . wa_dinheiro($i['preco'] * $i['qtd']) . (!empty($i['obs']) ? "\n   📝 " . $i['obs'] : ''), $itens);
     $entrega = !empty($p['mesa']) ? '🍽 Mesa ' . $p['mesa'] : (($p['tipo_entrega'] ?? '') === 'retirada' ? '🏪 Retirada no local'
              : (($p['tipo_entrega'] ?? '') === 'entrega' ? '🛵 Entrega em: ' . ($p['endereco_entrega'] ?? '') . ((float)($p['taxa_entrega'] ?? 0) > 0 ? ' (taxa ' . wa_dinheiro($p['taxa_entrega']) . ')' : '') : ''));
     $servico = $p['servico_nome'] ?? '';
