@@ -352,13 +352,25 @@ atenção" com cobrança pelo WhatsApp, **orçamento em documento/PDF** para o c
   IPTU, quartos, suítes, banheiros, vagas, áreas, características, até 20 fotos, vídeo, proprietário), vitrine no site
   com filtros, ficha com galeria, link de cada imóvel, contagem de visualizações e **"Agendar visita"** que cai no funil.
 
+### Tudo com botões no painel (v16)
+**Regra do projeto:** nenhuma configuração do painel exige digitar "fórmula" ou lista separada por vírgula.
+Use os editores de `assets/js/gds-painel-editores.js` (carregado em todo o painel por `painel_head()`), que gravam
+num `<input type="hidden">`:
+- `data-editor-opcoes` — opções do item: modelos prontos (Ponto da carne, Adicionais, Retirar ingredientes, Molhos,
+  Tamanho, Sabores meio a meio, Bebida do combo, Acompanhamento, grupo em branco), chaves **Obrigatório**,
+  **Cliente escolhe a quantidade (2x)** e **Meio a meio**, botões − / + de mínimo e máximo, "+ Adicionar opção",
+  subir/descer/remover grupo e o resumo "O cliente vê: …". O servidor valida com `opc_normalizar()`.
+- `data-editor-bairros` — bairros e taxa ("+ Adicionar bairro", "Mesma taxa para todos").
+- `data-editor-lista` — perguntas do orçamento (sugestões prontas + "Escrever pergunta").
+- `data-editor-chips` — formas de pagamento, etiquetas do cliente, características do imóvel ("+ Outra").
+- `data-preset-alvo` / `data-preset` — botões que preenchem um campo (tempo de entrega).
+
 ### Tela do produto como no iFood (v15, migração 26)
 - Todo item do cardápio abre a **tela do produto**: foto grande, descrição, "Serve X pessoas", opções, campo
   **"Alguma observação?"** (ex.: tirar a cebola, maionese à parte) e quantidade antes de adicionar. No celular abre
   como gaveta de baixo para cima.
-- **Adicionais com quantidade** (2x bacon): no Cardápio, escreva `Adicionais (até 5, qtd): Bacon +4, Cheddar +3`.
-  **Mínimo** de escolhas: `Molhos (mín 2, até 3): Barbecue, Verde, Alho`. Grupo para retirar ingredientes:
-  `Retirar (até 4): Cebola, Tomate, Alface`.
+- **Adicionais com quantidade** (2x bacon), **mínimo** de escolhas e grupo para **retirar ingredientes**: tudo
+  montado com os botões do editor de opções (v16).
 - O pedido grava as escolhas com o nome do grupo ("Retirar: Cebola") e a **observação de cada item**, que aparece no
   carrinho (com **editar**), no Gestor (⚠ em amarelo, uma escolha por linha), na comanda impressa (*** OBS ***), no
   WhatsApp e no acompanhamento. "Pedir de novo" mantém a observação.

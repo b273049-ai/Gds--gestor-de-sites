@@ -168,7 +168,7 @@ foreach ($imoveis as $im) { if ($im['situacao'] === 'disponivel' && pg_bool($im[
         <label>Descrição</label><textarea name="descricao" rows="5" maxlength="6000" placeholder="Conte os diferenciais: sol da manhã, rua tranquila, perto de escola, reformada em 2023…"><?= $v('descricao') ?></textarea>
         <label>Características</label>
         <div class="im-carac"><?php foreach ($caracPadrao as $c): ?><label><input type="checkbox" name="carac[]" value="<?= e($c) ?>" <?= in_array($c, $caracSel, true) ? 'checked' : '' ?>> <?= e($c) ?></label><?php endforeach; ?></div>
-        <input type="text" name="carac_extra" maxlength="400" value="<?= e($extra) ?>" placeholder="Outras (separe com vírgula): poço artesiano, edícula…">
+        <input type="hidden" name="carac_extra" data-editor-chips data-novo="1" data-opcoes="<?= e(implode('|', array_unique(array_merge(['Edícula', 'Poço artesiano', 'Sauna', 'Lareira', 'Home office', 'Despensa', 'Depósito', 'Gerador', 'Pé-direito alto', 'Vista para o mar'], array_filter(array_map('trim', explode(',', $extra))))))) ?>" value="<?= e($extra) ?>">
         <div class="im-carac" style="margin-top:10px">
             <label><input type="checkbox" name="financiamento" <?= pg_bool($ed['financiamento'] ?? false) ? 'checked' : '' ?>> Aceita financiamento</label>
             <label><input type="checkbox" name="permuta" <?= pg_bool($ed['permuta'] ?? false) ? 'checked' : '' ?>> Aceita permuta</label>

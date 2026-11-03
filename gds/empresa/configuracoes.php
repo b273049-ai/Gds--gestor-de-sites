@@ -35,7 +35,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_delivery'])) {
         ->execute([isset($_POST['pedido_online']) ? 'true' : 'false', $entrega ? 'true' : 'false', $retirada ? 'true' : 'false',
                    max(0, valor_decimal($_POST['taxa_entrega'] ?? '0')), max(0, valor_decimal($_POST['pedido_minimo'] ?? '0')),
                    $formas ?: 'Pix, Cartão na entrega, Dinheiro', mb_substr(trim($_POST['tempo_entrega'] ?? ''), 0, 60) ?: null, $empresaId]);
-    try { $pdo->prepare("UPDATE empresas SET bairros_entrega=? WHERE id=?")->execute([delivery_bairros_de_texto($_POST['bairros_entrega'] ?? ''), $empresaId]); } catch (PDOException $e) {}
+    // Bairros: lista montada com botões (JSON) ou o texto antigo "Centro = 5,00"
+    $bairrosNovos = delivery_bairros_de_texto($_POST['bairros_entrega'] ?? '');
+    if (isset($_POST['bairros_json'])) {
+        $l = [];
+        foreach (array_slice((array)(json_decode((string)$_POST['bairros_json'], true) ?: []), 0, 200) as $b) {
+            $n = mb_substr(trim(strip_tags((string)($b['bairro'] ?? ''))), 0, 80);
+            if ($n !== '') $l[] = ['bairro' => $n, 'taxa' => max(0, round(is_numeric($b['taxa'] ?? null) ? (float)$b['taxa'] : valor_decimal((string)($b['taxa'] ?? '0')), 2))];
+        }
+        $bairrosNovos = $l ? json_encode($l, JSON_UNESCAPED_UNICODE) : null;
+    }
+    try { $pdo->prepare("UPDATE empresas SET bairros_entrega=? WHERE id=?")->execute([$bairrosNovos, $empresaId]); } catch (PDOException $e) {}
     try { $pdo->prepare("UPDATE empresas SET frete_gratis_acima=?, pedido_agendar=? WHERE id=?")->execute([max(0, valor_decimal($_POST['frete_gratis_acima'] ?? '0')), isset($_POST['pedido_agendar']) ? 'true' : 'false', $empresaId]); } catch (PDOException $e) {}
     flash(!$entrega && !$retirada && isset($_POST['pedido_online']) ? 'aviso' : 'sucesso', !$entrega && !$retirada && isset($_POST['pedido_online']) ? 'Salvo — mas marque entrega ou retirada para o carrinho aparecer no site.' : 'Pedidos pelo site salvos!');
     $voltar('delivery'); exit;
@@ -257,13 +267,14 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
             <div><label class="check" style="margin-top:30px"><input type="checkbox" name="pedido_agendar" <?= pg_bool($empresa['pedido_agendar'] ?? false) ? 'checked' : '' ?>> Cliente pode agendar o pedido para um horário</label></div>
         </div>
         <p class="dica">O carrinho mostra "faltam R$ X para o frete grátis" — ajuda a vender mais por pedido. O endereço no site pede CEP, rua, número (ou "sem número" + referência) e bairro, como nos apps de delivery.</p>
-        <label>Taxa por bairro (opcional — uma linha por bairro; se preencher, o cliente escolhe o bairro no carrinho)</label>
-        <textarea name="bairros_entrega" rows="4" placeholder="Centro = 5,00&#10;Jardim América = 7,00&#10;Vila Nova = 9,50"><?= e(delivery_bairros_texto($empresa)) ?></textarea>
-        <label>Formas de pagamento (separadas por vírgula)</label>
-        <input type="text" name="formas_pagamento" value="<?= e($empresa['formas_pagamento'] ?? 'Pix, Cartão na entrega, Dinheiro') ?>">
+        <label>Taxa por bairro <small class="muted">(opcional — se cadastrar, o cliente escolhe o bairro no carrinho e só esses bairros são atendidos)</small></label>
+        <input type="hidden" name="bairros_json" data-editor-bairros value="<?= e(json_encode(delivery_bairros($empresa), JSON_UNESCAPED_UNICODE)) ?>">
+        <label>Formas de pagamento <small class="muted">(toque para ligar/desligar)</small></label>
+        <input type="hidden" name="formas_pagamento" data-editor-chips data-opcoes="Pix|Dinheiro|Cartão de crédito|Cartão de débito|Cartão na entrega|Vale-refeição (VR)|Alelo|Sodexo/Pluxee|Ticket|Ben" value="<?= e($empresa['formas_pagamento'] ?? 'Pix, Cartão na entrega, Dinheiro') ?>">
         <p class="dica">Se tiver "Dinheiro", o cliente pode informar o troco.</p>
         <label>Tempo médio (aparece no carrinho)</label>
-        <input type="text" name="tempo_entrega" maxlength="60" value="<?= e($empresa['tempo_entrega'] ?? '') ?>" placeholder="Ex: Entrega em 40–60 min">
+        <div class="ed-presets" data-preset-alvo="tempo_entrega"><?php foreach (['20–30 min', '30–45 min', '40–60 min', '50–70 min', '60–90 min'] as $t): ?><button type="button" class="btn btn-ghost btn-sm" data-preset="<?= e($t) ?>"><?= e($t) ?></button><?php endforeach; ?></div>
+        <input type="text" name="tempo_entrega" maxlength="60" value="<?= e($empresa['tempo_entrega'] ?? '') ?>" placeholder="Ex: 40–60 min">
         <button type="submit" name="salvar_delivery" value="1">Salvar</button>
     </form>
     <?php endif; ?>
