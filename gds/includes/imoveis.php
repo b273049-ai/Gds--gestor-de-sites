@@ -87,14 +87,14 @@ function frag_imoveis($imoveis, $empresa, $estadoLead = []) {
             'sit' => $im['situacao'], 'sit_txt' => IMOVEL_SITUACOES[$im['situacao']] ?? ''];
         $busca = mb_strtolower(implode(' ', [$dados['cod'], $im['titulo'], $im['bairro'], $im['cidade'], $im['descricao'], $im['caracteristicas'], $dados['tipo_txt']]));
         $indisp = $im['situacao'] !== 'disponivel';
-        $h .= '<article class="gds-im' . ($indisp ? ' gds-im-indisp' : '') . '" data-gds-im=\'' . htmlspecialchars(json_encode($dados, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') . '\' data-busca="' . e($busca) . '" tabindex="0" role="button" aria-label="Ver ' . e($im['titulo']) . '">'
+        $h .= '<div class="gds-im' . ($indisp ? ' gds-im-indisp' : '') . '" data-gds-im=\'' . htmlspecialchars(json_encode($dados, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') . '\' data-busca="' . e($busca) . '" tabindex="0" role="button" aria-label="Ver ' . e($im['titulo']) . '">'
             . '<div class="gds-im-foto"' . ($fotos ? ' style="background-image:url(\'' . e($fotos[0]) . '\')"' : '') . '>' . ($fotos ? '' : '🏠')
             . '<span class="gds-im-selo">' . e($dados['fin_txt']) . '</span>' . ($indisp ? '<span class="gds-im-selo gds-im-selo-sit">' . e($dados['sit_txt']) . '</span>' : (pg_bool($im['destaque']) ? '<span class="gds-im-selo gds-im-selo-dest">★ Destaque</span>' : ''))
             . (count($fotos) > 1 ? '<span class="gds-im-nfotos">📷 ' . count($fotos) . '</span>' : '') . '</div>'
             . '<div class="gds-im-corpo"><strong class="gds-im-preco">' . e($dados['preco_txt']) . '</strong>'
             . ($dados['cond'] ? '<small class="gds-mute">Cond. R$ ' . number_format($dados['cond'], 0, ',', '.') . '</small>' : '')
             . '<h3>' . e($im['titulo']) . '</h3><p class="gds-mute">' . e(trim(($dados['tipo_txt'] ? $dados['tipo_txt'] . ' · ' : '') . $im['bairro'] . ($im['cidade'] ? ', ' . $im['cidade'] : ''), ' ·,')) . '</p>'
-            . '<p class="gds-im-resumo">' . e(imovel_resumo($im)) . '</p><span class="gds-im-cod">Cód. ' . e($dados['cod']) . '</span></div></article>';
+            . '<p class="gds-im-resumo">' . e(imovel_resumo($im)) . '</p><span class="gds-im-cod">Cód. ' . e($dados['cod']) . '</span></div></div>';
     }
     $h .= '</div><p class="gds-mute" data-gds-im-vazio hidden>Nenhum imóvel com esses filtros. <a href="#gds-contato">Conte o que procura</a> que a gente encontra para você.</p>';
     // Janela com a ficha completa + "quero visitar"

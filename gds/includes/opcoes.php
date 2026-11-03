@@ -80,6 +80,7 @@ function opc_precificar($servico, $escolhas) {
     foreach ((array)$escolhas as $e) {
         $g = (int)($e[0] ?? -1); $i = (int)($e[1] ?? -1);
         if (!isset($grupos[$g]['itens'][$i])) continue;
+        if (!empty($grupos[$g]['itens'][$i]['off'])) return ['ok' => false, 'erro' => $grupos[$g]['itens'][$i]['nome'] . ' acabou. Escolha outra opção em ' . $grupos[$g]['nome'] . '.'];
         $porGrupo[$g][$i] = !empty($grupos[$g]['qtd']) ? ($porGrupo[$g][$i] ?? 0) + 1 : 1; // grupo com quantidade: [g,i] repetido = 2x
     }
     $preco = $base; $extras = 0.0; $partes = [];
@@ -121,7 +122,9 @@ function opc_normalizar($grupos) {
         foreach (array_slice((array)($g['itens'] ?? []), 0, 40) as $i) {
             $n = mb_substr(trim(strip_tags((string)($i['nome'] ?? ''))), 0, 60);
             if ($n === '') continue;
-            $itens[] = ['nome' => $n, 'preco' => max(0, round(is_numeric($i['preco'] ?? null) ? (float)$i['preco'] : opc_num($i['preco'] ?? 0), 2))];
+            $novoIt = ['nome' => $n, 'preco' => max(0, round(is_numeric($i['preco'] ?? null) ? (float)$i['preco'] : opc_num($i['preco'] ?? 0), 2))];
+            if (!empty($i['off'])) $novoIt['off'] = true; // "acabou o bacon": opção esgotada
+            $itens[] = $novoIt;
         }
         if ($nome === '' || !$itens) continue;
         $regra = ($g['regra'] ?? '') === 'maior' ? 'maior' : 'soma';

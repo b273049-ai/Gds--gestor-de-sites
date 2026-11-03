@@ -112,7 +112,9 @@ function frag_servicos($servicos, $opts = []) {
     $maisPedidos = array_flip(array_map('intval', (array)($opts['mais_pedidos'] ?? [])));
     $html = '<div class="gds-c gds-servicos" id="gds-servicos" data-gds-filtravel>';
     // Cardápio grande: busca (como no iFood) e categorias presas no topo ao rolar
-    if ($cardapio && count($servicos) >= 6) $html .= '<div class="gds-busca-cardapio"><input type="search" data-gds-busca placeholder="🔎 Buscar no cardápio (ex.: bacon, coca…)" aria-label="Buscar no cardápio"></div>';
+    // Busca: cardápio grande (6+) ou lista de serviços grande (8+), em qualquer segmento
+    $temBusca = count($servicos) >= ($cardapio ? 6 : 8);
+    if ($temBusca) $html .= '<div class="gds-busca-cardapio"><input type="search" data-gds-busca placeholder="' . ($cardapio ? '🔎 Buscar no cardápio (ex.: bacon, coca…)' : '🔎 Buscar serviço…') . '" aria-label="' . ($cardapio ? 'Buscar no cardápio' : 'Buscar serviço') . '"></div>';
     if (count($categorias) > 1) {
         $html .= '<div class="gds-filtros' . ($cardapio ? ' gds-filtros-fixo' : '') . '" role="group" aria-label="Filtrar serviços"><button type="button" class="gds-filtro" aria-pressed="true" data-gds-filtro="">Todos</button>';
         foreach ($categorias as $c) $html .= '<button type="button" class="gds-filtro" aria-pressed="false" data-gds-filtro="' . e($c) . '">' . e($c) . '</button>';
@@ -125,7 +127,7 @@ function frag_servicos($servicos, $opts = []) {
         $html .= '<article class="gds-svc' . ($destaque ? ' gds-svc-destaque' : '') . '" data-gds-cat="' . e(trim((string)($s['categoria'] ?? ''))) . '" data-busca="' . e(mb_strtolower($s['nome'] . ' ' . ($s['descricao'] ?? '') . ' ' . ($s['categoria'] ?? ''))) . '">';
         if (!empty($s['imagem'])) $html .= '<img class="gds-svc-img" src="' . e($s['imagem']) . '" alt="' . e($s['nome']) . '" loading="lazy">';
         $html .= '<div class="gds-svc-corpo"><div class="gds-svc-topo"><h3>' . e($s['nome']) . '</h3>'
-               . ($destaque ? '<span class="gds-chip gds-chip-accent">' . frag_icone('estrela') . ' Destaque</span>' : (isset($maisPedidos[(int)$s['id']]) ? '<span class="gds-chip gds-chip-accent">🔥 Mais pedido</span>' : '')) . '</div>';
+               . ($destaque ? '<span class="gds-chip gds-chip-accent">' . frag_icone('estrela') . ' Destaque</span>' : (isset($maisPedidos[(int)$s['id']]) ? '<span class="gds-chip gds-chip-accent">🔥 ' . ($cardapio ? 'Mais pedido' : 'Mais procurado') . '</span>' : '')) . '</div>';
         if ($cardapio && !empty($s['serve'])) $html .= '<p class="gds-mute gds-svc-serve">👥 Serve ' . (int)$s['serve'] . ((int)$s['serve'] > 1 ? ' pessoas' : ' pessoa') . '</p>';
         if (!empty($s['descricao'])) $html .= '<p class="gds-svc-desc">' . e($s['descricao']) . '</p>';
         $meta = '';
@@ -137,12 +139,13 @@ function frag_servicos($servicos, $opts = []) {
         $html .= '</div><div class="gds-svc-rodape"><div class="gds-preco">' . frag_preco_de($s) . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de</small>R$ ' . number_format((float)$s['preco'], 2, ',', '.') : frag_preco($s['preco'])) . '</div>';
         $html .= frag_botao_servico($s, $opts) . '</div></article>';
     }
-    if ($cardapio && count($servicos) >= 6) $html .= '</div><p class="gds-mute" data-gds-busca-vazio hidden>Nada encontrado. Tente outra palavra.</p><div>';
+    if ($temBusca) $html .= '</div><p class="gds-mute" data-gds-busca-vazio hidden>Nada encontrado. Tente outra palavra.</p><div>';
     return $html . '</div></div>';
 }
 
 // Variante "tabela de preços" (barbearia, salão, estética): nome · · · · preço, agrupado por categoria
 function frag_servicos_menu($servicos, $opts) {
+    $maisPedidos = array_flip(array_map('intval', (array)($opts['mais_pedidos'] ?? [])));
     $grupos = [];
     foreach ($servicos as $s) $grupos[trim((string)($s['categoria'] ?? '')) ?: ''][] = $s;
     $html = '<div class="gds-c gds-servicos gds-menu" id="gds-servicos">';
@@ -154,7 +157,8 @@ function frag_servicos_menu($servicos, $opts) {
             if ((int)($s['vagas'] ?? 1) > 1) $dur .= ' · Turma · ' . (int)$s['vagas'] . ' vagas';
             if (pg_bool($s['experimental'] ?? false)) $dur .= ' · ' . ((float)$s['preco'] > 0 ? 'Experimental' : 'Experimental grátis');
             $html .= '<li class="gds-menu-item"><div class="gds-menu-linha"><span class="gds-menu-nome">' . e($s['nome'])
-                   . (!empty($s['destaque']) && $s['destaque'] !== 'f' ? ' <span class="gds-menu-selo">★</span>' : '') . '</span><span class="gds-menu-pontos" aria-hidden="true"></span>'
+                   . (!empty($s['destaque']) && $s['destaque'] !== 'f' ? ' <span class="gds-menu-selo">★</span>' : '')
+                   . (isset($maisPedidos[(int)$s['id']]) ? ' <span class="gds-chip gds-chip-accent gds-off">🔥 Mais procurado</span>' : '') . '</span><span class="gds-menu-pontos" aria-hidden="true"></span>'
                    . '<span class="gds-menu-preco">' . frag_preco_de($s) . ($aPartir && (float)$s['preco'] > 0 ? '<small>a partir de </small>' : '') . e(frag_preco($s['preco'])) . '</span></div>'
                    . '<div class="gds-menu-rodape"><span class="gds-mute">' . e(trim(($s['descricao'] ?? '') . ($dur ? ' · ' . $dur : ''), ' ·')) . '</span>'
                    . str_replace('class="gds-btn', 'class="gds-btn gds-btn-mini', frag_botao_servico($s, $opts)) . '</div></li>';
@@ -605,16 +609,37 @@ function frag_agendamento_confirmado($estado, $empresa) {
 // ------------------------------------------------------------
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=12">'
-         . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';}</style>'
+    $fundos = $tema['fundos'] ?? ['#ffffff', '#f4f5f8'];
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=15">'
+         . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';--gds-tema-accent-txt:' . frag_cor_legivel($accent, $fundos) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
-         . '<script src="/assets/js/gds-site.js?v=12" defer></script>'
+         . '<script src="/assets/js/gds-site.js?v=13" defer></script>'
          . '<script src="/assets/js/gds-motion.js?v=1" defer></script>';
 }
 
 // Texto branco ou escuro, o que tiver mais contraste com a cor de fundo
 function frag_cor_contraste($hex) {
-    return frag_luminancia($hex) > 0.45 ? '#111111' : '#ffffff';
+    // Ponto em que branco e preto dão o mesmo contraste (WCAG): luminância ≈ 0,179
+    return frag_luminancia($hex) > 0.179 ? '#111111' : '#ffffff';
+}
+
+// Versão LEGÍVEL de uma cor usada como TEXTO: escurece (fundo claro) ou clareia (fundo escuro) só o necessário
+// para ter contraste >= $min com TODOS os fundos informados. Botões e preenchimentos continuam com a cor original.
+function frag_contraste($a, $b) {
+    $x = frag_luminancia($a); $y = frag_luminancia($b);
+    return (max($x, $y) + 0.05) / (min($x, $y) + 0.05);
+}
+function frag_cor_legivel($fg, $fundos, $min = 4.5) {
+    $fundos = array_values(array_filter((array)$fundos, fn($c) => preg_match('/^#[0-9a-f]{6}$/i', (string)$c)));
+    if (!preg_match('/^#[0-9a-f]{6}$/i', (string)$fg) || !$fundos) return $fg;
+    $escuro = array_sum(array_map('frag_luminancia', $fundos)) / count($fundos) < 0.4;
+    $alvo = $escuro ? [255, 255, 255] : [0, 0, 0];
+    $rgb = [hexdec(substr($fg, 1, 2)), hexdec(substr($fg, 3, 2)), hexdec(substr($fg, 5, 2))];
+    for ($t = 0; $t <= 1.0001; $t += 0.04) {
+        $c = sprintf('#%02x%02x%02x', ...array_map(fn($i) => (int)round($rgb[$i] + ($alvo[$i] - $rgb[$i]) * $t), [0, 1, 2]));
+        if (min(array_map(fn($b) => frag_contraste($c, $b), $fundos)) >= $min) return $c;
+    }
+    return $escuro ? '#ffffff' : '#111111';
 }
 
 function frag_luminancia($hex) {

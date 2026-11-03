@@ -69,8 +69,8 @@
         var passos = $('[data-cena="passos"]');
         if (passos) {
             var itens = $$('li', passos);
-            var linha = document.createElement('span');
-            linha.className = 'gc-linha';
+            var linha = document.createElement('li'); // dentro de <ol> só pode <li> (acessibilidade)
+            linha.className = 'gc-linha'; linha.setAttribute('aria-hidden', 'true'); linha.setAttribute('role', 'presentation');
             passos.appendChild(linha);
             ST.create({
                 trigger: passos, start: 'top 75%', end: 'bottom 45%', scrub: true,

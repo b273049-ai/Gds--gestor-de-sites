@@ -352,6 +352,35 @@ atenção" com cobrança pelo WhatsApp, **orçamento em documento/PDF** para o c
   IPTU, quartos, suítes, banheiros, vagas, áreas, características, até 20 fotos, vídeo, proprietário), vitrine no site
   com filtros, ficha com galeria, link de cada imóvel, contagem de visualizações e **"Agendar visita"** que cai no funil.
 
+### Skills de design, auditoria e paridade entre segmentos (v17, migração 27)
+**Instalado no projeto** (carrega em toda sessão do Claude Code nesta pasta):
+- `.claude/skills/web-design-guidelines` — Web Interface Guidelines da Vercel (regras em `regras.md`, MIT).
+- `.claude/skills/frontend-design` — guia de design da Anthropic (Apache 2.0).
+- `.mcp.json` — **Chrome DevTools MCP** (inspecionar o site num Chrome real), **shadcn-ui MCP** (biblioteca de
+  componentes) e **Magic MCP da 21st.dev** (gera componentes; precisa da chave grátis em 21st.dev/mcp na variável
+  de ambiente `API_KEY_21ST` — nunca escreva a chave no arquivo).
+
+**Aplicado nos sites criados pela IA** (`ia_site_engine.php`): identidade tirada do mundo do negócio, sem os
+"sinais de site feito por IA" (creme+terracota, preto+verde-limão, CAIXA ALTA espaçada, "→" em todo botão, efeito em
+toda seção), e o checklist de interface (alt/width/height nas imagens, um h1, "Pular para o conteúdo", foco visível,
+sem `transition: all`, toque e área segura no celular, theme-color, "…").
+
+**Auditoria automática (axe-core, WCAG 2.1 AA)** no painel das 4 empresas de teste e nos sites: de 17 regras / 1.497
+ocorrências para **0**. Na raiz:
+- Painel: cada rótulo é ligado ao seu campo, botão só com ícone ganha nome ("Editar", "Excluir"…), títulos em ordem,
+  cabeçalho de tabela vazio vira "Ações", quadros com rolagem acessíveis pelo teclado, "Pular para o conteúdo"
+  (`acessibilidade()` em `gds-painel-editores.js`); botões com `--primary-btn` (4,95:1), legendas `--text-mute` 6:1.
+- Site: `frag_cor_contraste` com o limite certo (0,179) e `frag_cor_legivel()` — versão do acento para TEXTO com
+  4,5:1 garantido (`--accent-txt` / `--gds-accent-txt`); site da IA sem `<main>` ganha um (`site_garantir_main`).
+
+**O que um segmento tinha e os outros não:**
+- Agenda: **avaliar o atendimento** na página do cliente e **"Agendar de novo"** (mesmo serviço e profissional).
+- Orçamento: **avaliar o serviço concluído** e **"Pedir novo orçamento"** já com o serviço.
+- Selo **🔥 Mais procurado** e **busca de serviços** também na agenda e no orçamento (inclusive tabela de preços).
+- Cardápio: **"Esgotou" por opção** (ex.: acabou o bacon) no editor; o site mostra "Esgotado" e o servidor recusa.
+- Caixa da agenda: **recibo impresso** de cada comanda (`comanda_imprimir.php`), como a comanda do delivery.
+- Imóveis: **simulador de financiamento** (entrada, prazo e juros → parcela) e **compartilhar** o imóvel.
+
 ### Tudo com botões no painel (v16)
 **Regra do projeto:** nenhuma configuração do painel exige digitar "fórmula" ou lista separada por vírgula.
 Use os editores de `assets/js/gds-painel-editores.js` (carregado em todo o painel por `painel_head()`), que gravam

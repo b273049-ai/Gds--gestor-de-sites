@@ -84,6 +84,20 @@ if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['remarc
         }
     }
 }
+// Avaliação do atendimento pela página (como no delivery) — vai para Avaliações no painel, para aprovar
+$jaAvaliou = false;
+if ($ag) { try { $q = $pdo->prepare("SELECT 1 FROM avaliacoes WHERE agendamento_id=? LIMIT 1"); $q->execute([$ag['id']]); $jaAvaliou = (bool)$q->fetchColumn(); } catch (PDOException $e) {} }
+if ($ag && !$jaAvaliou && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['avaliar'])) {
+    if (!hash_equals($_SESSION['gds_cancel_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
+    elseif ($ag['status'] !== 'concluido') $msg = 'Você pode avaliar depois do atendimento.';
+    else {
+        try {
+            $pdo->prepare("INSERT INTO avaliacoes (empresa_id, cliente_id, nota, comentario, nome_autor, aprovado, origem, agendamento_id) VALUES (?,?,?,?,?,false,'agendamento',?)")
+                ->execute([$ag['empresa_id'], $ag['cliente_id'], max(1, min(5, (int)($_POST['nota'] ?? 5))), mb_substr(trim(strip_tags((string)($_POST['comentario'] ?? ''))), 0, 1000) ?: null, mb_substr((string)$ag['cliente_nome'], 0, 100) ?: 'Cliente', $ag['id']]);
+            $jaAvaliou = true; $msg = 'avaliado';
+        } catch (PDOException $e) { $msg = 'Não deu para enviar agora. Tente de novo.'; }
+    }
+}
 $_SESSION['gds_cancel_csrf'] = bin2hex(random_bytes(16));
 
 $tema = $ag ? site_tema($ag) : ['accent' => '#2563eb'];
@@ -108,6 +122,7 @@ $podeCancelar = $ag && !in_array($ag['status'], ['cancelado', 'concluido'], true
         <p class="gds-mute" style="font-size:.85rem"><?= e($ag['empresa_nome']) ?></p>
         <h3 style="font-size:1.4rem;margin:4px 0 14px">Seu agendamento</h3>
         <?php if ($msg === 'ok'): ?><div class="gds-alerta gds-alerta-ok">Agendamento cancelado. Avisamos a empresa.</div>
+        <?php elseif ($msg === 'avaliado'): ?><div class="gds-alerta gds-alerta-ok">Obrigado pela avaliação! 💛</div>
         <?php elseif ($msg === 'confirmado'): ?><div class="gds-alerta gds-alerta-ok">✅ Presença confirmada. Te esperamos!</div>
         <?php elseif ($msg === 'remarcado'): ?><div class="gds-alerta gds-alerta-ok">🔁 Remarcado! Avisamos a empresa.</div>
         <?php elseif ($msg): ?><div class="gds-alerta gds-alerta-erro"><?= e($msg) ?></div><?php endif; ?>
@@ -162,7 +177,19 @@ $podeCancelar = $ag && !in_array($ag['status'], ['cancelado', 'concluido'], true
             </form>
         </details>
         <?php endif; ?>
-        <p style="margin-top:22px;font-size:.88rem"><a href="/<?= e($ag['slug']) ?>#agendar">Fazer um novo agendamento</a></p>
+        <?php if ($ag['status'] === 'concluido' && !$jaAvaliou): ?>
+        <form method="post" class="gds-avaliar-pedido"><input type="hidden" name="t" value="<?= e($token) ?>"><input type="hidden" name="k" value="<?= e($_SESSION['gds_cancel_csrf']) ?>">
+            <h4>Como foi seu atendimento?</h4>
+            <div class="gds-estrelas" role="radiogroup" aria-label="Nota"><?php for ($n = 5; $n >= 1; $n--): ?><input type="radio" id="nota<?= $n ?>" name="nota" value="<?= $n ?>" required><label for="nota<?= $n ?>" title="<?= $n ?> estrela(s)" aria-label="<?= $n ?> estrela(s)">★</label><?php endfor; ?></div>
+            <label for="comentario" class="gds-mute" style="font-size:.85rem">Comentário (opcional)</label>
+            <textarea id="comentario" name="comentario" rows="2" maxlength="1000" placeholder="Conte o que achou…"></textarea>
+            <button type="submit" name="avaliar" value="1" class="gds-btn">Enviar avaliação</button>
+        </form>
+        <?php endif; ?>
+        <?php if (in_array($ag['status'], ['concluido', 'cancelado', 'faltou'], true) || $ts < time()): ?>
+        <a class="gds-btn gds-btn-bloco" style="margin-top:18px" href="/<?= e($ag['slug']) ?>?servico=<?= (int)$ag['servico_id'] ?><?= $ag['profissional_id'] ? '&profissional=' . (int)$ag['profissional_id'] : '' ?>#gds-agendamento">🔁 Agendar de novo<?= $ag['servico_nome'] ? ' (' . e($ag['servico_nome']) . ')' : '' ?></a>
+        <?php endif; ?>
+        <p style="margin-top:22px;font-size:.88rem"><a href="/<?= e($ag['slug']) ?>#gds-agendamento">Fazer um novo agendamento</a></p>
     </div>
 <?php endif; ?>
 </main>

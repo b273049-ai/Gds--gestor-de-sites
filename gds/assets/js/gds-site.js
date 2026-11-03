@@ -355,6 +355,18 @@
             inicio = passos.findIndex(function (p) { return !passoValido(p.getAttribute('data-gds-passo')); });
             if (inicio < 0) inicio = passos.length - 1;
         }
+        // "Agendar de novo" (?servico=ID&profissional=ID): já vem com o mesmo serviço e profissional
+        var qs = new URLSearchParams(location.search);
+        if (!$('.gds-alerta-erro', raiz) && (qs.get('servico') || qs.get('profissional'))) {
+            var rs = qs.get('servico') && $('input[name="ag_servico_id"][value="' + parseInt(qs.get('servico'), 10) + '"]', form);
+            var rp = qs.get('profissional') && $('input[name="ag_profissional_id"][value="' + parseInt(qs.get('profissional'), 10) + '"]', form);
+            if (rs) rs.checked = true; if (rp) rp.checked = true;
+            if (rs || rp) {
+                inicio = passos.findIndex(function (p) { return !passoValido(p.getAttribute('data-gds-passo')); });
+                if (inicio < 0) inicio = 0;
+                setTimeout(function () { mostrarPaginaDe(raiz); raiz.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250);
+            }
+        }
         irPara(inicio, false);
     });
 
@@ -410,6 +422,16 @@
         if (f && f._gdsPerguntas) f._gdsPerguntas();
         mostrarPaginaDe(alvo);
         setTimeout(function () { var c = $('#orc_detalhes', alvo); if (c) c.focus({ preventScroll: true }); }, 500);
+    });
+    // "Pedir novo orçamento" (?servico=ID#gds-orcamento): já vem com o serviço escolhido
+    document.addEventListener('DOMContentLoaded', function () {
+        var sid = new URLSearchParams(location.search).get('servico'), alvo = document.getElementById('gds-orcamento');
+        if (!sid || !alvo) return;
+        var r = $('input[name="orc_servico_id"][value="' + parseInt(sid, 10) + '"]', alvo);
+        if (!r) return;
+        r.checked = true;
+        var f = $('[data-gds-form-orcamento]', alvo); if (f && f._gdsPerguntas) f._gdsPerguntas();
+        setTimeout(function () { mostrarPaginaDe(alvo); alvo.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250);
     });
 
     // Links para os componentes (#gds-agendamento, #gds-orcamento, #gds-contato, #gds-servicos):
@@ -479,12 +501,42 @@
             if (tags.length) { h += '<div class="gds-im-tags">'; tags.forEach(function (t) { h += '<span>✓ ' + esc(t) + '</span>'; }); h += '</div>'; }
             if (d.desc) h += '<p class="gds-im-desc">' + esc(d.desc) + '</p>';
             if (d.video) h += '<p><a class="gds-btn-2" target="_blank" rel="noopener" href="' + esc(d.video) + '">▶ Ver vídeo / tour</a></p>';
+            // Simulador de financiamento (tabela Price), como nos portais — só para venda com preço
+            if (d.fin === 'venda' && d.preco > 0) {
+                h += '<details class="gds-im-sim"' + (d.fin_ok ? ' open' : '') + '><summary>🏦 Simular financiamento</summary><div class="gds-im-sim-campos">'
+                   + '<label>Entrada <b data-sim-v="entrada"></b><input type="range" min="10" max="80" step="5" value="20" data-sim="entrada"></label>'
+                   + '<label>Prazo <b data-sim-v="prazo"></b><input type="range" min="5" max="35" step="1" value="30" data-sim="prazo"></label>'
+                   + '<label>Juros ao ano <b data-sim-v="juros"></b><input type="range" min="7" max="14" step="0.25" value="10.5" data-sim="juros"></label></div>'
+                   + '<p class="gds-im-sim-res"><span>Parcela aproximada</span><strong data-sim-parcela></strong></p>'
+                   + '<p class="gds-mute gds-im-sim-nota">Simulação aproximada (tabela Price, sem seguros e taxas). O valor final depende do banco e da sua renda.</p></details>';
+            }
+            h += '<div class="gds-im-acoes2"><button type="button" class="gds-btn-2" data-gds-im-compartilhar>↗ Compartilhar</button></div>';
             h += '</div>';
             $('[data-gds-im-conteudo]', modal).innerHTML = h;
             $('[data-gds-im-id]', modal).value = d.id;
             $('[data-gds-im-assunto]', modal).value = 'Visita: imóvel cód. ' + d.cod;
             var wa = $('[data-gds-im-wa]', modal);
             if (wa) wa.href = wa.getAttribute('data-base') + '?text=' + encodeURIComponent('Olá! Tenho interesse no imóvel cód. ' + d.cod + ' (' + d.titulo + ') — ' + d.preco_txt + '. ' + location.origin + location.pathname + '#imovel-' + d.cod);
+            // simulador: recalcula ao mexer
+            var sim = $('.gds-im-sim', modal);
+            if (sim) {
+                var calcSim = function () {
+                    var v = {}; $$('[data-sim]', sim).forEach(function (r) { v[r.getAttribute('data-sim')] = parseFloat(r.value); });
+                    var fin = d.preco * (1 - v.entrada / 100), n = v.prazo * 12, i = Math.pow(1 + v.juros / 100, 1 / 12) - 1;
+                    var parc = i > 0 ? fin * i / (1 - Math.pow(1 + i, -n)) : fin / n;
+                    $('[data-sim-v="entrada"]', sim).textContent = v.entrada + '% (' + din(d.preco * v.entrada / 100) + ')';
+                    $('[data-sim-v="prazo"]', sim).textContent = v.prazo + ' anos';
+                    $('[data-sim-v="juros"]', sim).textContent = String(v.juros).replace('.', ',') + '%';
+                    $('[data-sim-parcela]', sim).textContent = din(parc) + '/mês';
+                };
+                sim.addEventListener('input', calcSim); calcSim();
+            }
+            var comp = $('[data-gds-im-compartilhar]', modal);
+            if (comp) comp.onclick = function () {
+                var url = location.origin + location.pathname + '#imovel-' + encodeURIComponent(d.cod), txt = d.titulo + ' — ' + d.preco_txt;
+                if (navigator.share) navigator.share({ title: d.titulo, text: txt, url: url }).catch(function () { });
+                else window.open('https://wa.me/?text=' + encodeURIComponent(txt + ' ' + url), '_blank');
+            };
             var atual = 0, img = $('[data-gds-im-foto]', modal), cont = $('[data-gds-im-contador]', modal);
             var ir = function (i) { if (!fotos.length) return; atual = (i + fotos.length) % fotos.length; img.src = fotos[atual]; if (cont) cont.textContent = (atual + 1) + '/' + fotos.length; };
             modal.onclick = function (e) {
@@ -695,8 +747,9 @@
                 h += '<fieldset class="gds-op-grupo" data-g="' + gi + '"><legend><span></span><small class="gds-op-regra' + (g.min > 0 ? ' obrig' : '') + '">' + regra + (g.regra === 'maior' ? ' · vale o maior preço' : '') + '</small></legend>';
                 g.itens.forEach(function (it, ii) {
                     var preco = it.preco > 0 ? (g.regra === 'maior' ? dinheiro(it.preco) : '+ ' + dinheiro(it.preco)) : '';
-                    if (g.qtd) h += '<div class="gds-op-item gds-op-qtd" data-i="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span><span class="gds-ci-qtd"><button type="button" data-menos aria-label="Menos">−</button><b>0</b><button type="button" data-mais aria-label="Mais">+</button></span></div>';
-                    else h += '<label class="gds-op-item"><input type="' + tipo + '" name="og' + gi + '" value="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span></label>';
+                    if (it.off) preco = '<span class="gds-op-esgotado">Esgotado</span>';
+                    if (g.qtd) h += '<div class="gds-op-item gds-op-qtd' + (it.off ? ' gds-op-off' : '') + '" data-i="' + ii + '"><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span><span class="gds-ci-qtd"><button type="button" data-menos aria-label="Menos">−</button><b>0</b><button type="button" data-mais aria-label="Mais"' + (it.off ? ' disabled data-off' : '') + '>+</button></span></div>';
+                    else h += '<label class="gds-op-item' + (it.off ? ' gds-op-off' : '') + '"><input type="' + tipo + '" name="og' + gi + '" value="' + ii + '"' + (it.off ? ' disabled data-off' : '') + '><span class="gds-op-nome"></span><span class="gds-op-preco">' + preco + '</span></label>';
                 });
                 h += '</fieldset>';
             });
@@ -747,12 +800,12 @@
                         var t = totalGrupo(gi);
                         box.querySelectorAll('[data-g="' + gi + '"] .gds-op-qtd').forEach(function (l) {
                             var n = contQ[gi + ':' + l.dataset.i] || 0; l.querySelector('b').textContent = n;
-                            l.querySelector('[data-mais]').disabled = t >= g.max; l.querySelector('[data-menos]').disabled = n === 0; l.classList.toggle('marcado', n > 0);
+                            l.querySelector('[data-mais]').disabled = t >= g.max || l.querySelector('[data-mais]').hasAttribute('data-off'); l.querySelector('[data-menos]').disabled = n === 0; l.classList.toggle('marcado', n > 0);
                         });
                         return;
                     }
                     var cs = box.querySelectorAll('[data-g="' + gi + '"] input'), n = 0; cs.forEach(function (c) { if (c.checked) n++; });
-                    if (g.max > 1) cs.forEach(function (c) { c.disabled = !c.checked && n >= g.max; });
+                    if (g.max > 1) cs.forEach(function (c) { c.disabled = c.hasAttribute('data-off') || (!c.checked && n >= g.max); });
                 });
                 // escolheu o que faltava: some o aviso
                 var errEl = box.querySelector('.gds-op-erro'), escAgora = escolhas();

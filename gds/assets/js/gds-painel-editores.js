@@ -80,7 +80,10 @@
                     n.addEventListener('input', function () { it.nome = n.value; salvar(); });
                     p.addEventListener('input', function () { it.preco = num(p.value); salvar(); });
                     p.addEventListener('blur', function () { p.value = it.preco ? din(it.preco) : ''; });
-                    l.append(n, el('span', 'ed-rs', g.regra === 'maior' ? 'R$' : '+ R$'), p, btn('✕', 'btn-ghost', function () { g.itens.splice(ii, 1); if (!g.qtd && g.max > Math.max(1, g.itens.length)) g.max = Math.max(1, g.itens.length); salvar(); desenhar(); }, 'Remover opção'));
+                    var esg = btn(it.off ? 'Esgotou' : 'Tem', it.off ? 'btn-perigo' : 'btn-ghost', function () { it.off = !it.off; salvar(); desenhar(); }, it.off ? 'Esgotado — toque quando voltar a ter' : 'Disponível — toque se acabar');
+                    esg.setAttribute('aria-pressed', it.off ? 'true' : 'false');
+                    l.append(n, el('span', 'ed-rs', g.regra === 'maior' ? 'R$' : '+ R$'), p, esg, btn('✕', 'btn-ghost', function () { g.itens.splice(ii, 1); if (!g.qtd && g.max > Math.max(1, g.itens.length)) g.max = Math.max(1, g.itens.length); salvar(); desenhar(); }, 'Remover opção'));
+                    if (it.off) l.classList.add('ed-item-off');
                     itens.append(l);
                 });
                 itens.append(btn('+ Adicionar opção', 'btn-ghost', function () { g.itens.push({ nome: '', preco: 0 }); salvar(); desenhar(); var ls = card.querySelectorAll('.ed-item input[type=text]'); var alvo = lista.children[gi].querySelectorAll('.ed-item'); var u = alvo[alvo.length - 1]; if (u) u.querySelector('input').focus(); }));
@@ -173,11 +176,66 @@
         box.querySelectorAll('[data-preset]').forEach(function (x) { x.classList.toggle('btn-ligado', x === b); x.classList.toggle('btn-ghost', x !== b); });
     });
 
+    // ---------- ACESSIBILIDADE AUTOMÁTICA (Web Interface Guidelines / axe) ----------
+    // O painel inteiro segue o padrão <label>Texto</label><input>: aqui cada rótulo é ligado ao seu campo,
+    // botão só com ícone ganha nome, cabeçalho de tabela vazio vira "Ações" e há o link "Pular para o conteúdo".
+    var NOME_ICONE = { lapis: 'Editar', lixeira: 'Excluir', chat: 'Abrir WhatsApp', olho: 'Ver', mais: 'Adicionar', download: 'Baixar',
+        dinheiro: 'Fechar comanda', calendario: 'Agenda', usuarios: 'Clientes', casa: 'Imóveis', estrela: 'Avaliações', engrenagem: 'Configurações' };
+    var seq = 0;
+    function semNome(c) {
+        if (c.getAttribute('aria-label') || c.getAttribute('aria-labelledby') || c.title) return false;
+        if (c.id && document.querySelector('label[for="' + c.id + '"]')) return false;
+        return !c.closest('label');
+    }
+    function acessibilidade() {
+        var controles = 'input:not([type=hidden]):not([type=submit]):not([type=button]), select, textarea';
+        document.querySelectorAll('label:not([for])').forEach(function (lb) {
+            if (lb.querySelector(controles)) return;
+            var alvo = lb.nextElementSibling;
+            if (alvo && !alvo.matches(controles)) alvo = alvo.matches('div,span') ? alvo.querySelector(controles) : null;
+            if (!alvo || !alvo.matches || !alvo.matches(controles) || !semNome(alvo)) return;
+            if (!alvo.id) alvo.id = 'gdsc' + (++seq);
+            lb.htmlFor = alvo.id;
+        });
+        document.querySelectorAll(controles).forEach(function (c) {
+            if (!semNome(c)) return;
+            var txt = c.placeholder || (c.closest('[data-rotulo]') && c.closest('[data-rotulo]').getAttribute('data-rotulo')) || '';
+            if (!txt && c.type === 'date') txt = 'Data';
+            if (!txt && c.type === 'search') txt = 'Buscar';
+            if (!txt && c.name) txt = c.name.replace(/[_\[\]]+/g, ' ').trim();
+            if (txt) c.setAttribute('aria-label', txt.replace(/[…:.]+$/, ''));
+        });
+        document.querySelectorAll('a, button').forEach(function (b) {
+            if (b.getAttribute('aria-label') || b.textContent.trim()) return;
+            var ic = b.querySelector('[data-icone]');
+            var nome = b.title || (ic && NOME_ICONE[ic.getAttribute('data-icone')]) || (/excluir|apagar/.test(b.getAttribute('href') || '') ? 'Excluir' : /editar/.test(b.getAttribute('href') || '') ? 'Editar' : '');
+            if (nome) b.setAttribute('aria-label', nome);
+        });
+        document.querySelectorAll('th').forEach(function (th) { if (!th.textContent.trim()) th.innerHTML = '<span class="sr-only">Ações</span>'; });
+        document.querySelectorAll('img:not([alt])').forEach(function (i) { i.alt = ''; });
+        // quadros com rolagem lateral (funil, gestor) alcançáveis pelo teclado
+        document.querySelectorAll('.crm-quadro, .gst-quadro, #quadro').forEach(function (q) { if (!q.hasAttribute('tabindex')) { q.tabIndex = 0; q.setAttribute('role', 'region'); q.setAttribute('aria-label', 'Quadro (role para os lados)'); } });
+        // títulos em ordem para leitores de tela (h1 → h2 → h3), sem mudar o visual
+        var nivel = 0;
+        document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6').forEach(function (h) {
+            var n = +h.tagName[1];
+            if (nivel && n > nivel + 1) { h.setAttribute('role', 'heading'); h.setAttribute('aria-level', String(nivel + 1)); n = nivel + 1; }
+            nivel = n;
+        });
+        var main = document.querySelector('main');
+        if (main && !document.querySelector('.pular-conteudo')) {
+            if (!main.id) main.id = 'conteudo';
+            var a = el('a', 'pular-conteudo', 'Pular para o conteúdo'); a.href = '#' + main.id; document.body.prepend(a);
+        }
+    }
+
     function iniciar() {
+        acessibilidade();
         document.querySelectorAll('[data-editor-opcoes]').forEach(editorOpcoes);
         document.querySelectorAll('[data-editor-bairros]').forEach(editorBairros);
         document.querySelectorAll('[data-editor-lista]').forEach(editorLista);
         document.querySelectorAll('[data-editor-chips]').forEach(editorChips);
+        acessibilidade(); // de novo: os editores acabaram de criar campos e botões
         document.querySelectorAll('[data-preset-alvo]').forEach(function (box) {
             var alvo = box.parentElement.querySelector('[name="' + box.getAttribute('data-preset-alvo') + '"]');
             if (alvo) box.querySelectorAll('[data-preset]').forEach(function (x) { var on = x.getAttribute('data-preset') === alvo.value.trim(); x.classList.toggle('btn-ligado', on); x.classList.toggle('btn-ghost', !on); });

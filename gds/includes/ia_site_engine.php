@@ -203,6 +203,12 @@ Regras:
   "agendamento"; {{ORCAMENTO}} SOMENTE na forma "orcamento". {{EQUIPE}} só se houver equipe; {{GALERIA}} só se houver
   fotos; {{CUPONS}} só se houver cupons; {{MAPA}} e {{HORARIOS}} só se houver endereço físico de atendimento.
 - A paleta precisa de contraste real entre fundo e texto (WCAG AA), e o destaque deve guiar o olhar.
+- IDENTIDADE PRÓPRIA (skill frontend-design): tire as escolhas do mundo DESTE negócio (materiais, ferramentas,
+  vocabulário, lugar). Antes de responder, compare com o que você faria para qualquer negócio parecido e troque o que
+  for padrão. Evite os sinais de "site feito por IA" (a não ser que o dono peça): fundo creme (#F4F1EA) com serifa e
+  acento terracota (#D97757); fundo quase preto com um único verde-limão/vermelhão; kit de cartões SaaS iguais com a
+  mesma sombra; selo em CAIXA ALTA espaçada acima de todo título; "A · B · C"; "→" em todo botão; número 01/02/03 em
+  conteúdo que não é sequência. Uma ou duas fontes, bem diferentes entre si, escolhidas para este negócio.
 PROMPT;
 
     $r = chamar_ia_json($prompt, 3000, 75, 0.9, ['esforco' => 'low']);
@@ -299,8 +305,9 @@ CONTRATO TÉCNICO (obrigatório):
    data-tilt em cartões (inclinação 3D) · data-magnetic no botão principal · data-marquee numa faixa de palavras
    rolando (ex.: nomes dos serviços) · <div data-progress></div> = barra de leitura · data-header-scroll no
    cabeçalho fixo (ganha a classe .rolou ao rolar — estilize .rolou com fundo e blur).
-   Use com intenção: título do topo com data-split, seções com data-anim, listas com data-stagger, uma faixa
-   data-marquee, hover caprichado nos botões. Respeita "reduzir movimento" sozinho.
+   Use com intenção e RESTRIÇÃO: um único momento orquestrado (ex.: a entrada do topo com data-split) vale mais que
+   efeito espalhado — NÃO coloque data-anim em todas as seções nem data-tilt em todo cartão (isso denuncia site
+   genérico). Movimento que responde ao clique/toque (abrir, confirmar) é bem-vindo. Respeita "reduzir movimento" sozinho.
 9. Use somente as imagens informadas (URLs exatas: fotos do negócio e fotos profissionais do banco de imagens).
    Topo com foto grande + sobreposição em gradiente para o texto ficar legível; object-fit: cover; loading="lazy"
    (exceto a primeira). Sem nenhuma imagem: crie visuais com CSS (gradientes em malha, formas, ruído) e SVG inline.
@@ -317,7 +324,22 @@ CONTRATO TÉCNICO (obrigatório):
     sombra suave; ícones em SVG inline do mesmo traço; imagens com object-fit e cantos arredondados; cabeçalho fixo que
     ganha fundo ao rolar; nada desalinhado, nada encostado na borda no celular, nada com texto cinza ilegível.
 13. Evite clichês: hero centralizado com gradiente roxo-azul genérico, cards idênticos com a mesma sombra, grade de 3
-    ícones genéricos, emoji no lugar de ícone.
+    ícones genéricos, emoji no lugar de ícone, uma palavra só do título em outra cor/itálico, rótulos em CAIXA ALTA,
+    selos/rótulos desnecessários acima do conteúdo. Ousadia em UM lugar (o elemento memorável); o resto quieto e
+    disciplinado. Linhas de texto com menos de ~80 caracteres. Textos de botão dizem o que acontece ("Ver cardápio",
+    "Agendar horário"), voz ativa, frases curtas, sem enchimento.
+14. CHECKLIST DE INTERFACE (Vercel Web Interface Guidelines) — o site é reprovado se faltar:
+    - botão só com ícone tem aria-label; ícone decorativo tem aria-hidden="true"; toda imagem tem alt (alt="" se
+      decorativa) e width/height (evita pulo de layout); imagens abaixo da dobra com loading="lazy", a do topo com
+      fetchpriority="high";
+    - um único <h1>, títulos em ordem (h2, h3…); link "Pular para o conteúdo" no começo; scroll-margin-top nas seções
+      (o cabeçalho fixo não cobre o título);
+    - foco visível com :focus-visible em tudo que é clicável (nunca outline:none sem substituto); hover em botões e links;
+    - nunca "transition: all" (liste as propriedades) e anime só transform/opacity;
+    - touch-action: manipulation nos botões; overscroll-behavior: contain no menu do celular; respeitar
+      env(safe-area-inset-bottom) na barra fixa de baixo;
+    - <meta name="theme-color"> com a cor do fundo; se o fundo for escuro, color-scheme: dark no <html>;
+    - "…" (reticências de verdade), nunca "...", e sem user-scalable=no / maximum-scale=1.
 REGRAS;
 }
 

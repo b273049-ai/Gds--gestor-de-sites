@@ -205,7 +205,8 @@ $clientes = $pdo->prepare("SELECT id, nome FROM clientes WHERE empresa_id=? ORDE
         <details class="cx-comanda"><summary><?= date('H:i', strtotime($k['criado_em'])) ?> · <?= e($k['cliente'] ?: 'Cliente') ?> · <strong><?= $moeda($k['total']) ?></strong> · <?= e($k['forma_pagamento']) ?></summary>
             <ul class="dica"><?php foreach (json_decode($k['itens'], true) ?: [] as $i): ?><li><?= (int)$i['qtd'] ?>× <?= e($i['nome']) ?> — <?= $moeda($i['preco'] * $i['qtd']) ?></li><?php endforeach; ?>
                 <?php if ((float)$k['desconto'] > 0): ?><li>Desconto: −<?= $moeda($k['desconto']) ?></li><?php endif; ?><?php if ($k['observacao']): ?><li>📝 <?= e($k['observacao']) ?></li><?php endif; ?></ul>
-            <form method="post" onsubmit="return confirm('Estornar esta comanda? Ela sai do caixa.')"><?= csrf_campo() ?><input type="hidden" name="comanda_id" value="<?= (int)$k['id'] ?>"><button type="submit" name="estornar" value="1" class="btn btn-ghost btn-sm">Estornar</button></form>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><a class="btn btn-ghost btn-sm" target="_blank" href="comanda_imprimir.php?id=<?= (int)$k['id'] ?>">🖨 Recibo</a>
+            <form method="post" onsubmit="return confirm('Estornar esta comanda? Ela sai do caixa.')"><?= csrf_campo() ?><input type="hidden" name="comanda_id" value="<?= (int)$k['id'] ?>"><button type="submit" name="estornar" value="1" class="btn btn-ghost btn-sm">Estornar</button></form></div>
         </details>
         <?php endforeach; endif; ?>
     </section>

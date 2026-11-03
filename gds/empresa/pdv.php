@@ -163,7 +163,7 @@ $moeda = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
             <div class="pdv-grade" id="grade"></div>
             <?php if (!$catalogo): ?><p class="dica">Cadastre os itens em <a class="link" href="servicos.php">Cardápio</a> para lançar pedidos aqui.</p><?php endif; ?>
         </section>
-        <aside class="form-box pdv-conta">
+        <aside class="form-box pdv-conta" aria-label="Resumo do pedido">
             <h3 style="margin-top:0">Pedido</h3>
             <div id="linhas"><p class="dica" id="vazio">Toque nos itens ao lado.</p></div>
             <div class="pdv-tipo">
