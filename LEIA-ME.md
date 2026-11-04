@@ -252,6 +252,13 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   responde e tira da lista (com um "combinado") quem pede para parar. **Pausa sozinho** se muita gente pedir para parar,
   recusar, ou se 3 envios seguidos falharem — e avisa no seu WhatsApp. O WhatsApp não tem limite "seguro" oficial para
   contato frio: os freios diminuem o risco, não zeram. Use um chip só para a prospecção.
+- **Perfis de risco** (botões no topo do piloto): 🧭 **Automático** (começa no Seguro e passa para o Equilibrado
+  sozinho quando o número está saudável; volta se piorar), 🛡 **Seguro** (dias úteis, comercial, 8–15 min, até 40/dia),
+  ⚖ **Equilibrado** (seg–sáb 8h–19h, 4–10 min, até 70/dia), 🔥 **Agressivo — 24 horas** (todo dia, inclusive de
+  madrugada, 1–2 min, até 300/dia; não pausa por recusas e, se os envios falharem seguidos, espera 30 min e tenta de
+  novo) e ✋ **Personalizado**. O WhatsApp não publica um número "seguro" por minuto ou por hora para contato frio:
+  o que derruba o número são bloqueios e denúncias, texto igual para muitos e número novo disparando. Quem pede
+  para parar sempre sai da lista (LGPD), em qualquer perfil.
 - **💬 Conversas**: as respostas que chegam no número da plataforma aparecem com a **leitura da IA** (interessado,
   pediu o link, preço, já tem site, não quer…), o funil se move sozinho e vêm 2 respostas sugeridas. Responda pela
   plataforma com um clique, ou ligue "A IA responde sozinha" (casos simples, até 2 vezes por lead, com atraso humano).
