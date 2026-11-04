@@ -21,41 +21,97 @@ require_once __DIR__ . '/whatsapp.php';
 const PROSP_INTENCOES = ['interessado' => 'Interessado', 'preco' => 'Perguntou o preço', 'link' => 'Pediu o link', 'duvida' => 'Tem dúvida', 'quem' => 'Quer saber quem é',
     'sem_tempo' => 'Sem tempo agora', 'ja_tenho' => 'Já tem site', 'nao_preciso' => 'Acha que não precisa', 'nao_quer' => 'Não quer', 'parar' => 'Pediu para parar', 'outro' => 'Outro assunto'];
 
-function prosp_piloto_cfg() {
+// Perfis de risco: cada um liga horário, dias, ritmo, máximo por dia, aquecimento e freios de uma vez.
+// O WhatsApp não publica um limite "seguro" para contato frio por número conectado por QR: quem derruba o
+// número são os sinais de spam (bloqueios e denúncias, texto igual para muitos, número novo disparando).
+// Os perfis são uma leitura das boas práticas; o usuário pode escolher correr mais risco.
+function prosp_piloto_perfis() {
+    $uteis = [1, 2, 3, 4, 5];
     return [
+        'auto' => ['nome' => '🧭 Automático (recomendado)', 'desc' => 'Começa no Seguro e passa sozinho para o Equilibrado quando o número está saudável (gente respondendo e quase ninguém pedindo para parar). Se piorar, volta para o Seguro.'],
+        'seguro' => ['nome' => '🛡 Seguro', 'horario' => 'comercial', 'dias' => $uteis, 'ritmo' => 'devagar', 'max' => 40, 'rampa' => [1 => 10, 2 => 18, 3 => 28, 4 => 40], 'freio_recusa' => true,
+            'desc' => 'Dias úteis em horário comercial, 8 a 15 min entre mensagens, aquecimento de 4 semanas e até 40 por dia. É o que mais se aproxima das boas práticas.'],
+        'equilibrado' => ['nome' => '⚖ Equilibrado', 'horario' => 'estendido', 'dias' => [1, 2, 3, 4, 5, 6], 'ritmo' => 'normal', 'max' => 70, 'rampa' => [1 => 15, 2 => 30, 3 => 50], 'freio_recusa' => true,
+            'desc' => 'Segunda a sábado das 8h às 19h, 4 a 10 min entre mensagens e até 70 por dia depois do aquecimento.'],
+        'agressivo' => ['nome' => '🔥 Agressivo — 24 horas (risco por minha conta)', 'horario' => '24h', 'dias' => [1, 2, 3, 4, 5, 6, 7], 'ritmo' => 'maximo', 'max' => 300, 'rampa' => [1 => 40, 2 => 100], 'freio_recusa' => false,
+            'desc' => 'Todos os dias, 24 horas, 1 a 2 min entre mensagens e até 300 por dia (40 na 1ª semana, 100 na 2ª). Não pausa por recusas; se os envios falharem seguidos, espera 30 min e tenta de novo. Mensagem de madrugada gera mais bloqueios e denúncias — é o perfil com mais chance de perder o número.'],
+        'personalizado' => ['nome' => '✋ Personalizado', 'desc' => 'Você escolhe cada botão abaixo (horário, dias, ritmo, máximo e freios).'],
+    ];
+}
+
+function prosp_piloto_cfg() {
+    $perfil = get_config('prosp_auto_perfil', 'auto');
+    if (!isset(prosp_piloto_perfis()[$perfil])) $perfil = 'auto';
+    $efetivo = $perfil === 'auto' ? (get_config('prosp_auto_nivel', 'seguro') === 'equilibrado' ? 'equilibrado' : 'seguro') : $perfil;
+    $c = [
+        'perfil' => $perfil,
+        'efetivo' => $efetivo,
         'ligado' => get_config('prosp_auto', '0') === '1',
-        'max_dia' => max(5, min(120, (int)get_config('prosp_auto_max', '40'))),
+        'max_dia' => max(5, min(300, (int)get_config('prosp_auto_max', '40'))),
         'aquecido' => get_config('prosp_auto_aquecido', '0') === '1',
         'inicio' => (int)get_config('prosp_auto_inicio', '0'),
         'dias' => array_map('intval', array_filter(explode(',', get_config('prosp_auto_dias', '1,2,3,4,5')), 'strlen')),
         'horario' => get_config('prosp_auto_horario', 'comercial'),
         'ritmo' => get_config('prosp_auto_ritmo', 'normal'),
+        'rampa' => [1 => 10, 2 => 18, 3 => 28, 4 => 40],
+        'freio_recusa' => get_config('prosp_auto_freio_recusa', '1') === '1',
         'ia_escreve' => get_config('prosp_auto_ia', '1') === '1',
         'responde' => get_config('prosp_ia_responde', 'sugerir'),     // nao | sugerir | auto
         'ouvir' => get_config('prosp_ouvir', '1') === '1',
         'pausa' => get_config('prosp_auto_pausa', ''),
     ];
+    if ($efetivo !== 'personalizado') {
+        $p = prosp_piloto_perfis()[$efetivo];
+        $c = array_merge($c, ['horario' => $p['horario'], 'dias' => $p['dias'], 'ritmo' => $p['ritmo'], 'max_dia' => $p['max'], 'rampa' => $p['rampa'], 'freio_recusa' => $p['freio_recusa']]);
+    }
+    return $c;
 }
 
 function prosp_piloto_horarios() {
     return ['comercial' => ['nome' => 'Comercial (9h–12h e 14h–18h)', 'faixas' => [[9, 0, 12, 0], [14, 0, 18, 0]]],
             'estendido' => ['nome' => 'Estendido (8h–12h e 13h–19h)', 'faixas' => [[8, 0, 12, 0], [13, 0, 19, 0]]],
             'manha' => ['nome' => 'Só de manhã (9h–12h)', 'faixas' => [[9, 0, 12, 0]]],
-            'tarde' => ['nome' => 'Só à tarde (14h–18h)', 'faixas' => [[14, 0, 18, 0]]]];
+            'tarde' => ['nome' => 'Só à tarde (14h–18h)', 'faixas' => [[14, 0, 18, 0]]],
+            '24h' => ['nome' => '24 horas (inclusive de madrugada)', 'faixas' => [[0, 0, 24, 0]]]];
 }
 
 function prosp_piloto_ritmos() {
     return ['devagar' => ['nome' => 'Bem devagar (8 a 15 min)', 'min' => 8, 'max' => 15],
             'normal' => ['nome' => 'Normal (4 a 10 min)', 'min' => 4, 'max' => 10],
-            'rapido' => ['nome' => 'Rápido (2 a 5 min)', 'min' => 2, 'max' => 5]];
+            'rapido' => ['nome' => 'Rápido (2 a 5 min)', 'min' => 2, 'max' => 5],
+            'maximo' => ['nome' => 'Máximo (1 a 2 min — mais risco)', 'min' => 1, 'max' => 2]];
 }
 
-// Limite de hoje com o aquecimento: semana 1 = 10/dia, 2 = 18, 3 = 28, 4 = 40, depois o máximo
+// Horas por dia em que o piloto pode mandar (para o limite por hora acompanhar o horário escolhido)
+function prosp_piloto_horas_janela($c) {
+    if ($c['horario'] === 'sempre') return 24;
+    $min = 0;
+    foreach (prosp_piloto_horarios()[$c['horario']]['faixas'] ?? [] as [$h1, $m1, $h2, $m2]) $min += ($h2 * 60 + $m2) - ($h1 * 60 + $m1);
+    return max(1, $min / 60);
+}
+
+// Limite de hoje com o aquecimento do perfil (ex.: Seguro: 10/dia na 1ª semana, 18, 28, 40; depois o máximo)
 function prosp_piloto_limite_hoje($c = null) {
     $c = $c ?: prosp_piloto_cfg();
     if ($c['aquecido'] || !$c['inicio']) return $c['max_dia'];
     $semana = intdiv(max(0, time() - $c['inicio']), 7 * 86400) + 1;
-    return min($c['max_dia'], [1 => 10, 2 => 18, 3 => 28, 4 => 40][$semana] ?? 60);
+    return min($c['max_dia'], $c['rampa'][$semana] ?? $c['max_dia']);
+}
+
+// Modo automático: sobe ou desce de nível pela saúde do número (no máximo uma mudança por dia)
+function prosp_piloto_ajustar_auto() {
+    if (get_config('prosp_auto_perfil', 'auto') !== 'auto') return;
+    if (time() - (int)get_config('prosp_auto_nivel_em', '0') < 86400) return;
+    $s = prosp_piloto_saude();
+    $atual = get_config('prosp_auto_nivel', 'seguro');
+    $novo = $atual;
+    if ($s['nivel'] === 'bom' && (int)$s['enviados'] >= 30) $novo = 'equilibrado';
+    elseif (in_array($s['nivel'], ['atencao', 'ruim'], true)) $novo = 'seguro';
+    set_config('prosp_auto_nivel_em', (string)time());
+    if ($novo !== $atual) {
+        set_config('prosp_auto_nivel', $novo);
+        prosp_alertar($novo === 'equilibrado' ? '🧭 Prospecção: número saudável — o piloto passou para o ritmo Equilibrado.' : '🧭 Prospecção: sinais de risco no número — o piloto voltou para o ritmo Seguro.');
+    }
 }
 
 function prosp_piloto_semana($c = null) {
@@ -69,6 +125,7 @@ function prosp_piloto_na_janela($c = null, $agora = null) {
     $agora = $agora ?: time();
     if ($c['horario'] === 'sempre') return true; // só para testes (não aparece na tela)
     if (!in_array((int)date('N', $agora), $c['dias'], true)) return false;
+    if ($c['horario'] === '24h') return true;
     $min = (int)date('G', $agora) * 60 + (int)date('i', $agora);
     foreach (prosp_piloto_horarios()[$c['horario']]['faixas'] ?? prosp_piloto_horarios()['comercial']['faixas'] as [$h1, $m1, $h2, $m2]) {
         if ($min >= $h1 * 60 + $m1 && $min < $h2 * 60 + $m2) return true;
@@ -123,13 +180,27 @@ function prosp_piloto_pausar($motivo) {
 }
 
 // Freios automáticos: muita gente pedindo para parar, recusas ou envios falhando seguidos
-function prosp_piloto_freios() {
+function prosp_piloto_freios($c = null) {
     global $pdo;
+    $c = $c ?: prosp_piloto_cfg();
     $s = prosp_piloto_saude();
-    if ((int)$s['enviados'] >= 15 && $s['taxa_parar'] >= 15) return "{$s['taxa_parar']}% dos contatos da semana pediram para não receber mais. Revise a mensagem e o público antes de religar.";
-    if ((int)$s['enviados'] >= 15 && $s['taxa_nao'] >= 30) return "{$s['taxa_nao']}% responderam que não querem. Ajuste a abordagem antes de continuar.";
+    if ($c['freio_recusa']) {
+        if ((int)$s['enviados'] >= 15 && $s['taxa_parar'] >= 15) return "{$s['taxa_parar']}% dos contatos da semana pediram para não receber mais. Revise a mensagem e o público antes de religar.";
+        if ((int)$s['enviados'] >= 15 && $s['taxa_nao'] >= 30) return "{$s['taxa_nao']}% responderam que não querem. Ajuste a abordagem antes de continuar.";
+    }
     $ult = $pdo->query("SELECT status FROM whatsapp_mensagens WHERE ref_tipo='prospect' AND status IN ('enviado','erro') ORDER BY id DESC LIMIT 3")->fetchAll(PDO::FETCH_COLUMN);
-    if (count($ult) === 3 && !array_diff($ult, ['erro'])) return 'as 3 últimas mensagens falharam (o número pode ter sido restringido). Abra o WhatsApp da plataforma no celular e confira.';
+    if (count($ult) === 3 && !array_diff($ult, ['erro'])) {
+        $msg = 'as 3 últimas mensagens falharam (o número pode ter sido restringido). Abra o WhatsApp da plataforma no celular e confira.';
+        if (!$c['freio_recusa']) {
+            // Perfil sem freio: não desliga — espera 30 min e tenta de novo
+            if ((int)get_config('prosp_auto_proximo', '0') < time() + 1500) {
+                set_config('prosp_auto_proximo', (string)(time() + 1800));
+                prosp_alertar('⚠ Prospecção: ' . $msg . ' Como o perfil não pausa, vou tentar de novo em 30 minutos.');
+            }
+            return '';
+        }
+        return $msg;
+    }
     return '';
 }
 
@@ -264,6 +335,7 @@ function prosp_piloto_proximo() {
 // Uma "volta" do piloto: manda no máximo UMA mensagem (o intervalo entre elas é aleatório)
 function prosp_piloto_rotina() {
     global $pdo;
+    prosp_piloto_ajustar_auto();
     $c = prosp_piloto_cfg();
     if (!$c['ligado'] || $c['pausa'] !== '') return ['piloto' => $c['pausa'] ? 'pausado' : 'desligado'];
     if (!prosp_piloto_na_janela($c)) return ['piloto' => 'fora do horário'];
@@ -274,8 +346,9 @@ function prosp_piloto_rotina() {
     if ($n['na_fila'] > 0) return ['piloto' => 'mensagem anterior ainda saindo'];
     $limite = prosp_piloto_limite_hoje($c);
     if ($n['hoje'] >= $limite) return ['piloto' => "limite de hoje ($limite) atingido"];
-    if ($n['hora'] >= max(4, (int)ceil($limite / 6))) return ['piloto' => 'limite por hora atingido'];
-    if (($freio = prosp_piloto_freios()) !== '') { prosp_piloto_pausar($freio); return ['piloto' => 'pausado: ' . $freio]; }
+    if ($n['hora'] >= max(4, (int)ceil($limite / prosp_piloto_horas_janela($c) * 2))) return ['piloto' => 'limite por hora atingido'];
+    if (($freio = prosp_piloto_freios($c)) !== '') { prosp_piloto_pausar($freio); return ['piloto' => 'pausado: ' . $freio]; }
+    if (time() < (int)get_config('prosp_auto_proximo', '0')) return ['piloto' => 'aguardando para tentar de novo'];
     // trava simples: duas rotinas ao mesmo tempo não mandam em dobro
     if ((int)get_config('prosp_auto_trava', '0') > time() - 60) return ['piloto' => 'ocupado'];
     set_config('prosp_auto_trava', (string)time());
@@ -299,7 +372,9 @@ function prosp_piloto_status() {
     $situacao = !$c['ligado'] ? 'Desligado' : ($c['pausa'] ? 'Pausado' : (!$canal ? 'Aguardando o WhatsApp da plataforma conectar'
         : (!prosp_piloto_na_janela($c) ? 'Fora do horário — volta no próximo horário escolhido' : ($n['hoje'] >= prosp_piloto_limite_hoje($c) ? 'Limite de hoje atingido — continua amanhã'
         : ($prox > time() ? 'Próxima mensagem por volta das ' . date('H:i', $prox) : 'Mandando')))));
-    return ['ligado' => $c['ligado'], 'pausa' => $c['pausa'], 'situacao' => $situacao, 'hoje' => $n['hoje'], 'limite' => prosp_piloto_limite_hoje($c),
+    $perfis = prosp_piloto_perfis();
+    $perfilTxt = $perfis[$c['perfil']]['nome'] . ($c['perfil'] === 'auto' ? ' — agora no ' . $perfis[$c['efetivo']]['nome'] : '');
+    return ['perfil' => $c['perfil'], 'perfil_txt' => $perfilTxt, 'ligado' => $c['ligado'], 'pausa' => $c['pausa'], 'situacao' => $situacao, 'hoje' => $n['hoje'], 'limite' => prosp_piloto_limite_hoje($c),
             'semana' => prosp_piloto_semana($c), 'aquecido' => $c['aquecido'], 'canal' => (bool)$canal, 'saude' => prosp_piloto_saude()];
 }
 

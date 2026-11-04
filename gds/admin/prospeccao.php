@@ -31,7 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     switch ($_POST['acao']) {
         // ----- piloto automático -----
         case 'piloto_salvar':
-            set_config('prosp_auto_max', (string)max(5, min(120, (int)($_POST['max'] ?? 40))));
+            $perfil = array_key_exists($_POST['perfil'] ?? '', prosp_piloto_perfis()) ? $_POST['perfil'] : 'auto';
+            set_config('prosp_auto_perfil', $perfil);
+            set_config('prosp_auto_freio_recusa', ($_POST['freio_recusa'] ?? '1') === '1' ? '1' : '0');
+            set_config('prosp_auto_max', (string)max(5, min(300, (int)($_POST['max'] ?? 40))));
             $dias = array_values(array_intersect(array_map('intval', explode(',', (string)($_POST['dias'] ?? ''))), [1, 2, 3, 4, 5, 6, 7]));
             set_config('prosp_auto_dias', implode(',', $dias ?: [1, 2, 3, 4, 5]));
             set_config('prosp_auto_horario', array_key_exists($_POST['horario'] ?? '', prosp_piloto_horarios()) ? $_POST['horario'] : 'comercial');
@@ -348,6 +351,8 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 .chips-p, .chaves-p { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
 .chips-p button[aria-pressed="true"], .chaves-p button[aria-pressed="true"] { background: var(--primary-btn, #4a63e8); color: #fff; border-color: transparent; }
 .chaves-p { margin-top: 14px; }
+.perfis-p button { font-weight: 600; }
+.perfil-desc { min-height: 2.6em; }
 .passos-num { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .passos-num strong { font-size: 22px; min-width: 40px; text-align: center; }
 .lista-dicas li { margin-bottom: 6px; font-size: 14px; }
 .conv-grade { display: grid; grid-template-columns: minmax(240px, 330px) 1fr; gap: 14px; align-items: start; }
@@ -420,15 +425,21 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                 <div><strong id="ptFalhas"><?= (int)$piloto['saude']['falhas'] ?></strong><span>falhas de envio</span></div>
             </div>
             <p class="dica" id="ptSaude"><?= ['pouco' => '📊 A saúde do número aparece depois de umas 15 mensagens.', 'bom' => '🟢 Número saudável: as pessoas respondem e quase ninguém pede para parar.', 'atencao' => '🟡 Atenção: pouca resposta ou alguns pedidos para parar. Reveja a 1ª mensagem e o público.', 'ruim' => '🔴 Risco alto: muita gente pedindo para parar. O piloto pausa sozinho se piorar.'][$piloto['saude']['nivel']] ?></p>
+            <p class="dica">Perfil: <strong id="ptPerfil"><?= e($piloto['perfil_txt']) ?></strong></p>
             <div class="sprint-acoes"><button type="button" class="btn btn-ghost btn-sm" onclick="PR.pilotoAgora(this)">⏩ Mandar a próxima agora</button><span class="muted" id="ptUltimo"></span></div>
         </div>
 
         <div class="form-box largo" id="ptConfig">
-            <h3>Como o piloto trabalha</h3>
+            <h3>Perfil de risco</h3>
+            <p class="dica">Cada perfil liga de uma vez o horário, os dias, o ritmo, o máximo por dia, o aquecimento e os freios. Mexeu em qualquer botão abaixo, vira Personalizado.</p>
+            <div class="chips-p perfis-p" data-grupo="perfil"><?php foreach (prosp_piloto_perfis() as $k => $pf): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $pc['perfil'] === $k ? 'true' : 'false' ?>"><?= e($pf['nome']) ?></button><?php endforeach; ?></div>
+            <p class="dica perfil-desc" id="ptPerfilDesc"><?= e(prosp_piloto_perfis()[$pc['perfil']]['desc']) ?></p>
+            <div class="alerta alerta-aviso" id="ptRisco" <?= in_array($pc['perfil'], ['agressivo', 'personalizado'], true) && ($pc['horario'] === '24h' || !$pc['freio_recusa'] || $pc['ritmo'] === 'maximo') ? '' : 'hidden' ?>>⚠ Você escolheu correr mais risco: o WhatsApp pode restringir ou banir o número da prospecção. Use um chip só para isso. Quem pedir para parar continua saindo da lista (é a lei — LGPD — e é o que mais protege o número).</div>
+            <h3 style="margin-top:16px">Como o piloto trabalha</h3>
             <label>Máximo de mensagens por dia (depois do aquecimento)</label>
             <div class="passos-num"><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(-5)" aria-label="Diminuir">−</button><strong id="ptMax"><?= (int)$pc['max_dia'] ?></strong><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(5)" aria-label="Aumentar">+</button>
-                <span class="chips-p" data-grupo="max"><?php foreach ([20, 40, 60] as $n): ?><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(0, <?= $n ?>)"><?= $n ?></button><?php endforeach; ?></span></div>
-            <p class="dica">O aquecimento começa em 10 por dia e sobe sozinho: 18 na 2ª semana, 28 na 3ª, 40 na 4ª.</p>
+                <span class="chips-p" data-grupo="max"><?php foreach ([20, 40, 70, 150, 300] as $n): ?><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(0, <?= $n ?>)"><?= $n ?></button><?php endforeach; ?></span></div>
+            <p class="dica">O aquecimento segue o perfil (no Seguro: 10 por dia na 1ª semana, 18, 28 e 40; no Agressivo: 40 e depois 100). Para pular, marque "número já aquecido".</p>
             <label>Dias</label>
             <div class="chips-p" data-grupo="dias" data-multi="1"><?php foreach ([1 => 'Seg', 2 => 'Ter', 3 => 'Qua', 4 => 'Qui', 5 => 'Sex', 6 => 'Sáb', 7 => 'Dom'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= in_array($k, $pc['dias'], true) ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div>
             <label>Horário</label>
@@ -443,6 +454,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="aquecido" aria-pressed="<?= $pc['aquecido'] ? 'true' : 'false' ?>">🔥 O número já é antigo e aquecido (pular o aquecimento)</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="alertas" aria-pressed="<?= get_config('prosp_alerta_respostas', '1') === '1' ? 'true' : 'false' ?>">🔔 Me avisar no WhatsApp a cada resposta</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="optout_resp" aria-pressed="<?= get_config('prosp_optout_responder', '1') === '1' ? 'true' : 'false' ?>">🙏 Responder "combinado" a quem pedir para parar</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-chave="freio_recusa" aria-pressed="<?= $pc['freio_recusa'] ? 'true' : 'false' ?>">🛑 Pausar sozinho se muita gente pedir para parar ou recusar</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="ouvir" aria-pressed="<?= $pc['ouvir'] ? 'true' : 'false' ?>">👂 Ler as respostas que chegam no número</button>
             </div>
             <div class="sprint-acoes" style="margin-top:14px"><button type="button" class="btn" onclick="PR.pilotoSalvar(this)">Salvar</button></div>
@@ -960,19 +972,44 @@ const PR = (() => {
 
     // ---------- piloto automático ----------
     let ptMax = <?= (int)$pc['max_dia'] ?>, ptLigado = <?= $piloto['ligado'] ? 'true' : 'false' ?>;
+    const PERFIS = <?= json_encode(prosp_piloto_perfis(), JSON_UNESCAPED_UNICODE) ?>;
+    const marcar1 = (g, v) => document.querySelectorAll('.chips-p[data-grupo="' + g + '"] button[data-v]').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === String(v) ? 'true' : 'false'));
+    function ptRisco() {
+        const perfil = ptEscolha('perfil')[0];
+        const arriscado = ptEscolha('horario')[0] === '24h' || ptEscolha('ritmo')[0] === 'maximo' || ptChave('freio_recusa') === '0' || ptMax > 120;
+        $('ptRisco').hidden = !(arriscado && (perfil === 'agressivo' || perfil === 'personalizado'));
+    }
+    function aplicarPerfil(k) {
+        $('ptPerfilDesc').textContent = PERFIS[k].desc;
+        const p = PERFIS[k === 'auto' ? 'seguro' : k];
+        if (p && p.horario) {
+            marcar1('horario', p.horario); marcar1('ritmo', p.ritmo);
+            document.querySelectorAll('.chips-p[data-grupo="dias"] button[data-v]').forEach(x => x.setAttribute('aria-pressed', p.dias.includes(Number(x.dataset.v)) ? 'true' : 'false'));
+            ptMax = p.max; $('ptMax').textContent = ptMax;
+            document.querySelector('.chaves-p [data-chave="freio_recusa"]').setAttribute('aria-pressed', p.freio_recusa ? 'true' : 'false');
+        }
+        ptRisco();
+    }
+    const virouPersonalizado = () => { if (ptEscolha('perfil')[0] !== 'personalizado') { marcar1('perfil', 'personalizado'); $('ptPerfilDesc').textContent = PERFIS.personalizado.desc; } ptRisco(); };
     document.querySelectorAll('.chips-p[data-grupo] button[data-v]').forEach(b => b.addEventListener('click', () => {
         const g = b.parentElement;
         if (g.dataset.multi) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
         else g.querySelectorAll('button[data-v]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+        if (g.dataset.grupo === 'perfil') aplicarPerfil(b.dataset.v);
+        else if (['horario', 'ritmo', 'dias'].includes(g.dataset.grupo)) virouPersonalizado();
     }));
-    document.querySelectorAll('.chaves-p button[data-chave]').forEach(b => b.addEventListener('click', () => b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')));
-    function ptNum(d, v) { ptMax = Math.max(5, Math.min(120, v || ptMax + d)); $('ptMax').textContent = ptMax; }
+    document.querySelectorAll('.chaves-p button[data-chave]').forEach(b => b.addEventListener('click', () => {
+        b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+        if (b.dataset.chave === 'freio_recusa') virouPersonalizado();
+    }));
+    function ptNum(d, v) { ptMax = Math.max(5, Math.min(300, v || ptMax + d)); $('ptMax').textContent = ptMax; virouPersonalizado(); }
     const ptEscolha = (g) => [...document.querySelectorAll('.chips-p[data-grupo="' + g + '"] button[aria-pressed="true"]')].map(b => b.dataset.v);
     const ptChave = (k) => document.querySelector('.chaves-p [data-chave="' + k + '"]').getAttribute('aria-pressed') === 'true' ? '1' : '0';
     function ptMostrar(p) {
         if (!p) return;
         ptLigado = p.ligado;
         $('ptSituacao').textContent = p.situacao;
+        if (p.perfil_txt) $('ptPerfil').textContent = p.perfil_txt;
         $('ptHoje').textContent = p.hoje + ' / ' + p.limite;
         $('ptSemana').textContent = p.aquecido ? 'aquecido' : 'semana ' + p.semana;
         $('ptResp').textContent = p.saude.taxa_resposta + '%'; $('ptParar').textContent = p.saude.taxa_parar + '%'; $('ptFalhas').textContent = p.saude.falhas;
@@ -981,7 +1018,7 @@ const PR = (() => {
     }
     async function pilotoSalvar(btn) {
         btn.disabled = true;
-        const r = await api({ acao: 'piloto_salvar', max: ptMax, dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
+        const r = await api({ acao: 'piloto_salvar', perfil: ptEscolha('perfil')[0] || 'auto', freio_recusa: ptChave('freio_recusa'), max: ptMax, dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
             ia: ptEscolha('ia')[0] || '1', responde: ptEscolha('responde')[0] || 'sugerir', aquecido: ptChave('aquecido'), alertas: ptChave('alertas'), optout_resp: ptChave('optout_resp'), ouvir: ptChave('ouvir') });
         btn.disabled = false;
         if (r.ok) { ptMostrar(r.piloto); toast('Salvo!', 'sucesso'); } else toast(r.erro, 'erro');
