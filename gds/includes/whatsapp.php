@@ -286,6 +286,12 @@ function wa_enviar_agora($remetente, $numero, $texto, $extra = []) {
         case 'cloud':
             $r = wa_cloud_enviar($remetente, $numero, $texto, $extra['empresa_nome'] ?? '');
             break;
+        case 'ponte':
+            // Conector no celular/computador: entra na fila e ele envia na próxima volta (em segundos)
+            global $pdo;
+            $st = $pdo->prepare("INSERT INTO whatsapp_mensagens (empresa_id, telefone, texto, evento, para, status, canal) VALUES (?, ?, ?, ?, 'empresa', 'pendente', ?)");
+            $st->execute([$extra['empresa_id'] ?? null, $numero, $texto, $extra['evento'] ?? 'alerta', $remetente['canal'] ?? 'plataforma']);
+            return ['ok' => true, 'erro' => '', 'fila' => true];
         case 'webhook':
             $r = wa_http('POST', $a['url'], ['numero' => $numero, 'texto' => $texto, 'canal' => $remetente['canal'], 'instancia' => $remetente['instancia']] + $extra,
                 $a['chave'] !== '' ? ['X-GDS-Token: ' . $a['chave']] : []);
@@ -431,6 +437,10 @@ function wa_rotina($forcar = false) {
         }
     } catch (PDOException $e) {
         error_log('GDS WhatsApp (rotina): ' . $e->getMessage());
+    }
+    // Marketing: lembrete "hora de postar" no WhatsApp do dono (rápido; a geração dos posts roda no cron/carona)
+    if (is_file(__DIR__ . '/marketing_ia.php')) {
+        try { require_once __DIR__ . '/marketing_ia.php'; $res['mkt_lembretes'] = mkt_lembretes(); } catch (Throwable $e) { error_log('GDS marketing lembrete: ' . $e->getMessage()); }
     }
     // Prospecção no piloto automático (respostas agendadas + próxima mensagem da cadência)
     if (is_file(__DIR__ . '/prospeccao_piloto.php') && (get_config('prosp_auto', '0') === '1' || wa_api()['tipo'] !== 'ponte')) {

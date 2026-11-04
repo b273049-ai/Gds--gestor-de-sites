@@ -458,38 +458,61 @@
     }
 
     // Vídeo: cada cena = { modelo, conteudo, segundos }. Transição com fade entre cenas.
+    // opcoes.audio (ArrayBuffer de um MP3/WAV) entra como narração; as cenas se esticam para caber a fala.
+    function decodificarAudio(ab) {
+        var C = window.AudioContext || window.webkitAudioContext;
+        if (!ab || !C) return Promise.resolve(null);
+        var actx = new C();
+        return new Promise(function (ok) { actx.decodeAudioData(ab.slice(0), function (buf) { ok({ ctx: actx, buf: buf }); }, function () { actx.close(); ok(null); }); });
+    }
     function gravarVideo(canvas, cenas, opcoes) {
-        return new Promise(function (resolve, reject) {
-            if (!canvas.captureStream || typeof MediaRecorder === 'undefined') { reject(new Error('Este navegador não grava vídeo. Use o Chrome no computador.')); return; }
-            var o = Object.assign({ formato: 'story' }, opcoes || {});
-            var tam = FORMATOS[o.formato] || FORMATOS.story;
-            canvas.width = tam[0]; canvas.height = tam[1];
-            var tipos = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-            var tipo = tipos.filter(function (t) { return MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t); })[0] || 'video/webm';
-            var stream = canvas.captureStream(30);
-            var rec = new MediaRecorder(stream, { mimeType: tipo, videoBitsPerSecond: 8000000 });
-            var partes = [];
-            rec.ondataavailable = function (e) { if (e.data && e.data.size) partes.push(e.data); };
-            rec.onstop = function () { resolve(new Blob(partes, { type: tipo.split(';')[0] })); };
-            var duracoes = cenas.map(function (c) { return (c.segundos || 2.8) * 1000; });
-            var total = duracoes.reduce(function (a, b) { return a + b; }, 0);
-            var ctx = canvas.getContext('2d');
-            var t0 = null;
-            var quadro = function (agora) {
-                if (!t0) t0 = agora;
-                var dt = agora - t0;
-                if (dt >= total) { rec.stop(); return; }
-                var acum = 0, i = 0;
-                while (i < cenas.length - 1 && dt > acum + duracoes[i]) { acum += duracoes[i]; i++; }
-                var local = (dt - acum) / 1000;
-                desenhar(canvas, cenas[i].conteudo, Object.assign({}, o, { modelo: cenas[i].modelo || o.modelo }, cenas[i].foto !== undefined ? { foto: cenas[i].foto } : {}), local + 0.0001);
-                // entrada (zoom suave) e saída (escurece)
-                var entra = Math.min(1, local / 0.35), sai = Math.max(0, (local - duracoes[i] / 1000 + 0.3) / 0.3);
-                if (entra < 1 || sai > 0) { ctx.fillStyle = 'rgba(0,0,0,' + Math.max(1 - entra, sai) + ')'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+        var o = Object.assign({ formato: 'story' }, opcoes || {});
+        return decodificarAudio(o.audio).then(function (aud) {
+            return new Promise(function (resolve, reject) {
+                if (!canvas.captureStream || typeof MediaRecorder === 'undefined') { reject(new Error('Este navegador não grava vídeo. Use o Chrome no computador.')); return; }
+                var tam = FORMATOS[o.formato] || FORMATOS.story;
+                canvas.width = tam[0]; canvas.height = tam[1];
+                var tipos = aud ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+                                : ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+                var tipo = tipos.filter(function (t) { return MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t); })[0] || 'video/webm';
+                var stream = canvas.captureStream(30);
+                var fonteAudio = null;
+                if (aud) {
+                    var dest = aud.ctx.createMediaStreamDestination();
+                    fonteAudio = aud.ctx.createBufferSource();
+                    fonteAudio.buffer = aud.buf;
+                    fonteAudio.connect(dest);
+                    dest.stream.getAudioTracks().forEach(function (t) { stream.addTrack(t); });
+                }
+                var rec = new MediaRecorder(stream, { mimeType: tipo, videoBitsPerSecond: 8000000 });
+                var partes = [];
+                rec.ondataavailable = function (e) { if (e.data && e.data.size) partes.push(e.data); };
+                rec.onstop = function () { if (aud) aud.ctx.close(); resolve(new Blob(partes, { type: tipo.split(';')[0] })); };
+                var duracoes = cenas.map(function (c) { return (c.segundos || 2.8) * 1000; });
+                var total = duracoes.reduce(function (a, b) { return a + b; }, 0);
+                if (aud) {
+                    var alvo = aud.buf.duration * 1000 + 700;
+                    if (alvo > total) { var f = alvo / total; duracoes = duracoes.map(function (d) { return d * f; }); total = alvo; }
+                }
+                var ctx = canvas.getContext('2d');
+                var t0 = null;
+                var quadro = function (agora) {
+                    if (!t0) t0 = agora;
+                    var dt = agora - t0;
+                    if (dt >= total) { rec.stop(); return; }
+                    var acum = 0, i = 0;
+                    while (i < cenas.length - 1 && dt > acum + duracoes[i]) { acum += duracoes[i]; i++; }
+                    var local = (dt - acum) / 1000;
+                    desenhar(canvas, cenas[i].conteudo, Object.assign({}, o, { modelo: cenas[i].modelo || o.modelo }, cenas[i].foto !== undefined ? { foto: cenas[i].foto } : {}), local + 0.0001);
+                    // entrada (zoom suave) e saída (escurece)
+                    var entra = Math.min(1, local / 0.35), sai = Math.max(0, (local - duracoes[i] / 1000 + 0.3) / 0.3);
+                    if (entra < 1 || sai > 0) { ctx.fillStyle = 'rgba(0,0,0,' + Math.max(1 - entra, sai) + ')'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+                    requestAnimationFrame(quadro);
+                };
+                rec.start(250);
+                if (fonteAudio) fonteAudio.start();
                 requestAnimationFrame(quadro);
-            };
-            rec.start(250);
-            requestAnimationFrame(quadro);
+            });
         });
     }
 

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 require_once __DIR__ . '/../includes/marketing_banco.php';
+require_once __DIR__ . '/../includes/marketing_ia.php';
 
 // Ideias de conteúdo que vendem sites para negócios locais
 $objetivos = [
@@ -33,6 +34,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     @set_time_limit(120);
     $marca = get_config('mkt_marca', 'GDS Sites');
     switch ($_POST['acao']) {
+        // ----- plano com os posts prontos -----
+        case 'plano_criar':
+            session_write_close();
+            $pid = mkt_plano_criar(['periodo' => $_POST['periodo'] ?? 'semana', 'por_semana' => (int)($_POST['por_semana'] ?? 5), 'stories_dia' => (int)($_POST['stories_dia'] ?? 2),
+                'publico' => $_POST['publico'] ?? '', 'redes' => $_POST['redes'] ?? '']);
+            responder_json(['ok' => true, 'plano_id' => $pid]);
+        case 'plano_processar':
+            session_write_close();
+            @set_time_limit(180);
+            responder_json(['ok' => true] + mkt_plano_processar((int)($_POST['plano_id'] ?? 0)));
+        case 'plano_itens':
+            $st = $pdo->prepare("SELECT id, data, hora, tipo, objetivo, tema, gancho, status, post, foto_url, erro, postado_em FROM marketing_itens WHERE plano_id=? ORDER BY data, hora, id");
+            $st->execute([(int)($_POST['plano_id'] ?? 0)]);
+            $itens = array_map(fn($i) => ['id' => (int)$i['id'], 'data' => $i['data'], 'hora' => $i['hora'], 'tipo' => $i['tipo'], 'tema' => $i['tema'], 'status' => $i['status'],
+                'post' => json_decode((string)$i['post'], true), 'foto' => $i['foto_url'], 'erro' => $i['erro'], 'postado' => (bool)$i['postado_em']], $st->fetchAll());
+            responder_json(['ok' => true, 'itens' => $itens]);
+        case 'item_refazer':
+            $pdo->prepare("UPDATE marketing_itens SET status='pendente', tentativas=0, erro=NULL WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
+            $pdo->prepare("UPDATE marketing_planos SET status='gerando' WHERE id=(SELECT plano_id FROM marketing_itens WHERE id=?)")->execute([(int)($_POST['id'] ?? 0)]);
+            responder_json(['ok' => true]);
+        case 'item_postado':
+            $pdo->prepare("UPDATE marketing_itens SET status=CASE WHEN status='postado' THEN 'pronto' ELSE 'postado' END, postado_em=CASE WHEN status='postado' THEN NULL ELSE NOW() END WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
+            responder_json(['ok' => true]);
+        case 'plano_excluir':
+            $pdo->prepare("DELETE FROM marketing_planos WHERE id=?")->execute([(int)($_POST['plano_id'] ?? 0)]);
+            responder_json(['ok' => true]);
+        case 'voz':
+            session_write_close();
+            responder_json(mkt_voz((string)($_POST['texto'] ?? '')));
+        case 'lembrete_salvar':
+            set_config('mkt_lembrete', ($_POST['ligado'] ?? '1') === '1' ? '1' : '0');
+            if (isset($_POST['numero'])) set_config('mkt_whatsapp', mb_substr(preg_replace('/\D/', '', $_POST['numero']), 0, 15));
+            responder_json(['ok' => true]);
+
         case 'salvar_marca':
             foreach (['mkt_marca' => 60, 'mkt_arroba' => 40, 'mkt_site' => 80, 'mkt_preco' => 40, 'mkt_whatsapp' => 30] as $k => $max) set_config($k, mb_substr(trim($_POST[$k] ?? ''), 0, $max));
             set_config('mkt_cor', cor_hex_valida($_POST['mkt_cor'] ?? '', '#6d7cff'));
@@ -164,6 +199,10 @@ $marca = ['marca' => get_config('mkt_marca', 'GDS Sites'), 'arroba' => get_confi
 if ($marca['site'] === '') $marca['site'] = preg_replace('#^https?://#', '', get_config('plataforma_url', '')) ?: ($_SERVER['HTTP_HOST'] ?? '');
 $segmentos = $pdo->query("SELECT nome FROM segmentos WHERE ativo=true AND slug<>'outro' ORDER BY nome")->fetchAll(PDO::FETCH_COLUMN);
 $historico = $pdo->query("SELECT id, formato, tema, criado_em FROM marketing_posts ORDER BY id DESC LIMIT 20")->fetchAll();
+$planos = $pdo->query("SELECT p.*, (SELECT COUNT(*) FROM marketing_itens i WHERE i.plano_id=p.id) total,
+    (SELECT COUNT(*) FROM marketing_itens i WHERE i.plano_id=p.id AND i.status IN ('pronto','postado')) prontos FROM marketing_planos p ORDER BY p.id DESC LIMIT 12")->fetchAll();
+$planoAtual = (int)($_GET['plano'] ?? ($planos[0]['id'] ?? 0));
+$ias = mkt_ias_status();
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -186,6 +225,27 @@ textarea.mkt-legenda { min-height: 160px; }
 .mkt-fotos button { padding: 0; border: 2px solid transparent; border-radius: 10px; overflow: hidden; aspect-ratio: 1; background: var(--bg); cursor: pointer; margin: 0; }
 .mkt-fotos button.ativo { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91,124,255,.25); }
 .mkt-fotos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ias-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+.ia-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: grid; gap: 4px; align-content: start; font-size: 13.5px; }
+.ia-card strong { font-size: 14px; } .ia-card small { color: var(--text-dim); }
+.ia-card.ia-ok { border-color: rgba(52,199,89,.45); } .ia-card.ia-falta { border-color: rgba(245,185,76,.6); }
+.ia-card .ia-st { font-weight: 600; } .ia-card ol { margin: 6px 0; padding-left: 18px; } .ia-card .btn { justify-self: start; margin: 4px 0 0; }
+.btn-wa-plano { font-size: 16px; padding: 12px 20px; }
+.barra-plano { height: 10px; border-radius: 6px; background: var(--bg); overflow: hidden; margin: 10px 0; } .barra-plano div { height: 100%; width: 0; background: var(--gradiente-ia, #4a63e8); transition: width .4s; }
+.lembrete-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; } .lembrete-box input { width: 210px; max-width: 100%; flex: 0 0 auto; margin: 0; }
+.lembrete-box button[aria-pressed="true"] { background: var(--primary-btn, #4a63e8); color: #fff; border-color: transparent; }
+.planos-lista a[aria-current="true"] { background: var(--primary-btn, #4a63e8); color: #fff; border-color: transparent; }
+.cal-dia { margin-top: 18px; } .cal-dia h4 { margin: 0 0 8px; font-size: 15px; }
+.cal-itens { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.cal-item { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px; display: grid; gap: 8px; align-content: start; scroll-margin-top: 20px; }
+.cal-item.postado { border-style: dashed; } .cal-item.postado .cal-thumb { opacity: .55; } .cal-item:target { box-shadow: 0 0 0 3px var(--primary); }
+.cal-topo { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; } .cal-tipo { font-weight: 700; }
+.cal-thumb { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 10px; background: var(--bg); display: block; }
+.cal-thumb.vertical { aspect-ratio: 9 / 16; max-height: 360px; }
+.cal-tema { font-size: 13px; color: var(--text-dim); margin: 0; }
+.cal-acoes { display: flex; flex-wrap: wrap; gap: 6px; } .cal-acoes .btn { margin: 0; }
+.cal-stories { font-size: 12.5px; color: var(--text-dim); margin: 0; padding-left: 16px; }
+.sub-titulo { margin: 26px 0 10px; font-size: 18px; }
 .mkt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .mkt-chips button { margin: 0; }
 .mkt-chips button[aria-pressed="true"] { background: var(--primary-btn, #4a63e8); color: #fff; border-color: transparent; }
@@ -204,6 +264,69 @@ textarea.mkt-legenda { min-height: 160px; }
     <?= flash_render() ?>
     <?php if (!ia_configurada()): ?><?= alerta('aviso', 'Sem chave de IA, os posts saem do banco de posts prontos da plataforma (variando modelo, estilo e roteiro) e dos dados reais da sua prospecção. Com a IA ligada (o Google Gemini é grátis), cada post é escrito sob medida.') ?><?php endif; ?>
 
+
+    <!-- ================= LIGAR AS IAS GRÁTIS ================= -->
+    <section class="form-box largo ias-box" id="ias" aria-labelledby="t-ias">
+        <h3 id="t-ias">⚡ IAs do marketing <small class="muted">— o que já está ligado (tudo grátis)</small></h3>
+        <div class="ias-grade">
+            <?php
+            $cards = [
+                ['texto', '✍ Texto (copy, legendas, roteiros)', 'Google Gemini grátis, Groq ou Cerebras', 'configuracoes.php#ia', ['Abra aistudio.google.com → Get API key → Create API key.', 'Cole em Configurações → Inteligência artificial e clique em Testar.']],
+                ['foto', '📸 Fotos com IA', 'Cloudflare FLUX: ~200 fotos/dia, sem cartão', 'configuracoes.php#fotos-ia', ['Crie a conta em dash.cloudflare.com.', 'AI → Workers AI → Use REST API: copie o Account ID e crie o token.', 'Cole em Configurações → Fotos com IA e clique em "Testar geração de foto".']],
+                ['banco', '🖼 Banco de fotos', 'Openverse (sem chave), Pixabay e Unsplash', 'configuracoes.php#fotos', ['O Openverse já funciona sem chave.', 'Para mais fotos: chave grátis do Pixabay (pixabay.com/api/docs).']],
+                ['voz', '🎙 Voz dos Reels', 'Azure Speech: 500 mil caracteres/mês grátis', 'configuracoes.php#voz', ['Crie a conta grátis em azure.microsoft.com/free.', 'Crie um recurso Speech (Brazil South, Free F0) e copie a Chave 1.', 'Cole em Configurações → Voz dos vídeos e clique em "Testar a voz". Sem ela, use a voz grátis do Puter.']],
+                ['whats', '⏰ Lembrete na hora de postar', 'No seu WhatsApp, com a legenda pronta', '#lembrete', ['Conecte o WhatsApp da plataforma (Admin → WhatsApp).', 'Coloque o seu número logo abaixo, em "Me avisar na hora de postar".']],
+            ];
+            foreach ($cards as [$k, $tit, $sub, $link, $passos]): $okIa = $ias[$k]['ok']; ?>
+            <div class="ia-card <?= $okIa ? 'ia-ok' : 'ia-falta' ?>">
+                <strong><?= $tit ?></strong>
+                <span class="ia-st"><?= $okIa ? '✔ Ligado' . ($ias[$k]['nome'] ? ' — ' . e($ias[$k]['nome']) : '') : '✖ Falta ligar' ?></span>
+                <small><?= e($sub) ?></small>
+                <?php if (!$okIa): ?><details><summary class="link">Como ligar (2 min)</summary><ol><?php foreach ($passos as $ps): ?><li><?= e($ps) ?></li><?php endforeach; ?></ol></details>
+                <a class="btn btn-sm" href="<?= e($link) ?>">Ligar agora</a><?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+            <div class="ia-card">
+                <strong>🎬 Vídeo com IA (animar a foto)</strong>
+                <span class="ia-st">No site do Kling ou Dreamina (grátis por dia)</span>
+                <small>Cada Reels do plano já traz o prompt pronto: baixe a foto, cole o prompt em klingai.com → Image to Video e baixe o vídeo.</small>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= PLANO PRONTO ================= -->
+    <section class="form-box largo" id="plano" aria-labelledby="t-plano">
+        <h3 id="t-plano">📅 Plano com os posts prontos</h3>
+        <p class="dica">Um clique e a IA monta o calendário com o melhor horário de cada formato. Cada dia vem com a arte (foto feita por IA), a legenda, as hashtags, o roteiro e o vídeo do Reels, e os stories com o adesivo certo. É só postar.</p>
+        <div class="form-row">
+            <div><label>Período</label><div class="mkt-chips" id="plPeriodo"><button type="button" class="btn btn-ghost btn-sm" data-v="semana" aria-pressed="true">Próxima semana</button><button type="button" class="btn btn-ghost btn-sm" data-v="mes" aria-pressed="false">Próximo mês (4 semanas)</button></div></div>
+            <div><label>Posts por semana</label><div class="mkt-chips" id="plPorSemana"><?php foreach ([3 => '3', 5 => '5', 7 => 'Todo dia'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $k === 5 ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div></div>
+        </div>
+        <div class="form-row">
+            <div><label>Stories por dia</label><div class="mkt-chips" id="plStories"><?php foreach ([0 => 'Sem stories', 1 => '1', 2 => '2', 3 => '3'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $k === 2 ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div></div>
+            <div><label for="plPublico">Para quem (opcional)</label><input type="text" id="plPublico" list="listaSeg" placeholder="Ex: Barbearia, Hamburgueria, Clínica…"></div>
+        </div>
+        <div class="mkt-acoes">
+            <button type="button" class="btn btn-wa-plano" id="btnPlano" onclick="MKTPLANO.criar(this)">⚡ Gerar meu plano pronto</button>
+            <span class="muted" id="plStatus" aria-live="polite"></span>
+        </div>
+        <div class="barra-plano" id="plBarra" hidden><div id="plBarraIn"></div></div>
+        <div class="lembrete-box" id="lembrete">
+            <button type="button" class="btn btn-ghost btn-sm" id="plLembrete" aria-pressed="<?= get_config('mkt_lembrete', '1') === '1' ? 'true' : 'false' ?>" onclick="MKTPLANO.lembrete()">⏰ Me avisar no WhatsApp na hora de postar</button>
+            <label for="plNumero" class="sr-only">Seu WhatsApp para os avisos</label><input type="tel" id="plNumero" value="<?= e(get_config('mkt_whatsapp', '') ?: get_config('prosp_whatsapp_alerta', '')) ?>" placeholder="Seu WhatsApp com DDD" inputmode="numeric">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="MKTPLANO.lembrete(true)">Salvar número</button>
+        </div>
+
+        <?php if ($planos): ?>
+        <div class="planos-lista">
+            <label>Seus planos</label>
+            <div class="mkt-chips"><?php foreach ($planos as $pl): ?><a class="btn btn-ghost btn-sm" href="?plano=<?= (int)$pl['id'] ?>#plano" aria-current="<?= (int)$pl['id'] === $planoAtual ? 'true' : 'false' ?>"><?= e($pl['nome']) ?> · <?= (int)$pl['prontos'] ?>/<?= (int)$pl['total'] ?></a><?php endforeach; ?></div>
+        </div>
+        <?php endif; ?>
+        <div id="calendario" data-plano="<?= $planoAtual ?>"></div>
+    </section>
+
+    <h2 class="sub-titulo">Criar um post avulso</h2>
     <div class="mkt-grade">
     <div>
         <section class="form-box largo">
@@ -332,7 +455,10 @@ textarea.mkt-legenda { min-height: 160px; }
 </main>
 </div>
 <div id="toasts"></div>
-<script src="/assets/js/gds-criativos.js?v=2"></script>
+<script src="/assets/js/gds-criativos.js?v=3"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+<script>window.MKT_CFG = <?= json_encode(['marca' => $marca, 'voz' => mkt_voz_configurada(), 'tipos' => MKT_TIPOS], JSON_UNESCAPED_UNICODE) ?>;</script>
+<script src="/assets/js/gds-plano-mkt.js?v=1" defer></script>
 <script>
 const MKT = (() => {
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;

@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key', 'pixabay_api_key', 'unsplash_api_key', 'img_cf_token'];
+$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key', 'pixabay_api_key', 'unsplash_api_key', 'img_cf_token', 'azure_tts_key'];
 $provedores = ['gemini', 'anthropic', 'openai'];
 
 // Testa a IA com uma chamada curtinha (o botão "Testar" chama via fetch)
@@ -19,6 +19,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_imagem'])) {
     $r = img_ia_gerar(img_ia_prompt_foto('a cozy local coffee shop counter with a smiling barista, morning light'), '4:5', 'ia/teste');
     responder_json($r['ok'] ? ['ok' => true, 'url' => $r['url'], 'msg' => 'Gerou com ' . img_ia_nome($r['provedor']) . ' em ' . round(microtime(true) - $t0) . 's.' . ($r['tentativas'] ? ' Antes falhou: ' . implode(' · ', $r['tentativas']) : '')]
                              : ['ok' => false, 'msg' => $r['erro']]);
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_voz'])) {
+    require_once __DIR__ . '/../includes/marketing_ia.php';
+    session_write_close();
+    $r = mkt_voz('Olá! Esta é a voz dos seus vídeos. Seu cliente marca o horário sozinho, e a confirmação chega no WhatsApp.');
+    responder_json($r['ok'] ? ['ok' => true, 'msg' => 'Voz funcionando — ouça abaixo.', 'audio' => $r['url']] : ['ok' => false, 'msg' => $r['erro']]);
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_fotos'])) {
     session_write_close();
@@ -60,6 +66,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     set_config('img_cf_modelo', array_key_exists($_POST['img_cf_modelo'] ?? '', img_ia_cf_modelos()) ? $_POST['img_cf_modelo'] : '');
     set_config('img_poll_modelo', preg_replace('/[^a-z0-9.\/_\-]/', '', strtolower(trim($_POST['img_poll_modelo'] ?? ''))));
     set_config('fotos_openverse', isset($_POST['fotos_openverse']) ? '1' : '0');
+    set_config('azure_tts_regiao', preg_replace('/[^a-z0-9]/', '', strtolower(trim($_POST['azure_tts_regiao'] ?? ''))) ?: 'brazilsouth');
+    require_once __DIR__ . '/../includes/marketing_ia.php';
+    set_config('azure_tts_voz', array_key_exists($_POST['azure_tts_voz'] ?? '', mkt_vozes()) ? $_POST['azure_tts_voz'] : 'pt-BR-FranciscaNeural');
     // Campos secretos: vazio = manter o valor atual (a tela nunca mostra a chave inteira)
     foreach ($segredos as $chave) {
         $v = trim($_POST[$chave] ?? '');
@@ -132,7 +141,7 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
     <div class="grid-2">
     <form method="post" class="form-box largo">
         <?= csrf_campo() ?>
-        <h3><?= icone('brilho', 16) ?> Inteligência Artificial</h3>
+        <h3 id="ia"><?= icone('brilho', 16) ?> Inteligência Artificial</h3>
         <label>IA principal</label>
         <select name="ia_provider" id="provedor" onchange="trocarProvedor()">
             <option value="gemini" <?= $cfg['ia_provider'] == 'gemini' ? 'selected' : '' ?>>Google Gemini (tem plano gratuito)</option>
@@ -229,6 +238,22 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
         <div class="acoes-form" style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" onclick="testarMidia('testar_imagem', this)">Testar geração de foto</button></div>
         <div id="resTesteMidia" class="dica" aria-live="polite"></div>
 
+        <h3 style="margin-top:24px" id="voz">Voz dos vídeos (narração com IA)</h3>
+        <?php require_once __DIR__ . '/../includes/marketing_ia.php'; ?>
+        <p class="dica">Os Reels do Marketing saem narrados por uma voz neural em português do Brasil. Grátis no plano F0 da <strong>Azure Speech</strong>: 500 mil caracteres por mês (uns 1.000 vídeos curtos).</p>
+        <details class="dica-passos" <?= get_config('azure_tts_key', '') === '' ? 'open' : '' ?>><summary><strong>Como pegar a chave grátis em 3 minutos</strong></summary>
+            <ol class="dica"><li>Crie a conta grátis em <a class="link" href="https://azure.microsoft.com/free" target="_blank" rel="noopener">azure.microsoft.com/free</a>.</li>
+            <li>No <a class="link" href="https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices" target="_blank" rel="noopener">portal</a>, crie um recurso <strong>Speech</strong>: região <strong>Brazil South</strong> e tipo de preço <strong>Free F0</strong>.</li>
+            <li>Abra o recurso → <strong>Chaves e Ponto de Extremidade</strong> → copie a <strong>Chave 1</strong> e cole abaixo. A região fica <code>brazilsouth</code>.</li></ol></details>
+        <div class="form-row">
+            <div><label>Região</label><input type="text" name="azure_tts_regiao" value="<?= e(get_config('azure_tts_regiao', 'brazilsouth')) ?>" placeholder="brazilsouth"></div>
+            <div><label>Voz</label><select name="azure_tts_voz"><?php foreach (mkt_vozes() as $k => $v): ?><option value="<?= e($k) ?>" <?= get_config('azure_tts_voz', '') === $k ? 'selected' : '' ?>><?= e($v) ?></option><?php endforeach; ?></select></div>
+        </div>
+        <?= campo_segredo('azure_tts_key', 'Azure Speech — Chave 1', $cfg['azure_tts_key'], 'Chave do recurso Speech') ?>
+        <p class="dica">Sem a Azure, o Marketing oferece a voz grátis do <strong>Puter</strong> (no navegador, pede um login grátis na 1ª vez).</p>
+        <div class="acoes-form" style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" onclick="testarMidia('testar_voz', this, 'resTesteVoz')">Testar a voz</button></div>
+        <div id="resTesteVoz" class="dica" aria-live="polite"></div>
+
         <h3 style="margin-top:24px" id="email">E-mail (recuperação de senha e avisos)</h3>
         <p class="dica">Sem isso, os e-mails saem pela função mail() da hospedagem e quase sempre não chegam. Na Hostinger: crie um e-mail (ex.: contato@seudominio.com.br) em <strong>E-mails</strong> e use servidor <code>smtp.hostinger.com</code>, porta <code>465</code>, usuário = o e-mail completo e a senha dele.</p>
         <div class="form-row">
@@ -303,13 +328,14 @@ async function testarIA(prov, btn) {
     btn.disabled = false;
 }
 // Testa fotos (salve antes: o teste usa as chaves já gravadas)
-async function testarMidia(acao, btn) {
-    const el = document.getElementById('resTesteMidia');
-    btn.disabled = true; el.style.color = ''; el.textContent = acao === 'testar_imagem' ? 'Gerando uma foto de teste (pode levar até 1 minuto)…' : 'Consultando os bancos de fotos…';
+async function testarMidia(acao, btn, alvo) {
+    const el = document.getElementById(alvo || 'resTesteMidia');
+    btn.disabled = true; el.style.color = ''; el.textContent = acao === 'testar_imagem' ? 'Gerando uma foto de teste (pode levar até 1 minuto)…' : acao === 'testar_voz' ? 'Gerando a voz…' : 'Consultando os bancos de fotos…';
     try {
         const d = await post({ [acao]: 1 });
         el.style.color = d.ok ? 'var(--ok)' : 'var(--danger)';
         el.textContent = d.msg;
+        if (d.audio) { const a = document.createElement('audio'); a.controls = true; a.src = d.audio; a.style.cssText = 'display:block;margin-top:8px'; el.appendChild(a); a.play().catch(() => {}); }
         if (d.url) { const i = new Image(); i.src = d.url; i.alt = 'Foto de teste gerada'; i.style.cssText = 'display:block;max-width:220px;border-radius:10px;margin-top:8px'; el.appendChild(i); }
     } catch (e) { el.textContent = 'O teste demorou demais ou falhou. Tente de novo.'; }
     btn.disabled = false;
