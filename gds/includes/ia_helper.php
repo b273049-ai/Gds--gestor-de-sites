@@ -19,6 +19,7 @@ function ia_presets_openai() {
     return [
         'groq'       => ['nome' => 'Groq (grátis, muito rápido)', 'url' => 'https://api.groq.com/openai/v1', 'modelo' => 'openai/gpt-oss-120b', 'chave' => 'console.groq.com → API Keys'],
         'openrouter' => ['nome' => 'OpenRouter (modelos ":free")', 'url' => 'https://openrouter.ai/api/v1', 'modelo' => '', 'chave' => 'openrouter.ai → Keys (use um modelo terminado em ":free")'],
+        'cerebras'   => ['nome' => 'Cerebras (grátis, ~1 milhão de tokens/dia)', 'url' => 'https://api.cerebras.ai/v1', 'modelo' => 'gpt-oss-120b', 'chave' => 'cloud.cerebras.ai → API Keys'],
         'mistral'    => ['nome' => 'Mistral (plano grátis)', 'url' => 'https://api.mistral.ai/v1', 'modelo' => 'mistral-small-latest', 'chave' => 'console.mistral.ai → API Keys'],
         'outro'      => ['nome' => 'Outro (compatível com OpenAI)', 'url' => '', 'modelo' => '', 'chave' => 'documentação do serviço'],
     ];

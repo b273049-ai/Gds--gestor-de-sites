@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key'];
+$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key', 'pixabay_api_key', 'unsplash_api_key', 'img_cf_token'];
 $provedores = ['gemini', 'anthropic', 'openai'];
 
 // Testa a IA com uma chamada curtinha (o botão "Testar" chama via fetch)
@@ -11,6 +11,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_ia'])) {
     $prov = in_array($_POST['provedor'] ?? '', $provedores, true) ? $_POST['provedor'] : get_config('ia_provider', 'gemini');
     $r = chamar_ia_provedor($prov, 'Responda apenas: OK', 50, 30, null, null, ['esforco' => 'low']);
     responder_json($r['ok'] ? ['ok' => true, 'msg' => ia_nome_provedor($prov) . ' funcionando! Resposta em ' . round(microtime(true) - $t0, 1) . 's.'] : ['ok' => false, 'msg' => $r['erro']]);
+}
+// Testa a geração de foto: tenta os serviços na ordem e diz qual funcionou
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_imagem'])) {
+    @set_time_limit(240); session_write_close();
+    $t0 = microtime(true);
+    $r = img_ia_gerar(img_ia_prompt_foto('a cozy local coffee shop counter with a smiling barista, morning light'), '4:5', 'ia/teste');
+    responder_json($r['ok'] ? ['ok' => true, 'url' => $r['url'], 'msg' => 'Gerou com ' . img_ia_nome($r['provedor']) . ' em ' . round(microtime(true) - $t0) . 's.' . ($r['tentativas'] ? ' Antes falhou: ' . implode(' · ', $r['tentativas']) : '')]
+                             : ['ok' => false, 'msg' => $r['erro']]);
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_fotos'])) {
+    session_write_close();
+    $out = [];
+    foreach (fotos_fontes() as $f) { $n = count(fotos_buscar_em($f, 'barbershop', 4, 'landscape')); $out[] = ucfirst($f) . ': ' . ($n ? "✔ $n fotos" : '✖ não respondeu'); }
+    responder_json(['ok' => (bool)$out, 'msg' => $out ? implode(' · ', $out) : 'Nenhum banco de fotos ligado.']);
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['listar_modelos'])) {
     $prov = in_array($_POST['provedor'] ?? '', $provedores, true) ? $_POST['provedor'] : 'gemini';
@@ -42,6 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     set_config('smtp_nome', mb_substr(trim($_POST['smtp_nome'] ?? ''), 0, 60));
     set_config('img_ia_automatico', isset($_POST['img_ia_automatico']) ? '1' : '0');
     set_config('img_gemini_modelo', preg_replace('/[^a-z0-9.\-]/', '', strtolower(trim($_POST['img_gemini_modelo'] ?? ''))));
+    set_config('img_cf_conta', preg_replace('/[^a-f0-9]/', '', strtolower(trim($_POST['img_cf_conta'] ?? ''))));
+    set_config('img_cf_modelo', array_key_exists($_POST['img_cf_modelo'] ?? '', img_ia_cf_modelos()) ? $_POST['img_cf_modelo'] : '');
+    set_config('img_poll_modelo', preg_replace('/[^a-z0-9.\/_\-]/', '', strtolower(trim($_POST['img_poll_modelo'] ?? ''))));
+    set_config('fotos_openverse', isset($_POST['fotos_openverse']) ? '1' : '0');
     // Campos secretos: vazio = manter o valor atual (a tela nunca mostra a chave inteira)
     foreach ($segredos as $chave) {
         $v = trim($_POST[$chave] ?? '');
@@ -176,19 +194,40 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
         <?= campo_segredo('mercadopago_access_token', 'Mercado Pago — Access Token (cobrança das assinaturas)', $cfg['mercadopago_access_token'], 'APP_USR-...') ?>
         <p class="dica">WhatsApp automático e domínios próprios têm telas próprias: <a class="link" href="whatsapp.php">WhatsApp</a> · <a class="link" href="dominios.php">Domínios</a>.</p>
 
-        <h3 style="margin-top:24px">Fotos profissionais para os sites</h3>
-        <?= campo_segredo('pexels_api_key', 'Pexels — API Key (grátis)', $cfg['pexels_api_key'], 'Cole a chave do pexels.com/api') ?>
-        <p class="dica">Sites sem fotos próprias ganham fotos reais do tipo de negócio (topo do site e no Estúdio IA). Crie a chave grátis em <a class="link" href="https://www.pexels.com/api/" target="_blank" rel="noopener">pexels.com/api</a> → "Your API Key".</p>
+        <h3 style="margin-top:24px" id="fotos">Fotos profissionais para os sites (banco de fotos grátis)</h3>
+        <p class="dica">Sites sem fotos próprias ganham fotos reais do tipo de negócio, e o Marketing busca fotos para as artes. A plataforma tenta os bancos na ordem: Pexels → Pixabay → Unsplash → Openverse.</p>
+        <label class="check"><input type="checkbox" name="fotos_openverse" value="1" <?= get_config('fotos_openverse', '1') === '1' ? 'checked' : '' ?>> Openverse — <strong>sem chave</strong>, só fotos de domínio público (não precisam de crédito)</label>
+        <?= campo_segredo('pixabay_api_key', 'Pixabay — chave grátis', $cfg['pixabay_api_key'], 'Cole a chave do Pixabay') ?>
+        <p class="dica">Crie a conta em <a class="link" href="https://pixabay.com/accounts/register/" target="_blank" rel="noopener">pixabay.com</a> e copie a chave em <a class="link" href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">pixabay.com/api/docs</a> (aparece no meio da página, em "key"). As fotos são baixadas para o seu servidor, como o Pixabay exige.</p>
+        <?= campo_segredo('unsplash_api_key', 'Unsplash — Access Key grátis', $cfg['unsplash_api_key'], 'Access Key do Unsplash') ?>
+        <p class="dica">Em <a class="link" href="https://unsplash.com/oauth/applications" target="_blank" rel="noopener">unsplash.com/oauth/applications</a> → New Application → copie a <strong>Access Key</strong> (50 buscas por hora no modo demo).</p>
+        <?= campo_segredo('pexels_api_key', 'Pexels — API Key (só se você já tiver)', $cfg['pexels_api_key'], 'Chave antiga do Pexels') ?>
+        <p class="dica">O Pexels pausou a criação de chaves novas. Se você já tem uma, ela continua funcionando.</p>
+        <div class="acoes-form" style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" onclick="testarMidia('testar_fotos', this)">Testar bancos de fotos</button></div>
 
-        <h3 style="margin-top:24px">Fotos exclusivas geradas por IA</h3>
+        <h3 style="margin-top:24px" id="fotos-ia">Fotos exclusivas geradas por IA</h3>
+        <p class="dica"><strong>O plano grátis do Google Gemini não gera mais imagem</strong> (só com faturamento). O caminho grátis que funciona hoje é o <strong>Cloudflare Workers AI</strong> (FLUX, cerca de 200 fotos por dia, sem cartão) — e o Pollinations como reserva.</p>
         <label>Quem gera as fotos</label>
         <select name="img_ia_provedor"><?php foreach (img_ia_provedores() as $k => $v): ?><option value="<?= $k ?>" <?= get_config('img_ia_provedor', 'auto') === $k ? 'selected' : '' ?>><?= e($v) ?></option><?php endforeach; ?></select>
-        <?= campo_segredo('img_openai_key', 'OpenAI — API Key (só se escolher OpenAI)', $cfg['img_openai_key'], 'sk-...') ?>
-        <?= campo_segredo('img_pollinations_key', 'Pollinations — chave (opcional: sem ela o grátis libera 1 foto a cada 45s; crie em enter.pollinations.ai)', $cfg['img_pollinations_key'], 'sk_...') ?>
-        <label>Modelo de imagem do Gemini (avançado)</label>
-        <input type="text" name="img_gemini_modelo" value="<?= e(get_config('img_gemini_modelo', '')) ?>" placeholder="gemini-2.5-flash-image">
+        <details class="dica-passos" <?= get_config('img_cf_conta', '') === '' ? 'open' : '' ?>><summary><strong>Cloudflare (grátis) — como pegar o ID e o token em 2 minutos</strong></summary>
+            <ol class="dica"><li>Crie a conta grátis em <a class="link" href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">dash.cloudflare.com</a> (não pede cartão).</li>
+            <li>No menu, abra <strong>AI → Workers AI</strong> e clique em <strong>Use REST API</strong>.</li>
+            <li>Copie o <strong>Account ID</strong> e clique em <strong>Create a Workers AI API Token</strong> → Create → copie o token.</li></ol></details>
+        <div class="form-row">
+            <div><label>Cloudflare — Account ID</label><input type="text" name="img_cf_conta" value="<?= e(get_config('img_cf_conta', '')) ?>" placeholder="32 letras e números" autocomplete="off"></div>
+            <div><label>Modelo</label><select name="img_cf_modelo"><?php foreach (img_ia_cf_modelos() as $k => $v): ?><option value="<?= e($k) ?>" <?= get_config('img_cf_modelo', '') === $k ? 'selected' : '' ?>><?= e($v) ?></option><?php endforeach; ?></select></div>
+        </div>
+        <?= campo_segredo('img_cf_token', 'Cloudflare — API Token (Workers AI)', $cfg['img_cf_token'], 'Token do Workers AI') ?>
+        <?= campo_segredo('img_pollinations_key', 'Pollinations — chave sk_ (grátis em enter.pollinations.ai/keys)', $cfg['img_pollinations_key'], 'sk_...') ?>
+        <?= campo_segredo('img_openai_key', 'OpenAI — API Key (pago, opcional)', $cfg['img_openai_key'], 'sk-...') ?>
+        <details><summary class="dica">Avançado</summary>
+            <label>Modelo do Pollinations (vazio = padrão)</label><input type="text" name="img_poll_modelo" value="<?= e(get_config('img_poll_modelo', '')) ?>" placeholder="black-forest-labs/flux.1-schnell">
+            <label>Modelo de imagem do Gemini (só com faturamento)</label><input type="text" name="img_gemini_modelo" value="<?= e(get_config('img_gemini_modelo', '')) ?>" placeholder="gemini-2.5-flash-image">
+        </details>
         <label class="check"><input type="checkbox" name="img_ia_automatico" value="1" <?= get_config('img_ia_automatico', '1') === '1' ? 'checked' : '' ?>> Gerar sozinho 3 fotos para cada site publicado sem foto (pela rotina automática / cron)</label>
-        <p class="dica">Usadas no Estúdio IA ("Gerar fotos exclusivas") e no Marketing com IA. Agora: <strong><?= e(img_ia_provedores()[img_ia_provedor()] ?? img_ia_provedor()) ?></strong><?= img_ia_disponivel() ? '' : ' — não configurado' ?>.</p>
+        <p class="dica">Ordem que a plataforma vai tentar agora: <strong><?= e(implode(' → ', array_map('img_ia_nome', img_ia_cadeia())) ?: 'nenhum') ?></strong>. Se um falhar ou acabar a cota do dia, o próximo gera.</p>
+        <div class="acoes-form" style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" onclick="testarMidia('testar_imagem', this)">Testar geração de foto</button></div>
+        <div id="resTesteMidia" class="dica" aria-live="polite"></div>
 
         <h3 style="margin-top:24px" id="email">E-mail (recuperação de senha e avisos)</h3>
         <p class="dica">Sem isso, os e-mails saem pela função mail() da hospedagem e quase sempre não chegam. Na Hostinger: crie um e-mail (ex.: contato@seudominio.com.br) em <strong>E-mails</strong> e use servidor <code>smtp.hostinger.com</code>, porta <code>465</code>, usuário = o e-mail completo e a senha dele.</p>
@@ -261,6 +300,18 @@ async function testarIA(prov, btn) {
     btn.disabled = true; resultado(prov, 'Testando…');
     try { const d = await post({ testar_ia: 1, provedor: prov }); resultado(prov, d.msg, d.ok); }
     catch (e) { resultado(prov, 'Falha ao testar.', false); }
+    btn.disabled = false;
+}
+// Testa fotos (salve antes: o teste usa as chaves já gravadas)
+async function testarMidia(acao, btn) {
+    const el = document.getElementById('resTesteMidia');
+    btn.disabled = true; el.style.color = ''; el.textContent = acao === 'testar_imagem' ? 'Gerando uma foto de teste (pode levar até 1 minuto)…' : 'Consultando os bancos de fotos…';
+    try {
+        const d = await post({ [acao]: 1 });
+        el.style.color = d.ok ? 'var(--ok)' : 'var(--danger)';
+        el.textContent = d.msg;
+        if (d.url) { const i = new Image(); i.src = d.url; i.alt = 'Foto de teste gerada'; i.style.cssText = 'display:block;max-width:220px;border-radius:10px;margin-top:8px'; el.appendChild(i); }
+    } catch (e) { el.textContent = 'O teste demorou demais ou falhou. Tente de novo.'; }
     btn.disabled = false;
 }
 async function listarModelos(prov, btn) {

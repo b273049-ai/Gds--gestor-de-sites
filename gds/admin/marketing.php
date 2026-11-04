@@ -16,6 +16,19 @@ $objetivos = [
     'dados'        => 'Dados reais da sua base (números verdadeiros da prospecção)',
 ];
 
+// Modelos de copy consagrados (a IA escreve seguindo a estrutura escolhida)
+$frameworks = [
+    'auto'      => ['A IA escolhe o melhor', ''],
+    'aida'      => ['AIDA — Atenção, Interesse, Desejo, Ação', 'AIDA: 1ª linha prende a atenção, depois desperta interesse com um fato do dia a dia do público, cria desejo mostrando o resultado e termina com uma ação clara.'],
+    'pas'       => ['PAS — Problema, Agitação, Solução', 'PAS: nomeie o problema do público, agite (o que ele perde por causa disso, sem exagero) e apresente a solução.'],
+    'bab'       => ['Antes → Depois → Ponte', 'Antes-Depois-Ponte: como é a rotina hoje (antes), como fica com a solução (depois) e como chegar lá (ponte = a plataforma).'],
+    '4u'        => ['4U — Útil, Urgente, Único, Específico', '4U: título útil, com urgência real (sem inventar prazo), único e bem específico para o público.'],
+    'historia'  => ['História curta de um dono de negócio', 'Storytelling: uma mini-história de um dono de negócio do público (deixe claro que é um exemplo), com virada e moral.'],
+    'mito'      => ['Mito × Verdade', 'Mito x verdade: derrube uma crença comum do público sobre ter site/agendamento online, com argumento simples.'],
+    'lista'     => ['Lista rápida (3 a 5 dicas)', 'Lista: 3 a 5 dicas curtas e práticas que o público pode usar hoje; a plataforma aparece como a forma mais fácil.'],
+];
+$redes = ['instagram' => 'Instagram', 'tiktok' => 'TikTok', 'facebook' => 'Facebook', 'linkedin' => 'LinkedIn', 'whatsapp_status' => 'Status do WhatsApp', 'google' => 'Perfil no Google'];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     @set_time_limit(120);
     $marca = get_config('mkt_marca', 'GDS Sites');
@@ -32,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             $publico = trim($_POST['publico'] ?? '') ?: 'pequenos negócios locais em geral';
             $formato = in_array($_POST['formato'] ?? '', ['feed', 'story', 'quadrado'], true) ? $_POST['formato'] : 'feed';
             $extra = mb_substr(trim($_POST['extra'] ?? ''), 0, 400);
+            $fw = $frameworks[$_POST['framework'] ?? 'auto'] ?? $frameworks['auto'];
+            $redesPost = array_values(array_intersect(explode(',', (string)($_POST['redes'] ?? '')), array_keys($redes)));
+            $adaptar = array_values(array_diff($redesPost, ['instagram', 'tiktok']));
             $preco = get_config('mkt_preco', '');
             $dadosReais = $chaveObj === 'dados' ? mkt_dados_reais(trim($_POST['publico'] ?? '')) : null;
             if ($chaveObj === 'dados' && !$dadosReais) responder_json(['ok' => false, 'erro' => 'Ainda não há dados suficientes desse público na Prospecção (precisa de pelo menos 8 empresas numa cidade). Rode uma caçada ou deixe o público em branco.']);
@@ -53,6 +69,7 @@ OBJETIVO DO POST: $obj
 PÚBLICO: $publico
 FORMATO DA ARTE: $formato
 OBSERVAÇÕES DO DONO: "$extra"
+MODELO DE COPY: {$fw[1]}
 
 Regras: português do Brasil, linguagem simples e direta, sem promessas exageradas ou números inventados (nada de
 "aumente 300%"). Use *asteriscos* em 1 a 3 palavras do título para destacá-las na arte. Título com no máximo 9 palavras.
@@ -72,36 +89,53 @@ Responda APENAS com JSON válido:
 "dica_gravacao":"1 dica prática para gravar o Reels/TikTok com o celular"}
 O roteiro deve ter 4 a 6 cenas e durar de 15 a 30 segundos, com gancho forte nos 3 primeiros segundos.
 PROMPT;
+            // Versões para teste A/B e adaptação para as outras redes escolhidas
+            $prompt .= "\nInclua também no JSON: \"variacoes\": [2 versões alternativas, cada uma {\"titulo\",\"subtitulo\",\"cta\"} com ganchos de outro tipo (pergunta, número, contraste)]";
+            if ($adaptar) $prompt .= " e \"adaptacoes\": {" . implode(', ', array_map(fn($r) => '"' . $r . '": "' . ['facebook' => 'texto para Facebook (pode ser um pouco mais longo, tom de conversa)', 'linkedin' => 'texto para LinkedIn (tom profissional, foco no dono do negócio, sem hashtags em excesso)', 'whatsapp_status' => 'até 2 linhas curtíssimas para o Status do WhatsApp com chamada para responder', 'google' => 'post para o Perfil da Empresa no Google (até 300 caracteres, sem hashtags, com chamada)'][$r] . '"', $adaptar)) . '}';
+            $prompt .= '.';
             $r = chamar_ia_json($prompt, 2000, 60, 0.9, ['esforco' => 'low']);
             if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
             $d = $r['dados'];
+            $d['variacoes'] = array_slice(array_values(array_filter((array)($d['variacoes'] ?? []), fn($v) => is_array($v) && !empty($v['titulo']))), 0, 3);
+            $d['adaptacoes'] = array_intersect_key((array)($d['adaptacoes'] ?? []), array_flip($adaptar));
             if (!in_array($d['modelo'] ?? '', ['impacto', 'lista', 'antes_depois', 'depoimento', 'oferta', 'foto_titulo', 'foto_split', 'pergunta', 'numero'], true)) $d['modelo'] = 'impacto';
             if (!in_array($d['estilo'] ?? '', ['neon', 'editorial', 'bold', 'pop', 'minimal', 'luxo'], true)) $d['estilo'] = ['neon', 'editorial', 'bold', 'pop', 'minimal', 'luxo'][random_int(0, 5)];
             $pdo->prepare("INSERT INTO marketing_posts (rede, formato, tema, conteudo) VALUES (?,?,?,?)")
                 ->execute(['instagram/tiktok', $formato, mb_substr($obj, 0, 150), json_encode($d, JSON_UNESCAPED_UNICODE)]);
             responder_json(['ok' => true, 'post' => $d, 'formato' => $formato]);
         case 'gerar_semana':
-            if (!ia_configurada()) responder_json(['ok' => true, 'dias' => mkt_semana_sem_ia(trim($_POST['publico'] ?? '')), 'origem' => 'banco']);
+            $mes = ($_POST['periodo'] ?? '') === 'mes';
+            $porSemana = in_array((int)($_POST['por_semana'] ?? 5), [3, 5, 7], true) ? (int)$_POST['por_semana'] : 5;
+            $total = $mes ? $porSemana * 4 : min(7, $porSemana);
+            if (!ia_configurada()) {
+                $dias = [];
+                for ($i = 0; count($dias) < $total && $i < 6; $i++) $dias = array_merge($dias, mkt_semana_sem_ia(trim($_POST['publico'] ?? '')));
+                $dias = array_slice($dias, 0, $total);
+                if ($mes) foreach ($dias as $i => &$d) $d['dia'] = 'Semana ' . (intdiv($i, $porSemana) + 1) . ' · ' . ($d['dia'] ?? ''); unset($d);
+                responder_json(['ok' => true, 'dias' => $dias, 'origem' => 'banco']);
+            }
             $publico = trim($_POST['publico'] ?? '') ?: 'pequenos negócios locais';
-            $prompt = "Você é estrategista de conteúdo. Monte o calendário de 7 dias de posts (Instagram + TikTok) para vender a plataforma \"$marca\" "
+            $prompt = "Você é estrategista de conteúdo. Monte o calendário de " . ($mes ? "4 semanas ($porSemana posts por semana, $total no total)" : "$total posts da semana") . " (Instagram, TikTok e Status do WhatsApp) para vender a plataforma \"$marca\" "
                     . "(sites com IA para negócios locais, agendamento, WhatsApp automático, orçamento, delivery, domínio próprio) para o público: $publico. "
-                    . "Misture: dor, prova, educativo, bastidores, oferta e quebra de objeção. Responda APENAS JSON: "
-                    . '{"dias":[{"dia":"Segunda","formato":"Reels|Carrossel|Story|Feed","tema":"...","gancho":"primeira frase do post","objetivo":"dor|antes_depois|recursos|prova|oferta|educativo|bastidores|objecao"}]}';
-            $r = chamar_ia_json($prompt, 1500, 60, 0.9, ['esforco' => 'low']);
+                    . "Use pilares fixos e alterne: 40% educativo/dica útil, 25% prova e bastidores, 20% dor e quebra de objeção, 15% oferta. "
+                    . ($mes ? "Crie uma progressão: semana 1 atrai, semana 2 educa, semana 3 prova, semana 4 converte (com oferta no fim). " : '')
+                    . "Cada gancho deve ser específico e diferente (pergunta, número, contraste, erro comum, história). Responda APENAS JSON: "
+                    . '{"dias":[{"dia":"' . ($mes ? 'Semana 1 · Segunda' : 'Segunda') . '","formato":"Reels|Carrossel|Story|Feed","tema":"...","gancho":"primeira frase do post","objetivo":"dor|antes_depois|recursos|prova|oferta|educativo|bastidores|objecao","framework":"aida|pas|bab|4u|historia|mito|lista"}]}';
+            $r = chamar_ia_json($prompt, $mes ? 4000 : 1500, 90, 0.9, ['esforco' => 'low']);
             if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
-            responder_json(['ok' => true, 'dias' => array_slice((array)($r['dados']['dias'] ?? []), 0, 7)]);
+            responder_json(['ok' => true, 'dias' => array_slice((array)($r['dados']['dias'] ?? []), 0, $total)]);
         case 'foto_ia':
             // Foto exclusiva para a arte (gerada por IA e guardada em uploads/ia/marketing)
             session_write_close();
-            if (!img_ia_disponivel()) responder_json(['ok' => false, 'erro' => 'Configure a geração de fotos em Configurações → Fotos exclusivas geradas por IA.']);
+            if (!img_ia_disponivel()) responder_json(['ok' => false, 'erro' => 'A geração de fotos está desligada em Configurações → Fotos exclusivas geradas por IA.']);
             $cena = mb_substr(trim($_POST['cena'] ?? ''), 0, 300) ?: 'small business owner smiling while checking appointments on a smartphone in a modern local shop';
             $fmt = ($_POST['formato'] ?? '') === 'story' ? '9:16' : (($_POST['formato'] ?? '') === 'quadrado' ? '1:1' : '4:5');
             $r = img_ia_gerar(img_ia_prompt_foto($cena), $fmt, 'ia/marketing');
-            responder_json($r['ok'] ? ['ok' => true, 'url' => $r['url']] : ['ok' => false, 'erro' => $r['erro']]);
+            responder_json($r['ok'] ? ['ok' => true, 'url' => $r['url'], 'provedor' => img_ia_nome($r['provedor'])] : ['ok' => false, 'erro' => $r['erro'] . ' Configure um gerador grátis em Configurações → Fotos exclusivas geradas por IA (Cloudflare).']);
         case 'foto_banco':
             // Fotos profissionais (Pexels) baixadas para o servidor (a arte precisa da imagem no mesmo site para exportar)
             session_write_close();
-            if (!fotos_configurado()) responder_json(['ok' => false, 'erro' => 'Cadastre a chave grátis do Pexels em Configurações para buscar fotos.']);
+            if (!fotos_configurado()) responder_json(['ok' => false, 'erro' => 'Ligue um banco de fotos em Configurações (Pixabay, Unsplash ou o Openverse, que não precisa de chave).']);
             $termo = mb_substr(trim($_POST['termo'] ?? ''), 0, 80) ?: 'small business';
             $termo = fotos_termo_segmento(mb_strtolower(preg_replace('/\s+/', '-', $termo)), $termo, $termo);
             $pasta = img_ia_pasta('ia/marketing');
@@ -111,8 +145,9 @@ PROMPT;
                 $ch = curl_init($f['medio']); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_FOLLOWLOCATION => true]);
                 $bytes = curl_exec($ch); $ok = curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200; curl_close($ch);
                 if (!$ok || !$bytes) continue;
+                fotos_registrar_uso($f);
                 $salvo = img_ia_salvar($bytes, $pasta . '/banco-' . substr(md5($f['medio']), 0, 12), 1600);
-                if ($salvo) $urls[] = ['url' => '/uploads/ia/marketing/' . basename($salvo), 'autor' => $f['autor']];
+                if ($salvo) $urls[] = ['url' => '/uploads/ia/marketing/' . basename($salvo), 'autor' => $f['autor'], 'fonte' => $f['fonte'] ?? ''];
             }
             responder_json($urls ? ['ok' => true, 'fotos' => $urls] : ['ok' => false, 'erro' => 'Nenhuma foto encontrada para "' . $termo . '".']);
         case 'historico':
@@ -151,6 +186,10 @@ textarea.mkt-legenda { min-height: 160px; }
 .mkt-fotos button { padding: 0; border: 2px solid transparent; border-radius: 10px; overflow: hidden; aspect-ratio: 1; background: var(--bg); cursor: pointer; margin: 0; }
 .mkt-fotos button.ativo { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91,124,255,.25); }
 .mkt-fotos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.mkt-chips button { margin: 0; }
+.mkt-chips button[aria-pressed="true"] { background: var(--primary-btn, #4a63e8); color: #fff; border-color: transparent; }
+.mkt-adapt { margin-top: 12px; } .mkt-adapt textarea { min-height: 90px; }
 .mkt-paletas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .mkt-paletas button { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--border); padding: 0; margin: 0; cursor: pointer; }
 .mkt-paletas button.ativo { border-color: #fff; box-shadow: 0 0 0 3px var(--primary); }
@@ -176,19 +215,27 @@ textarea.mkt-legenda { min-height: 160px; }
                 <div><label>Formato</label><select id="formato"><option value="feed">Feed 4:5 (1080×1350)</option><option value="story">Story / Reels / TikTok 9:16</option><option value="quadrado">Quadrado 1:1</option></select></div>
             </div>
             <label>Observações (opcional)</label><input type="text" id="extra" placeholder="Ex: promoção de lançamento até sexta, foco em agendamento">
+            <label>Modelo de copy</label>
+            <select id="framework"><?php foreach ($frameworks as $k => $f): ?><option value="<?= $k ?>"><?= e($f[0]) ?></option><?php endforeach; ?></select>
+            <label>Onde vai postar <small class="muted">(a IA adapta o texto para cada rede marcada)</small></label>
+            <div class="mkt-chips" id="redes"><?php foreach ($redes as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-rede="<?= $k ?>" aria-pressed="<?= in_array($k, ['instagram', 'tiktok'], true) ? 'true' : 'false' ?>"><?= e($v) ?></button><?php endforeach; ?></div>
             <div class="mkt-acoes">
                 <button type="button" class="btn" id="btnGerar" onclick="MKT.gerar()"><?= icone('brilho', 16) ?> <?= ia_configurada() ? 'Gerar post com IA' : 'Gerar post' ?></button>
-                <button type="button" class="btn btn-ghost" onclick="MKT.semana()"><?= icone('calendario', 16) ?> Plano da semana</button>
             </div>
+            <label style="margin-top:14px">Planejamento</label>
+            <div class="mkt-chips" id="periodo"><button type="button" class="btn btn-ghost btn-sm" data-v="semana" aria-pressed="true">Esta semana</button><button type="button" class="btn btn-ghost btn-sm" data-v="mes" aria-pressed="false">O mês todo (4 semanas)</button></div>
+            <div class="mkt-chips" id="porSemana"><?php foreach ([3 => '3 posts/semana', 5 => '5 posts/semana', 7 => 'Todo dia'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $k === 5 ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div>
+            <div class="mkt-acoes"><button type="button" class="btn btn-ghost" onclick="MKT.semana()"><?= icone('calendario', 16) ?> Montar o calendário</button></div>
         </section>
 
         <section class="form-box largo" id="semana" hidden>
-            <h3>Calendário da semana</h3>
+            <h3 id="semanaTit">Calendário</h3>
             <div class="tabela-wrap"><table class="mkt-semana"><thead><tr><th>Dia</th><th>Formato</th><th>Tema e gancho</th><th></th></tr></thead><tbody id="semanaCorpo"></tbody></table></div>
         </section>
 
         <section class="form-box largo">
             <h3>2. Ajuste a arte</h3>
+            <div id="variacoes" hidden><label>Versões para testar (A/B)</label><div class="mkt-chips" id="variacoesBtns"></div></div>
             <label>Modelo</label>
             <div class="mkt-modelos" id="modelos">
                 <?php foreach (['foto_titulo' => '📷 Foto + título', 'foto_split' => '📷 Foto + bloco', 'pergunta' => '❓ Pergunta', 'numero' => '🔢 Número', 'impacto' => 'Impacto + celular', 'lista' => 'Lista', 'antes_depois' => 'Antes × Depois', 'depoimento' => 'Depoimento', 'oferta' => 'Oferta'] as $k => $v): ?>
@@ -222,6 +269,7 @@ textarea.mkt-legenda { min-height: 160px; }
             <div class="mkt-acoes">
                 <button type="button" class="btn btn-sm" id="btnFotoIa" onclick="MKT.fotoIa()"><?= icone('brilho', 14) ?> Gerar foto com IA</button>
                 <button type="button" class="btn btn-ghost btn-sm" onclick="MKT.fotoBanco()">🔎 Buscar no banco de fotos</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnPuter" onclick="MKT.fotoPuter()" title="Gera no seu navegador com uma conta grátis do Puter (abre um login na 1ª vez)">🌐 Gerar no navegador (Puter)</button>
                 <label class="btn btn-ghost btn-sm" style="margin:0;cursor:pointer">⬆ Usar minha foto<input type="file" accept="image/*" multiple hidden onchange="MKT.minhaFoto(this)"></label>
                 <button type="button" class="btn btn-ghost btn-sm" onclick="MKT.semFoto()">Sem foto</button>
             </div>
@@ -233,6 +281,7 @@ textarea.mkt-legenda { min-height: 160px; }
             <label>Legenda</label><textarea id="legenda" class="mkt-legenda"></textarea>
             <label>Hashtags</label><textarea id="hashtags" rows="2"></textarea>
             <div class="mkt-acoes"><button type="button" class="btn btn-ghost btn-sm" onclick="MKT.copiar()">Copiar legenda + hashtags</button></div>
+            <div id="adaptacoes"></div>
             <h3 style="margin-top:18px">Roteiro do Reels/TikTok</h3>
             <ol class="mkt-roteiro" id="roteiro"><li class="dica">Gere um post para ver o roteiro.</li></ol>
             <p class="dica" id="dicaGravacao"></p>
@@ -342,6 +391,22 @@ const MKT = (() => {
         b.disabled = false; b.innerHTML = t;
         if (!r.ok) { toast(r.erro, 'erro'); return; }
         await addFoto(r.url, true); if (!['foto_titulo', 'foto_split'].includes(modelo)) { modelo = 'foto_titulo'; preencher(); }
+        if (r.provedor) toast('Foto gerada com ' + r.provedor + '.', 'sucesso');
+    }
+    // Reserva sem chave: gera no navegador com o Puter (o próprio usuário entra com uma conta grátis do Puter)
+    async function fotoPuter() {
+        const b = $('btnPuter'); b.disabled = true; const t = b.textContent; b.textContent = 'Gerando no navegador…';
+        try {
+            if (!window.puter) await new Promise((ok, erro) => { const sc = document.createElement('script'); sc.src = 'https://js.puter.com/v2/'; sc.onload = ok; sc.onerror = () => erro(new Error('Não carregou o Puter.')); document.head.appendChild(sc); });
+            const cena = $('cenaFoto').value || 'small business owner smiling while checking appointments on a smartphone in a modern local shop';
+            const img = await puter.ai.txt2img('Professional editorial photograph: ' + cena + '. Natural light, realistic, authentic Brazilian small business. No text, no logos.');
+            // Converte para dados locais (a arte precisa da imagem no próprio site para baixar)
+            const blob = await (await fetch(img.src)).blob();
+            const url = await new Promise(ok => { const rd = new FileReader(); rd.onload = () => ok(rd.result); rd.readAsDataURL(blob); });
+            await addFoto(url, true); if (!['foto_titulo', 'foto_split'].includes(modelo)) { modelo = 'foto_titulo'; preencher(); }
+            toast('Foto gerada no navegador (Puter).', 'sucesso');
+        } catch (e) { toast('O Puter não gerou agora: ' + (e.message || e) + '. Use a geração com IA (Cloudflare) ou o banco de fotos.', 'erro'); }
+        b.disabled = false; b.textContent = t;
     }
     async function fotoBanco() {
         toast('Buscando fotos…');
@@ -380,16 +445,41 @@ const MKT = (() => {
         $('dicaGravacao').textContent = p.dica_gravacao ? '🎬 ' + p.dica_gravacao : '';
         preencher();
     }
+    // botões de escolha (redes: vários; período e frequência: um)
+    document.querySelectorAll('#redes button').forEach(b => b.addEventListener('click', () => b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')));
+    ['periodo', 'porSemana'].forEach(id => document.querySelectorAll('#' + id + ' button').forEach(b => b.addEventListener('click', () => document.querySelectorAll('#' + id + ' button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')))));
+    const escolhido = (id) => (document.querySelector('#' + id + ' button[aria-pressed="true"]') || {}).dataset?.v;
+    const redesMarcadas = () => [...document.querySelectorAll('#redes button[aria-pressed="true"]')].map(b => b.dataset.rede);
+    const NOME_REDE = { facebook: 'Facebook', linkedin: 'LinkedIn', whatsapp_status: 'Status do WhatsApp', google: 'Perfil no Google' };
+    function mostrarExtras(p) {
+        const vs = [{ titulo: conteudo.titulo, subtitulo: conteudo.subtitulo, cta: conteudo.cta }].concat(p.variacoes || []);
+        $('variacoes').hidden = vs.length < 2; $('variacoesBtns').innerHTML = '';
+        vs.forEach((v, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-ghost btn-sm'; b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+            b.textContent = 'Versão ' + 'ABC'[i] + ': ' + String(v.titulo || '').replace(/\*/g, '').slice(0, 48);
+            b.addEventListener('click', () => { Object.assign(conteudo, { titulo: v.titulo || conteudo.titulo, subtitulo: v.subtitulo ?? conteudo.subtitulo, cta: v.cta || conteudo.cta });
+                $('variacoesBtns').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')); preencher(); });
+            $('variacoesBtns').appendChild(b); });
+        const box = $('adaptacoes'); box.innerHTML = '';
+        Object.entries(p.adaptacoes || {}).forEach(([rede, txt]) => {
+            const d = document.createElement('div'); d.className = 'mkt-adapt';
+            d.innerHTML = '<label></label><textarea></textarea><button type="button" class="btn btn-ghost btn-sm">Copiar</button>';
+            d.querySelector('label').textContent = 'Texto para ' + (NOME_REDE[rede] || rede); d.querySelector('textarea').value = txt;
+            d.querySelector('button').addEventListener('click', () => { navigator.clipboard.writeText(d.querySelector('textarea').value); toast('Copiado!', 'sucesso'); });
+            box.appendChild(d);
+        });
+    }
     async function gerar() {
         const b = $('btnGerar'); b.disabled = true; const txt = b.innerHTML; b.textContent = 'Criando… (até 1 min)';
-        const r = await api({ acao: 'gerar_post', objetivo: $('objetivo').value, publico: $('publico').value, formato: $('formato').value, extra: $('extra').value });
+        const r = await api({ acao: 'gerar_post', objetivo: $('objetivo').value, publico: $('publico').value, formato: $('formato').value, extra: $('extra').value, framework: $('framework').value, redes: redesMarcadas().join(',') });
         b.disabled = false; b.innerHTML = txt;
         if (!r.ok) { toast(r.erro, 'erro'); return; }
-        mostrarPost(r.post); toast(r.origem === 'dados' ? 'Post criado com números reais da sua prospecção!' : r.origem === 'banco' ? 'Post pronto do banco da plataforma (sem IA). Ajuste o que quiser e baixe.' : 'Post criado! Ajuste o que quiser e baixe.', 'sucesso');
+        mostrarPost(r.post); mostrarExtras(r.post); toast(r.origem === 'dados' ? 'Post criado com números reais da sua prospecção!' : r.origem === 'banco' ? 'Post pronto do banco da plataforma (sem IA). Ajuste o que quiser e baixe.' : 'Post criado! Ajuste o que quiser e baixe.', 'sucesso');
     }
     async function semana() {
-        toast('Montando a semana…');
-        const r = await api({ acao: 'gerar_semana', publico: $('publico').value });
+        const mes = escolhido('periodo') === 'mes';
+        toast(mes ? 'Montando o mês… (até 1 min)' : 'Montando a semana…');
+        const r = await api({ acao: 'gerar_semana', publico: $('publico').value, periodo: mes ? 'mes' : 'semana', por_semana: escolhido('porSemana') || 5 });
+        $('semanaTit').textContent = mes ? 'Calendário do mês' : 'Calendário da semana';
         if (!r.ok) { toast(r.erro, 'erro'); return; }
         const corpo = $('semanaCorpo'); corpo.innerHTML = '';
         r.dias.forEach(d => {
@@ -399,6 +489,7 @@ const MKT = (() => {
             tr.querySelector('strong').textContent = d.tema || ''; tr.querySelector('small').textContent = d.gancho || '';
             tr.querySelector('button').addEventListener('click', () => {
                 if (d.objetivo && $('objetivo').querySelector('option[value="' + d.objetivo + '"]')) $('objetivo').value = d.objetivo;
+                if (d.framework && $('framework').querySelector('option[value="' + d.framework + '"]')) $('framework').value = d.framework;
                 $('extra').value = (d.tema || '') + ' — gancho: ' + (d.gancho || '');
                 $('formato').value = /reels|story/i.test(d.formato || '') ? 'story' : 'feed';
                 gerar();
@@ -455,11 +546,11 @@ const MKT = (() => {
         const r = await api(Object.assign({ acao: 'salvar_marca' }, dados));
         if (r.ok) { Object.assign(MARCA, { marca: dados.mkt_marca, arroba: dados.mkt_arroba, site: dados.mkt_site, cor: dados.mkt_cor, cor2: dados.mkt_cor2, escuro: dados.mkt_escuro === '1' }); desenhar(); toast('Marca salva!', 'sucesso'); }
     }
-    async function abrir(id) { const r = await api({ acao: 'historico', id }); if (r.ok) { $('formato').value = r.formato || 'feed'; mostrarPost(r.post); scrollTo({ top: 0, behavior: 'smooth' }); } }
+    async function abrir(id) { const r = await api({ acao: 'historico', id }); if (r.ok) { $('formato').value = r.formato || 'feed'; mostrarPost(r.post); mostrarExtras(r.post); scrollTo({ top: 0, behavior: 'smooth' }); } }
     montarPaletas();
     document.fonts.ready.then(preencher);
     preencher();
-    return { gerar, semana, baixarPng, video, copiar, salvarMarca, abrir, variar, fotoIa, fotoBanco, minhaFoto, semFoto, carrossel };
+    return { gerar, semana, baixarPng, video, copiar, salvarMarca, abrir, variar, fotoIa, fotoBanco, fotoPuter, minhaFoto, semFoto, carrossel };
 })();
 </script>
 </body>

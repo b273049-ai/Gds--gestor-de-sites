@@ -34,29 +34,114 @@ function fotos_termo_segmento($slug, $nome = '', $descricao = '') {
     return trim($descricao ?: $nome) ?: 'small business';
 }
 
-function fotos_configurado() {
-    return get_config('pexels_api_key', '') !== '';
+// Bancos de fotos grátis, na ordem em que são tentados. O Pexels pausou as chaves novas
+// (set/2026): quem já tem continua usando; os outros entram como alternativa.
+//   pixabay   → chave grátis em pixabay.com/api/docs (as fotos precisam ser baixadas para o servidor)
+//   unsplash  → chave grátis em unsplash.com/developers (usa o link deles e registra o download)
+//   openverse → sem chave; só fotos de domínio público / CC0 (não exigem crédito)
+function fotos_fontes() {
+    $f = [];
+    if (get_config('pexels_api_key', '') !== '') $f[] = 'pexels';
+    if (get_config('pixabay_api_key', '') !== '') $f[] = 'pixabay';
+    if (get_config('unsplash_api_key', '') !== '') $f[] = 'unsplash';
+    if (get_config('fotos_openverse', '1') === '1') $f[] = 'openverse';
+    return $f;
 }
 
-// Busca no Pexels. Retorna [['url','medio','autor','link','alt'], ...]
-function fotos_buscar($termo, $qtd = 8, $orientacao = 'landscape') {
-    $chave = get_config('pexels_api_key', '');
-    if ($chave === '' || trim($termo) === '') return [];
-    $base = getenv('GDS_PEXELS_BASE_URL') ?: 'https://api.pexels.com';
-    $url = $base . '/v1/search?' . http_build_query(['query' => $termo, 'per_page' => max(1, min(20, $qtd)), 'orientation' => $orientacao]);
+function fotos_configurado() {
+    return (bool)fotos_fontes();
+}
+
+function fotos_http($url, $cab = [], $timeout = 7) {
     $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_HTTPHEADER => ['Authorization: ' . $chave]]);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTPHEADER => $cab, CURLOPT_USERAGENT => 'GDS-Gestor-de-Sites/1.0']);
     $resp = curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($resp === false || $code !== 200) return [];
-    $d = json_decode($resp, true);
+    return $resp !== false && $code === 200 ? json_decode($resp, true) : null;
+}
+
+// Busca no primeiro banco que trouxer resultado. Retorna [['url','medio','autor','link','alt','fonte','baixar'], ...]
+function fotos_buscar($termo, $qtd = 8, $orientacao = 'landscape') {
+    if (trim($termo) === '') return [];
+    foreach (fotos_fontes() as $fonte) {
+        $r = fotos_buscar_em($fonte, $termo, $qtd, $orientacao);
+        if ($r) return $r;
+    }
+    return [];
+}
+
+function fotos_buscar_em($fonte, $termo, $qtd, $orientacao) {
+    $qtd = max(3, min(20, $qtd));
     $fotos = [];
-    foreach ((array)($d['photos'] ?? []) as $f) {
-        if (empty($f['src']['large2x'])) continue;
-        $fotos[] = ['url' => $f['src']['large2x'], 'medio' => $f['src']['large'] ?? $f['src']['large2x'], 'autor' => $f['photographer'] ?? '', 'link' => $f['url'] ?? '', 'alt' => $f['alt'] ?? ''];
+    if ($fonte === 'pexels') {
+        $base = getenv('GDS_PEXELS_BASE_URL') ?: 'https://api.pexels.com';
+        $d = fotos_http($base . '/v1/search?' . http_build_query(['query' => $termo, 'per_page' => $qtd, 'orientation' => $orientacao]), ['Authorization: ' . get_config('pexels_api_key', '')]);
+        foreach ((array)($d['photos'] ?? []) as $f) {
+            if (empty($f['src']['large2x'])) continue;
+            $fotos[] = ['url' => $f['src']['large2x'], 'medio' => $f['src']['large'] ?? $f['src']['large2x'], 'autor' => $f['photographer'] ?? '', 'link' => $f['url'] ?? '', 'alt' => $f['alt'] ?? '', 'fonte' => 'pexels'];
+        }
+    } elseif ($fonte === 'pixabay') {
+        $base = getenv('GDS_PIXABAY_BASE_URL') ?: 'https://pixabay.com';
+        $d = fotos_http($base . '/api/?' . http_build_query(['key' => get_config('pixabay_api_key', ''), 'q' => mb_substr($termo, 0, 100), 'image_type' => 'photo',
+            'orientation' => $orientacao === 'portrait' ? 'vertical' : 'horizontal', 'per_page' => $qtd, 'safesearch' => 'true', 'order' => 'popular']));
+        foreach ((array)($d['hits'] ?? []) as $f) {
+            if (empty($f['largeImageURL'])) continue;
+            // O Pixabay não deixa usar o link deles direto: a foto é baixada para o servidor
+            $fotos[] = ['url' => $f['largeImageURL'], 'medio' => $f['largeImageURL'], 'autor' => $f['user'] ?? '', 'link' => $f['pageURL'] ?? '', 'alt' => $f['tags'] ?? '', 'fonte' => 'pixabay', 'baixar' => true];
+        }
+    } elseif ($fonte === 'unsplash') {
+        $base = getenv('GDS_UNSPLASH_BASE_URL') ?: 'https://api.unsplash.com';
+        $d = fotos_http($base . '/search/photos?' . http_build_query(['query' => $termo, 'per_page' => min(30, $qtd), 'orientation' => $orientacao === 'portrait' ? 'portrait' : 'landscape', 'content_filter' => 'high']),
+            ['Authorization: Client-ID ' . get_config('unsplash_api_key', ''), 'Accept-Version: v1']);
+        foreach ((array)($d['results'] ?? []) as $f) {
+            if (empty($f['urls']['regular'])) continue;
+            $fotos[] = ['url' => $f['urls']['raw'] . '&w=1920&q=80&fm=jpg&fit=max', 'medio' => $f['urls']['regular'], 'autor' => $f['user']['name'] ?? '',
+                'link' => ($f['links']['html'] ?? '') . '?utm_source=gds&utm_medium=referral', 'alt' => $f['alt_description'] ?? '', 'fonte' => 'unsplash', 'rastrear' => $f['links']['download_location'] ?? ''];
+        }
+    } elseif ($fonte === 'openverse') {
+        $base = getenv('GDS_OPENVERSE_BASE_URL') ?: 'https://api.openverse.org';
+        $d = fotos_http($base . '/v1/images/?' . http_build_query(['q' => $termo, 'license' => 'cc0,pdm', 'category' => 'photograph', 'page_size' => $qtd,
+            'aspect_ratio' => $orientacao === 'portrait' ? 'tall' : 'wide', 'mature' => 'false']), ['Accept: application/json'], 8);
+        foreach ((array)($d['results'] ?? []) as $f) {
+            if (empty($f['url']) || (int)($f['width'] ?? 0) && (int)$f['width'] < 900) continue; // descarta foto pequena
+            $fotos[] = ['url' => $f['url'], 'medio' => $f['url'], 'autor' => $f['creator'] ?? '', 'link' => $f['foreign_landing_url'] ?? '', 'alt' => $f['title'] ?? '', 'fonte' => 'openverse'];
+        }
     }
     return $fotos;
+}
+
+// Unsplash pede que cada foto usada seja "registrada" (conta para o fotógrafo)
+function fotos_registrar_uso($foto) {
+    if (empty($foto['rastrear']) || get_config('unsplash_api_key', '') === '') return;
+    $ch = curl_init($foto['rastrear']);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 3, CURLOPT_HTTPHEADER => ['Authorization: Client-ID ' . get_config('unsplash_api_key', '')]]);
+    curl_exec($ch); curl_close($ch);
+}
+
+// Baixa para /uploads as fotos que não podem (ou não devem) ser usadas pelo link de fora
+function fotos_localizar(array $fotos, $sub = 'fotos-banco', $max = 6) {
+    $pasta = img_ia_pasta($sub);
+    $out = [];
+    foreach ($fotos as $f) {
+        fotos_registrar_uso($f);
+        if (empty($f['baixar'])) { $out[] = $f; continue; }
+        if (!$pasta || count($out) >= $max) continue;
+        $nome = 'b-' . substr(md5($f['url']), 0, 14);
+        $existe = glob("$pasta/$nome.*");
+        if ($existe) { $arq = $existe[0]; }
+        else {
+            $ch = curl_init($f['url']);
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_FOLLOWLOCATION => true, CURLOPT_USERAGENT => 'GDS-Gestor-de-Sites/1.0']);
+            $bytes = curl_exec($ch); $ok = curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200; curl_close($ch);
+            $arq = $ok && $bytes ? img_ia_salvar($bytes, "$pasta/$nome", 1920) : null;
+        }
+        if (!$arq) continue;
+        $local = '/uploads/' . trim($sub, '/') . '/' . basename($arq);
+        $out[] = ['url' => $local, 'medio' => $local] + $f;
+    }
+    return $out;
 }
 
 // Fotos geradas por IA para o site (guardadas junto, em fotos_banco.ia)
@@ -89,7 +174,7 @@ function fotos_banco_pexels($empresa, $forcar = false) {
     // Não tenta de novo antes de 1 dia se a última busca não trouxe nada
     if (!$forcar && is_array($salvo) && empty($salvo['fotos']) && time() - (int)($salvo['em'] ?? 0) < 86400) return [];
     $termo = fotos_termo_segmento($empresa['segmento_slug'] ?? '', $empresa['segmento_nome'] ?? '', $empresa['segmento_descricao'] ?? '');
-    $fotos = fotos_buscar($termo, 8);
+    $fotos = fotos_localizar(fotos_buscar($termo, 8), 'fotos-banco', 6);
     try {
         $novo = ['termo' => $termo, 'em' => time(), 'fotos' => $fotos] + (is_array($salvo) && isset($salvo['ia']) ? ['ia' => $salvo['ia']] : []);
         $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($novo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresa['id']]);

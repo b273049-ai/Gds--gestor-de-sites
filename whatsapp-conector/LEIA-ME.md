@@ -83,6 +83,13 @@ Coloque um subdomínio com HTTPS na frente (ex.: `whats.seudominio.com.br`) ou u
 3. **Gerar QR code** → no celular: WhatsApp → Aparelhos conectados → Conectar um aparelho.
 4. **Enviar teste** para o seu número.
 
+## Respostas da prospecção (v18)
+O conector agora também **repassa as respostas** que chegam no número da plataforma, para a prospecção do GDS ler
+(a IA marca o funil e sugere a resposta). Só o número que o site pedir é ouvido — os números das empresas não.
+- **Celular/computador (ponte):** nada a configurar; basta usar esta versão (copie a pasta nova, `npm install`, ligue).
+  O login do número continua (a pasta `dados` não muda).
+- **Servidor:** defina a variável `WEBHOOK_URL` com o endereço mostrado em Admin → Prospecção → Piloto automático.
+
 ## Bom saber
 - A pasta `dados/` guarda o login dos números. **Não apague** (senão precisa ler o QR de novo).
   Se o conector reiniciar, os números reconectam sozinhos.

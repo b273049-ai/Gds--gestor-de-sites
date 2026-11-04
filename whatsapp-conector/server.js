@@ -17,6 +17,8 @@
 //   API_KEY    chave secreta; se não existir, é gerada e salva em dados/chave.txt
 //   DATA_DIR   onde ficam as sessões (padrão ./dados) — NÃO apague: é o "login" dos números
 //   INTERVALO  milissegundos mínimos entre mensagens do mesmo número (padrão 1500)
+//   WEBHOOK_URL (modo servidor) endereço que recebe as respostas que chegam, no formato da
+//              Evolution API (no GDS: Admin → WhatsApp mostra o endereço pronto)
 // ============================================================
 import http from 'node:http';
 import fs from 'node:fs';
@@ -58,7 +60,7 @@ async function iniciar(nome, numeroPareamento = '') {
     let inst = instancias.get(nome);
     if (inst && inst.sock && inst.estado !== 'close') return inst;
     if (!inst) {
-        inst = { nome, estado: 'close', qr: null, qrBase64: null, pareamento: null, numeroPareamento: null, dono: null, fila: Promise.resolve(), ultimoEnvio: 0, tentativas: 0, parado: false };
+        inst = { nome, estado: 'close', qr: null, qrBase64: null, pareamento: null, numeroPareamento: null, dono: null, fila: Promise.resolve(), ultimoEnvio: 0, tentativas: 0, parado: false, ouvir: !!process.env.WEBHOOK_URL };
         instancias.set(nome, inst);
     }
     inst.parado = false;
@@ -75,6 +77,14 @@ async function iniciar(nome, numeroPareamento = '') {
     });
     inst.sock = sock;
     sock.ev.on('creds.update', saveCreds);
+    // Respostas que chegam (só nos números que o site pediu para ouvir — o da prospecção)
+    sock.ev.on('messages.upsert', ({ messages, type }) => {
+        if (inst.sock !== sock || !inst.ouvir || type !== 'notify') return;
+        for (const m of messages || []) {
+            const r = lerRecebida(m);
+            if (r) guardarRecebida(nome, r);
+        }
+    });
     sock.ev.on('connection.update', async (u) => {
         if (inst.sock !== sock) return; // evento de um socket antigo
         if (u.qr) {
@@ -107,6 +117,40 @@ async function iniciar(nome, numeroPareamento = '') {
         }
     });
     return inst;
+}
+
+// ---------- Mensagens recebidas ----------
+const recebidas = [];   // vão para o site na próxima volta da ponte (ou para o WEBHOOK_URL)
+function textoDa(msg) {
+    let c = msg || {};
+    for (let i = 0; i < 3; i++) c = c.ephemeralMessage?.message || c.viewOnceMessage?.message || c.viewOnceMessageV2?.message || c.documentWithCaptionMessage?.message || c;
+    return c.conversation || c.extendedTextMessage?.text || c.imageMessage?.caption || c.videoMessage?.caption
+        || c.buttonsResponseMessage?.selectedDisplayText || c.listResponseMessage?.title || c.templateButtonReplyMessage?.selectedDisplayText
+        || (c.audioMessage ? '[áudio]' : c.imageMessage ? '[imagem]' : c.videoMessage ? '[vídeo]' : c.stickerMessage ? '[figurinha]' : c.documentMessage ? '[documento]'
+            : c.contactMessage ? '[contato]' : c.locationMessage ? '[localização]' : c.reactionMessage ? '' : '');
+}
+function lerRecebida(m) {
+    const k = m?.key || {};
+    if (k.fromMe) return null;
+    let jid = String(k.remoteJid || '');
+    if (!jid || jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter') || jid === 'status@broadcast') return null;
+    // Contas com "LID" (endereço novo do WhatsApp): o número de verdade vem em remoteJidAlt/senderPn
+    if (jid.endsWith('@lid')) jid = String(k.remoteJidAlt || k.senderPn || m.participantPn || '');
+    const numero = jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+    const texto = String(textoDa(m.message) || '').slice(0, 2000);
+    if (numero.length < 10 || !texto.trim()) return null;
+    return { numero, texto, nome: String(m.pushName || '').slice(0, 80), id: String(k.id || ''), em: Number(m.messageTimestamp || 0) || Math.floor(Date.now() / 1000) };
+}
+function guardarRecebida(instancia, r) {
+    if (process.env.WEBHOOK_URL && !ponte) {
+        // Formato da Evolution API (o GDS e outros sistemas já entendem)
+        fetch(process.env.WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
+            body: JSON.stringify({ event: 'messages.upsert', instance: instancia, data: { key: { remoteJid: r.numero + '@s.whatsapp.net', fromMe: false, id: r.id }, pushName: r.nome, message: { conversation: r.texto }, messageTimestamp: r.em } }) })
+            .catch((e) => log(instancia, 'webhook falhou:', e.message));
+        return;
+    }
+    recebidas.push({ instancia, ...r });
+    if (recebidas.length > 500) recebidas.splice(0, recebidas.length - 500);
 }
 
 // Espera o QR (ou a conexão) aparecer, para responder já com a imagem
@@ -309,21 +353,26 @@ async function voltaPonte(p) {
     removidas.clear();
     const lote = resultados.splice(0);
     const loteVerif = verificacoes.splice(0);
+    const loteRec = recebidas.splice(0, 100);
     let r;
     try {
         const resp = await fetch(p.url, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-GDS-Chave': p.chave },
-            body: JSON.stringify({ chave: p.chave, estados, resultados: lote, verificacoes: loteVerif }), signal: AbortSignal.timeout(25000),
+            body: JSON.stringify({ chave: p.chave, estados, resultados: lote, verificacoes: loteVerif, recebidas: loteRec }), signal: AbortSignal.timeout(25000),
         });
         r = await resp.json().catch(() => null);
-        if (!resp.ok || !r || !r.ok) { resultados.unshift(...lote); verificacoes.unshift(...loteVerif); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
+        if (!resp.ok || !r || !r.ok) { resultados.unshift(...lote); verificacoes.unshift(...loteVerif); recebidas.unshift(...loteRec); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
     } catch (e) {
         resultados.unshift(...lote);
         verificacoes.unshift(...loteVerif);
+        recebidas.unshift(...loteRec);
         avisar('⚠ Sem conexão com o site (' + e.message + '). Tentando de novo…');
         return 10;
     }
     avisar('✅ Conectado ao site. Pode gerar o QR code no painel do GDS.');
+    // Quais números devem repassar as respostas que chegam (o site decide)
+    const ouvir = new Set(Array.isArray(r.ouvir) ? r.ouvir : []);
+    for (const i of instancias.values()) i.ouvir = ouvir.has(i.nome);
 
     for (const it of r.instancias || []) {
         if (!nomeValido(it.nome)) continue;

@@ -7,6 +7,7 @@
 // ============================================================
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/prospeccao.php';
+require_once __DIR__ . '/../includes/prospeccao_piloto.php';
 exigir_login('admin');
 gds_garantir_schema();
 
@@ -28,6 +29,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
     @set_time_limit(150);
     $id = (int)($_POST['id'] ?? 0);
     switch ($_POST['acao']) {
+        // ----- piloto automático -----
+        case 'piloto_salvar':
+            set_config('prosp_auto_max', (string)max(5, min(120, (int)($_POST['max'] ?? 40))));
+            $dias = array_values(array_intersect(array_map('intval', explode(',', (string)($_POST['dias'] ?? ''))), [1, 2, 3, 4, 5, 6, 7]));
+            set_config('prosp_auto_dias', implode(',', $dias ?: [1, 2, 3, 4, 5]));
+            set_config('prosp_auto_horario', array_key_exists($_POST['horario'] ?? '', prosp_piloto_horarios()) ? $_POST['horario'] : 'comercial');
+            set_config('prosp_auto_ritmo', array_key_exists($_POST['ritmo'] ?? '', prosp_piloto_ritmos()) ? $_POST['ritmo'] : 'normal');
+            set_config('prosp_auto_ia', ($_POST['ia'] ?? '1') === '1' ? '1' : '0');
+            set_config('prosp_ia_responde', in_array($_POST['responde'] ?? '', ['nao', 'sugerir', 'auto'], true) ? $_POST['responde'] : 'sugerir');
+            set_config('prosp_auto_aquecido', ($_POST['aquecido'] ?? '0') === '1' ? '1' : '0');
+            set_config('prosp_ouvir', ($_POST['ouvir'] ?? '1') === '1' ? '1' : '0');
+            set_config('prosp_alerta_respostas', ($_POST['alertas'] ?? '1') === '1' ? '1' : '0');
+            set_config('prosp_optout_responder', ($_POST['optout_resp'] ?? '1') === '1' ? '1' : '0');
+            responder_json(['ok' => true, 'piloto' => prosp_piloto_status()]);
+        case 'piloto_ligar':
+            $ligar = ($_POST['ligar'] ?? '') === '1';
+            if ($ligar && !wa_remetente(['wa_modo' => 'plataforma'])) responder_json(['ok' => false, 'erro' => 'Primeiro conecte o WhatsApp da plataforma (Admin → WhatsApp) — é por ele que as mensagens saem.']);
+            set_config('prosp_auto', $ligar ? '1' : '0');
+            if ($ligar && (int)get_config('prosp_auto_inicio', '0') === 0) set_config('prosp_auto_inicio', (string)time());
+            if ($ligar) set_config('prosp_auto_pausa', '');
+            responder_json(['ok' => true, 'piloto' => prosp_piloto_status()]);
+        case 'piloto_retomar':
+            set_config('prosp_auto_pausa', '');
+            responder_json(['ok' => true, 'piloto' => prosp_piloto_status()]);
+        case 'piloto_estado':
+            responder_json(['ok' => true, 'piloto' => prosp_piloto_status()]);
+        case 'piloto_agora':
+            session_write_close();
+            set_config('prosp_auto_proximo', '0');
+            $r = prosp_piloto_tudo();
+            responder_json(['ok' => true, 'resultado' => $r['piloto'] ?? '', 'piloto' => prosp_piloto_status()]);
+
+        // ----- conversas -----
+        case 'conversa':
+            $p = $lead($id); if (!$p) responder_json(['ok' => false, 'erro' => 'Não encontrado.']);
+            $pdo->prepare("UPDATE prospects SET nao_lidas=0 WHERE id=?")->execute([$id]);
+            $sug = (array)json_decode((string)$p['ia_sugestoes'], true);
+            responder_json(['ok' => true, 'nome' => $p['nome'], 'whatsapp' => $p['whatsapp'], 'previa' => prosp_link_previa($p), 'status' => $p['status'],
+                'intencao' => $p['ia_intencao'] ? (PROSP_INTENCOES[$p['ia_intencao']] ?? $p['ia_intencao']) : '', 'leitura' => $p['ia_leitura'] ?? '',
+                'sugestoes' => array_values((array)($sug['respostas'] ?? [])), 'proximo' => $sug['proximo_passo'] ?? '', 'optout' => (bool)$p['optout_em'],
+                'mensagens' => array_map(fn($m) => ['dir' => $m['direcao'], 'autor' => $m['autor'], 'texto' => $m['texto'], 'em' => date('d/m H:i', strtotime($m['criado_em']))], prosp_conversa($id, 60))]);
+        case 'enviar_plataforma':
+            session_write_close();
+            $p = $lead($id); if (!$p) responder_json(['ok' => false, 'erro' => 'Não encontrado.']);
+            if ($p['optout_em']) responder_json(['ok' => false, 'erro' => 'Este contato pediu para não receber mais mensagens.']);
+            $texto = mb_substr(trim($_POST['texto'] ?? ''), 0, 1500);
+            if ($texto === '') responder_json(['ok' => false, 'erro' => 'Escreva a mensagem.']);
+            $tipo = ($_POST['cadencia'] ?? '') === '1' ? 'prosp_cadencia' : 'prosp_humano';
+            if ($tipo === 'prosp_cadencia' && $p['envio_msg_id']) responder_json(['ok' => false, 'erro' => 'Já tem uma mensagem saindo para este contato.']);
+            $r = prosp_enviar_plataforma($p, $texto, $tipo);
+            responder_json($r['ok'] ? ['ok' => true, 'fila' => !empty($r['fila'])] : ['ok' => false, 'erro' => $r['erro']]);
+        case 'reanalisar':
+            session_write_close();
+            $int = prosp_analisar_resposta($id);
+            responder_json($int ? ['ok' => true] : ['ok' => false, 'erro' => 'Não há resposta para ler.']);
+        case 'simular_resposta':
+            // Para testar o fluxo sem esperar alguém responder de verdade
+            $p = $lead($id); if (!$p || empty($p['whatsapp'])) responder_json(['ok' => false, 'erro' => 'Lead sem WhatsApp.']);
+            $pid = prosp_receber($p['whatsapp'], mb_substr(trim($_POST['texto'] ?? ''), 0, 500) ?: 'Oi, pode mandar sim', $p['nome'], 'teste-' . bin2hex(random_bytes(6)));
+            if ($pid) { session_write_close(); prosp_analisar_resposta($pid); }
+            responder_json(['ok' => (bool)$pid]);
+
         // ----- caçada -----
         case 'cacada_criar':
             session_write_close();
@@ -210,6 +273,18 @@ $filaJson = array_map(fn($p) => ['id' => (int)$p['id'], 'nome' => $p['nome'], 'c
 $ab = prosp_resultado_ab();
 $aprendeu = prosp_aprendizado();
 $respostas = prosp_respostas_padrao();
+// Piloto automático e conversas
+$piloto = prosp_piloto_status();
+$pc = prosp_piloto_cfg();
+$canalPlat = (bool)wa_remetente(['wa_modo' => 'plataforma']);
+$conversas = $pdo->query("SELECT p.id, p.nome, p.categoria, p.cidade, p.bairro, p.status, p.ia_intencao, p.nao_lidas, p.ultima_resposta_em, p.optout_em,
+    (SELECT texto FROM prospect_conversa c WHERE c.prospect_id = p.id ORDER BY c.id DESC LIMIT 1) ultima
+    FROM prospects p WHERE EXISTS (SELECT 1 FROM prospect_conversa c WHERE c.prospect_id = p.id AND c.direcao = 'in')
+    ORDER BY (p.nao_lidas > 0) DESC, p.ultima_resposta_em DESC NULLS LAST LIMIT 80")->fetchAll();
+$naoLidas = array_sum(array_map(fn($c) => (int)$c['nao_lidas'], $conversas));
+$aWa = wa_api();
+if ($aWa['tipo'] !== 'ponte' && get_config('wa_webhook_token', '') === '') set_config('wa_webhook_token', bin2hex(random_bytes(16)));
+$webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receber.php?t=' . get_config('wa_webhook_token', '') : '';
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -219,7 +294,7 @@ $respostas = prosp_respostas_padrao();
 .abas-p { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
 .abas-p a { padding: 10px 14px; text-decoration: none; color: var(--text-dim); border-bottom: 2px solid transparent; font-weight: 600; font-size: 14px; }
 .abas-p a.ativa { color: var(--text); border-color: var(--primary); }
-.abas-p a b { background: var(--primary); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 11px; margin-left: 4px; }
+.abas-p a b { background: var(--primary-btn, #4a63e8); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 11px; margin-left: 4px; }
 .aba-p { display: none; } .aba-p.ativa { display: block; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .kpis div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
@@ -267,6 +342,33 @@ $respostas = prosp_respostas_padrao();
 .copiloto .sug { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; font-size: 13.5px; }
 #mapa { height: 560px; border-radius: 14px; border: 1px solid var(--border); }
 .tab-funil td, .tab-funil th { text-align: right; } .tab-funil td:first-child, .tab-funil th:first-child { text-align: left; }
+.piloto-linha { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.piloto-linha h2 { margin: 2px 0 0; font-size: 20px; }
+.piloto-kpis { margin: 14px 0 6px; }
+.chips-p, .chaves-p { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.chips-p button[aria-pressed="true"], .chaves-p button[aria-pressed="true"] { background: var(--primary-btn, #4a63e8); color: #fff; border-color: transparent; }
+.chaves-p { margin-top: 14px; }
+.passos-num { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .passos-num strong { font-size: 22px; min-width: 40px; text-align: center; }
+.lista-dicas li { margin-bottom: 6px; font-size: 14px; }
+.conv-grade { display: grid; grid-template-columns: minmax(240px, 330px) 1fr; gap: 14px; align-items: start; }
+.conv-lista { display: grid; gap: 6px; max-height: 640px; overflow: auto; }
+.conv-item { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; color: var(--text); cursor: pointer; font: inherit; margin: 0; }
+.conv-item.ativa { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91,124,255,.2); }
+.conv-item.nova .conv-nome { font-weight: 800; }
+.conv-nome { font-weight: 600; font-size: 14px; } .conv-meta { font-size: 12px; color: var(--text-dim); } .conv-ultima { font-size: 12.5px; color: var(--text-dim); }
+.conv-badge { background: #25d366; color: #06240f; border-radius: 999px; padding: 0 7px; font-size: 11px; }
+.conv-painel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; display: grid; gap: 10px; }
+.conv-leitura { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
+.conv-msgs { display: flex; flex-direction: column; gap: 6px; max-height: 380px; overflow: auto; padding: 4px; }
+.bolha { max-width: 80%; padding: 8px 11px; border-radius: 12px; font-size: 14px; white-space: pre-wrap; line-height: 1.4; }
+.bolha small { display: block; font-size: 11px; opacity: .7; margin-top: 3px; }
+.bolha.in { background: var(--surface-2); border: 1px solid var(--border); align-self: flex-start; }
+.bolha.out { background: rgba(37,211,102,.16); border: 1px solid rgba(37,211,102,.35); align-self: flex-end; }
+.conv-sugs { display: grid; gap: 6px; }
+.conv-sug { background: var(--bg); border: 1px dashed var(--border); border-radius: 10px; padding: 9px 11px; font-size: 13.5px; white-space: pre-wrap; display: grid; gap: 6px; }
+.conv-sug div { display: flex; gap: 6px; flex-wrap: wrap; }
+#cvTexto { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px; font: inherit; font-size: 14px; }
+@media (max-width: 860px) { .conv-grade { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .prosp-card { grid-template-columns: 1fr; } .prosp-nota { text-align: left; } #mapa { height: 420px; } }
 </style>
 </head>
@@ -288,7 +390,9 @@ $respostas = prosp_respostas_padrao();
         <div><strong><?= (int)$f['fechados'] ?></strong><span>✅ fechadas (<?= $pct($f['fechados'], $f['contatados']) ?>%)</span></div>
     </div>
 
-    <nav class="abas-p" id="abas">
+    <nav class="abas-p" id="abas" aria-label="Seções da prospecção">
+        <a href="#piloto" data-aba="piloto">🤖 Piloto automático<?= $piloto['ligado'] && !$piloto['pausa'] ? ' <b>ligado</b>' : '' ?></a>
+        <a href="#conversas" data-aba="conversas">💬 Conversas<?= $naoLidas ? ' <b>' . $naoLidas . '</b>' : '' ?></a>
         <a href="#fila" data-aba="fila">⚡ Fila de hoje <b><?= count($fila) ?></b></a>
         <a href="#cacada" data-aba="cacada">🎯 Caçada em massa</a>
         <a href="#leads" data-aba="leads">📋 Leads</a>
@@ -296,6 +400,113 @@ $respostas = prosp_respostas_padrao();
         <a href="#funil" data-aba="funil">📈 Funil por segmento</a>
         <a href="#mensagens" data-aba="mensagens">✉ Mensagens e alertas</a>
     </nav>
+
+
+    <!-- ================= PILOTO AUTOMÁTICO ================= -->
+    <section class="aba-p" id="aba-piloto">
+        <div class="piloto-topo form-box largo">
+            <div class="piloto-linha">
+                <div><span class="muted">Situação</span><h2 id="ptSituacao"><?= e($piloto['situacao']) ?></h2></div>
+                <button type="button" class="btn <?= $piloto['ligado'] ? 'btn-ghost' : 'btn-wa' ?>" id="ptLigar" onclick="PR.pilotoLigar()"><?= $piloto['ligado'] ? '⏹ Desligar o piloto' : '▶ Ligar o piloto automático' ?></button>
+            </div>
+            <div class="alerta alerta-aviso" id="ptPausa" <?= $piloto['pausa'] ? '' : 'hidden' ?>><span id="ptPausaTxt">⏸ Pausado sozinho: <?= e($piloto['pausa']) ?></span> <button type="button" class="btn btn-sm" onclick="PR.pilotoRetomar()">Retomar</button></div>
+            <?php if ($aWa['tipo'] === 'ponte' && wa_ponte_online() && time() - (int)get_config('wa_ponte_ouve', '0') > 300): ?><?= alerta('aviso', 'Seu Conector GDS é da versão antiga: ele envia, mas <strong>não repassa as respostas</strong> que chegam. Atualize a pasta <code>whatsapp-conector</code> no celular/computador (copie a nova, rode <code>npm install</code> e ligue de novo — o login do número continua).') ?><?php endif; ?>
+            <?php if (!$canalPlat): ?><?= alerta('aviso', 'O WhatsApp da plataforma ainda não está ligado. É por ele que o piloto manda e recebe: conecte em <a class="link" href="whatsapp.php">Admin → WhatsApp</a> (de preferência um chip só para prospecção).') ?><?php endif; ?>
+            <div class="kpis piloto-kpis">
+                <div><strong id="ptHoje"><?= (int)$piloto['hoje'] ?> / <?= (int)$piloto['limite'] ?></strong><span>mensagens hoje</span></div>
+                <div><strong id="ptSemana"><?= $piloto['aquecido'] ? 'aquecido' : 'semana ' . (int)$piloto['semana'] ?></strong><span>aquecimento do número</span></div>
+                <div><strong id="ptResp"><?= (int)$piloto['saude']['taxa_resposta'] ?>%</strong><span>responderam (7 dias)</span></div>
+                <div><strong id="ptParar" class="<?= $piloto['saude']['taxa_parar'] >= 5 ? 'temp-quente' : '' ?>"><?= (int)$piloto['saude']['taxa_parar'] ?>%</strong><span>pediram para parar</span></div>
+                <div><strong id="ptFalhas"><?= (int)$piloto['saude']['falhas'] ?></strong><span>falhas de envio</span></div>
+            </div>
+            <p class="dica" id="ptSaude"><?= ['pouco' => '📊 A saúde do número aparece depois de umas 15 mensagens.', 'bom' => '🟢 Número saudável: as pessoas respondem e quase ninguém pede para parar.', 'atencao' => '🟡 Atenção: pouca resposta ou alguns pedidos para parar. Reveja a 1ª mensagem e o público.', 'ruim' => '🔴 Risco alto: muita gente pedindo para parar. O piloto pausa sozinho se piorar.'][$piloto['saude']['nivel']] ?></p>
+            <div class="sprint-acoes"><button type="button" class="btn btn-ghost btn-sm" onclick="PR.pilotoAgora(this)">⏩ Mandar a próxima agora</button><span class="muted" id="ptUltimo"></span></div>
+        </div>
+
+        <div class="form-box largo" id="ptConfig">
+            <h3>Como o piloto trabalha</h3>
+            <label>Máximo de mensagens por dia (depois do aquecimento)</label>
+            <div class="passos-num"><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(-5)" aria-label="Diminuir">−</button><strong id="ptMax"><?= (int)$pc['max_dia'] ?></strong><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(5)" aria-label="Aumentar">+</button>
+                <span class="chips-p" data-grupo="max"><?php foreach ([20, 40, 60] as $n): ?><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(0, <?= $n ?>)"><?= $n ?></button><?php endforeach; ?></span></div>
+            <p class="dica">O aquecimento começa em 10 por dia e sobe sozinho: 18 na 2ª semana, 28 na 3ª, 40 na 4ª.</p>
+            <label>Dias</label>
+            <div class="chips-p" data-grupo="dias" data-multi="1"><?php foreach ([1 => 'Seg', 2 => 'Ter', 3 => 'Qua', 4 => 'Qui', 5 => 'Sex', 6 => 'Sáb', 7 => 'Dom'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= in_array($k, $pc['dias'], true) ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div>
+            <label>Horário</label>
+            <div class="chips-p" data-grupo="horario"><?php foreach (prosp_piloto_horarios() as $k => $h): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $pc['horario'] === $k ? 'true' : 'false' ?>"><?= e($h['nome']) ?></button><?php endforeach; ?></div>
+            <label>Ritmo entre uma mensagem e outra (sempre aleatório)</label>
+            <div class="chips-p" data-grupo="ritmo"><?php foreach (prosp_piloto_ritmos() as $k => $r): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $pc['ritmo'] === $k ? 'true' : 'false' ?>"><?= e($r['nome']) ?></button><?php endforeach; ?></div>
+            <label>Quem escreve as mensagens</label>
+            <div class="chips-p" data-grupo="ia"><button type="button" class="btn btn-ghost btn-sm" data-v="1" aria-pressed="<?= $pc['ia_escreve'] ? 'true' : 'false' ?>">🧠 A IA escreve uma diferente para cada empresa</button><button type="button" class="btn btn-ghost btn-sm" data-v="0" aria-pressed="<?= $pc['ia_escreve'] ? 'false' : 'true' ?>">📝 Usar os meus modelos (aba Mensagens)</button></div>
+            <label>Quando alguém responder</label>
+            <div class="chips-p" data-grupo="responde"><?php foreach (['sugerir' => '💡 A IA lê e sugere — eu respondo', 'auto' => '🤖 A IA responde sozinha os casos simples (até 2 vezes) e me passa o resto', 'nao' => 'Não usar IA'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $pc['responde'] === $k ? 'true' : 'false' ?>"><?= e($v) ?></button><?php endforeach; ?></div>
+            <div class="chaves-p">
+                <button type="button" class="btn btn-ghost btn-sm" data-chave="aquecido" aria-pressed="<?= $pc['aquecido'] ? 'true' : 'false' ?>">🔥 O número já é antigo e aquecido (pular o aquecimento)</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-chave="alertas" aria-pressed="<?= get_config('prosp_alerta_respostas', '1') === '1' ? 'true' : 'false' ?>">🔔 Me avisar no WhatsApp a cada resposta</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-chave="optout_resp" aria-pressed="<?= get_config('prosp_optout_responder', '1') === '1' ? 'true' : 'false' ?>">🙏 Responder "combinado" a quem pedir para parar</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-chave="ouvir" aria-pressed="<?= $pc['ouvir'] ? 'true' : 'false' ?>">👂 Ler as respostas que chegam no número</button>
+            </div>
+            <div class="sprint-acoes" style="margin-top:14px"><button type="button" class="btn" onclick="PR.pilotoSalvar(this)">Salvar</button></div>
+            <?php if ($webhookUrl): ?>
+            <h3 style="margin-top:20px">Respostas que chegam (WhatsApp em servidor)</h3>
+            <p class="dica">No seu servidor de WhatsApp (Evolution API ou Conector GDS em servidor) configure o <strong>webhook de mensagens recebidas</strong> (evento <code>MESSAGES_UPSERT</code>) para este endereço — no Conector GDS, defina a variável <code>WEBHOOK_URL</code> com ele:</p>
+            <div class="verif-box"><span style="word-break:break-all" id="ptWebhook"><?= e($webhookUrl) ?></span><button type="button" class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('ptWebhook').textContent)">Copiar</button></div>
+            <?php endif; ?>
+        </div>
+
+        <div class="form-box largo">
+            <h3>Como o piloto protege o seu número</h3>
+            <ul class="lista-dicas">
+                <li><strong>Aquecimento:</strong> começa com poucas mensagens por dia e sobe semana a semana — número novo que dispara muito no 1º dia é o que mais cai.</li>
+                <li><strong>Só em horário comercial</strong>, nos dias que você escolher, com intervalo aleatório entre uma e outra e limite por hora.</li>
+                <li><strong>Só números conferidos:</strong> com a verificação ligada, só manda para quem tem WhatsApp de verdade (mandar para número que não existe é sinal de robô).</li>
+                <li><strong>Mensagem diferente para cada empresa</strong> (a IA usa o nome, o bairro e as avaliações) e sem link na 1ª mensagem.</li>
+                <li><strong>Para na hora</strong> quando a pessoa responde (vira conversa) e tira da lista quem pede para parar.</li>
+                <li><strong>Freio automático:</strong> pausa sozinho se muita gente pedir para parar, recusar, ou se os envios começarem a falhar — e te avisa.</li>
+                <li><strong>Nunca manda</strong> para quem já é cliente da plataforma nem 2 vezes no mesmo dia para a mesma pessoa.</li>
+            </ul>
+            <p class="dica">⚠ O WhatsApp não divulga um limite "seguro" para mensagens a quem não te conhece: estes freios diminuem o risco, mas não zeram. Use <strong>um chip só para a prospecção</strong> (nunca o número de atendimento), converse normalmente com ele por uns dias antes de ligar e mantenha a foto e o nome comercial no perfil. Para volume grande, o caminho oficial é a <strong>API da Meta (WhatsApp Cloud)</strong> com modelo aprovado — cerca de R$ 0,30 a R$ 0,40 por mensagem de marketing no Brasil.</p>
+        </div>
+    </section>
+
+    <!-- ================= CONVERSAS ================= -->
+    <section class="aba-p" id="aba-conversas">
+        <?php if (!$conversas): ?>
+        <div class="vazio-box"><?= icone('chat', 28) ?><p>Quando os leads responderem no WhatsApp da plataforma, as conversas aparecem aqui com a leitura da IA e as respostas sugeridas.</p></div>
+        <?php else: ?>
+        <div class="conv-grade">
+            <div class="conv-lista" id="convLista" aria-label="Conversas com leads">
+                <?php foreach ($conversas as $c): ?>
+                <button type="button" class="conv-item<?= $c['nao_lidas'] ? ' nova' : '' ?>" data-id="<?= (int)$c['id'] ?>" onclick="PR.abrirConversa(<?= (int)$c['id'] ?>, this)">
+                    <span class="conv-nome"><?= e($c['nome']) ?><?php if ($c['nao_lidas']): ?> <b class="conv-badge"><?= (int)$c['nao_lidas'] ?></b><?php endif; ?></span>
+                    <span class="conv-meta"><?= e(($c['ia_intencao'] ? (PROSP_INTENCOES[$c['ia_intencao']] ?? $c['ia_intencao']) . ' · ' : '') . ($statusNomes[$c['status']] ?? $c['status'])) ?></span>
+                    <span class="conv-ultima"><?= e(mb_strimwidth((string)$c['ultima'], 0, 80, '…')) ?></span>
+                </button>
+                <?php endforeach; ?>
+            </div>
+            <div class="conv-painel" id="convPainel">
+                <p class="dica" id="convVazio">Escolha uma conversa ao lado.</p>
+                <div id="convConteudo" hidden>
+                    <div class="cacada-topo"><div><h2 id="cvNome"></h2><span class="muted" id="cvStatus"></span></div><a class="btn btn-ghost btn-sm" id="cvPrevia" target="_blank" rel="noopener">👁 Prévia</a></div>
+                    <div class="conv-leitura" id="cvLeitura"></div>
+                    <div class="conv-msgs" id="cvMsgs" aria-live="polite"></div>
+                    <div class="conv-sugs" id="cvSugs"></div>
+                    <textarea id="cvTexto" rows="4" aria-label="Sua resposta" placeholder="Escreva a resposta ou use uma sugestão da IA"></textarea>
+                    <div class="sprint-acoes">
+                        <?php if ($canalPlat): ?><button type="button" class="btn btn-wa" onclick="PR.cvEnviar(this)"><?= icone('chat', 16) ?> Enviar pela plataforma</button><?php endif; ?>
+                        <button type="button" class="btn btn-ghost" onclick="PR.cvAbrirWa()">Abrir no WhatsApp</button>
+                        <button type="button" class="btn btn-ghost" onclick="PR.cvReler(this)"><?= icone('brilho', 14) ?> Ler de novo com IA</button>
+                    </div>
+                    <div class="sprint-acoes">
+                        <span class="muted">Marcar:</span>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="PR.cvStatus('negociando')">Negociando</button>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="PR.cvStatus('fechado')">Fechado ✅</button>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="PR.cvStatus('descartado')">Descartar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+    </section>
 
     <!-- ================= FILA DE HOJE ================= -->
     <section class="aba-p" id="aba-fila">
@@ -315,7 +526,8 @@ $respostas = prosp_respostas_padrao();
             <p class="dica" id="spVariante"></p>
             <textarea id="spMsg" aria-label="Mensagem"></textarea>
             <div class="sprint-acoes">
-                <button type="button" class="btn btn-wa" id="spEnviar" onclick="PR.spEnviar()"><?= icone('chat', 16) ?> Enviar e próximo</button>
+                <?php if ($canalPlat): ?><button type="button" class="btn btn-wa" id="spPlat" onclick="PR.spPlataforma(this)"><?= icone('chat', 16) ?> Enviar pela plataforma e próximo</button><?php endif; ?>
+                <button type="button" class="btn <?= $canalPlat ? 'btn-ghost' : 'btn-wa' ?>" id="spEnviar" onclick="PR.spEnviar()"><?= icone('chat', 16) ?> <?= $canalPlat ? 'Abrir no meu WhatsApp' : 'Enviar e próximo' ?></button>
                 <button type="button" class="btn btn-ghost" onclick="PR.spIa()"><?= icone('brilho', 14) ?> Reescrever com IA</button>
                 <a class="btn btn-ghost" id="spPrevia" target="_blank" rel="noopener">👁 Ver a prévia</a>
                 <button type="button" class="btn btn-ghost" onclick="PR.spPular()">Pular</button>
@@ -563,8 +775,9 @@ const PR = (() => {
         if (nome === 'mapa-aba' && !mapaPronto) { mapaPronto = true; setTimeout(montarMapa, 50); }
     }
     document.querySelectorAll('.abas-p a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); history.replaceState(null, '', '#' + a.dataset.aba); aba(a.dataset.aba); }));
+    window.addEventListener('hashchange', () => { const n = location.hash.slice(1); if (document.getElementById('aba-' + n)) aba(n); });
     const pedida = new URLSearchParams(location.search).get('aba');
-    aba(pedida || (location.hash.slice(1) || (FILA.length ? 'fila' : 'cacada')));
+    aba(pedida || (location.hash.slice(1) || (<?= $naoLidas ? "'conversas'" : "(FILA.length ? 'fila' : 'cacada')" ?>)));
 
     // ---------- fila (modo sprint) ----------
     async function mostrarFila() {
@@ -744,7 +957,99 @@ const PR = (() => {
         if (r.ok) { limite = +fd.limite_dia || limite; toast('Salvo!', 'sucesso'); }
     }
     async function testarAlerta() { const r = await api({ acao: 'testar_alerta' }); toast(r.ok ? 'Alerta enviado! Confira o WhatsApp.' : r.erro, r.ok ? 'sucesso' : 'erro'); }
-    return { responder, aba, spEnviar, spPular, spDescartar, spIa, marcar, marcarGrupo, estimar, cacar, alternar, excluirCacada, carregarMsg, whats, ia, copiarPrevia, copiloto, status, obs, excluir, salvarConfig, testarAlerta };
+
+    // ---------- piloto automático ----------
+    let ptMax = <?= (int)$pc['max_dia'] ?>, ptLigado = <?= $piloto['ligado'] ? 'true' : 'false' ?>;
+    document.querySelectorAll('.chips-p[data-grupo] button[data-v]').forEach(b => b.addEventListener('click', () => {
+        const g = b.parentElement;
+        if (g.dataset.multi) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+        else g.querySelectorAll('button[data-v]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    }));
+    document.querySelectorAll('.chaves-p button[data-chave]').forEach(b => b.addEventListener('click', () => b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')));
+    function ptNum(d, v) { ptMax = Math.max(5, Math.min(120, v || ptMax + d)); $('ptMax').textContent = ptMax; }
+    const ptEscolha = (g) => [...document.querySelectorAll('.chips-p[data-grupo="' + g + '"] button[aria-pressed="true"]')].map(b => b.dataset.v);
+    const ptChave = (k) => document.querySelector('.chaves-p [data-chave="' + k + '"]').getAttribute('aria-pressed') === 'true' ? '1' : '0';
+    function ptMostrar(p) {
+        if (!p) return;
+        ptLigado = p.ligado;
+        $('ptSituacao').textContent = p.situacao;
+        $('ptHoje').textContent = p.hoje + ' / ' + p.limite;
+        $('ptSemana').textContent = p.aquecido ? 'aquecido' : 'semana ' + p.semana;
+        $('ptResp').textContent = p.saude.taxa_resposta + '%'; $('ptParar').textContent = p.saude.taxa_parar + '%'; $('ptFalhas').textContent = p.saude.falhas;
+        $('ptPausa').hidden = !p.pausa; $('ptPausaTxt').textContent = '⏸ Pausado sozinho: ' + (p.pausa || '');
+        const b = $('ptLigar'); b.textContent = p.ligado ? '⏹ Desligar o piloto' : '▶ Ligar o piloto automático'; b.className = 'btn ' + (p.ligado ? 'btn-ghost' : 'btn-wa');
+    }
+    async function pilotoSalvar(btn) {
+        btn.disabled = true;
+        const r = await api({ acao: 'piloto_salvar', max: ptMax, dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
+            ia: ptEscolha('ia')[0] || '1', responde: ptEscolha('responde')[0] || 'sugerir', aquecido: ptChave('aquecido'), alertas: ptChave('alertas'), optout_resp: ptChave('optout_resp'), ouvir: ptChave('ouvir') });
+        btn.disabled = false;
+        if (r.ok) { ptMostrar(r.piloto); toast('Salvo!', 'sucesso'); } else toast(r.erro, 'erro');
+    }
+    async function pilotoLigar() {
+        const r = await api({ acao: 'piloto_ligar', ligar: ptLigado ? '0' : '1' });
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        ptMostrar(r.piloto); toast(r.piloto.ligado ? 'Piloto ligado: ele manda sozinho no horário escolhido, com os freios de proteção.' : 'Piloto desligado.', 'sucesso');
+    }
+    async function pilotoRetomar() { const r = await api({ acao: 'piloto_retomar' }); if (r.ok) ptMostrar(r.piloto); }
+    async function pilotoAgora(btn) {
+        btn.disabled = true; $('ptUltimo').textContent = 'Conferindo…';
+        const r = await api({ acao: 'piloto_agora' });
+        btn.disabled = false;
+        if (r.ok) { ptMostrar(r.piloto); $('ptUltimo').textContent = r.resultado; }
+    }
+    if ($('ptSituacao')) setInterval(async () => { if (!document.hidden && document.querySelector('#aba-piloto.ativa')) { const r = await api({ acao: 'piloto_estado' }); if (r.ok) ptMostrar(r.piloto); } }, 30000);
+
+    // ---------- conversas ----------
+    let cv = null;
+    async function abrirConversa(id, item) {
+        document.querySelectorAll('.conv-item').forEach(x => x.classList.toggle('ativa', x === item));
+        if (item) { item.classList.remove('nova'); const bd = item.querySelector('.conv-badge'); if (bd) bd.remove(); }
+        const r = await api({ acao: 'conversa', id });
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        cv = { id, ...r };
+        $('convVazio').hidden = true; $('convConteudo').hidden = false;
+        $('cvNome').textContent = r.nome; $('cvStatus').textContent = (r.optout ? '🙅 Pediu para parar · ' : '') + r.status; $('cvPrevia').href = r.previa;
+        $('cvLeitura').innerHTML = '';
+        if (r.intencao || r.leitura) { const b = document.createElement('b'); b.textContent = '🧠 ' + (r.intencao || 'Leitura'); $('cvLeitura').append(b, document.createTextNode(r.leitura ? ' — ' + r.leitura : ''), r.proximo ? Object.assign(document.createElement('div'), { textContent: '➡ ' + r.proximo, className: 'muted' }) : ''); }
+        $('cvLeitura').hidden = !(r.intencao || r.leitura);
+        $('cvMsgs').innerHTML = '';
+        r.mensagens.forEach(m => { const d = document.createElement('div'); d.className = 'bolha ' + m.dir; d.textContent = m.texto;
+            const sm = document.createElement('small'); sm.textContent = m.em + (m.dir === 'out' ? ' · ' + ({ auto: 'piloto', ia: 'IA', humano: 'você' }[m.autor] || m.autor) : ''); d.appendChild(sm); $('cvMsgs').appendChild(d); });
+        $('cvMsgs').scrollTop = $('cvMsgs').scrollHeight;
+        $('cvSugs').innerHTML = '';
+        r.sugestoes.forEach(t => { const c = document.createElement('div'); c.className = 'conv-sug'; c.append(document.createTextNode(t));
+            const a = document.createElement('div');
+            const usar = Object.assign(document.createElement('button'), { type: 'button', className: 'btn btn-ghost btn-sm', textContent: 'Usar e editar' }); usar.onclick = () => { $('cvTexto').value = t; $('cvTexto').focus(); };
+            a.appendChild(usar); c.appendChild(a); $('cvSugs').appendChild(c); });
+        $('cvTexto').value = '';
+    }
+    async function cvEnviar(btn) {
+        if (!cv) return;
+        const t = $('cvTexto').value.trim(); if (!t) { toast('Escreva a mensagem ou use uma sugestão.', 'erro'); return; }
+        btn.disabled = true;
+        const r = await api({ acao: 'enviar_plataforma', id: cv.id, texto: t });
+        btn.disabled = false;
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        toast(r.fila ? 'Na fila: sai em segundos pelo WhatsApp da plataforma.' : 'Enviada!', 'sucesso');
+        setTimeout(() => abrirConversa(cv.id, document.querySelector('.conv-item[data-id="' + cv.id + '"]')), r.fila ? 6000 : 300);
+    }
+    function cvAbrirWa() { if (cv && cv.whatsapp) abrirWa(cv.whatsapp, $('cvTexto').value); }
+    async function cvReler(btn) { if (!cv) return; btn.disabled = true; const r = await api({ acao: 'reanalisar', id: cv.id }); btn.disabled = false; if (r.ok) abrirConversa(cv.id); else toast(r.erro, 'erro'); }
+    async function cvStatus(st) { if (!cv) return; await api({ acao: 'status', id: cv.id, status: st }); $('cvStatus').textContent = st; toast('Anotado.', 'sucesso'); }
+
+    // Fila: mandar pelo WhatsApp da plataforma (registra na conversa e segue a cadência)
+    async function spPlataforma(btn) {
+        const p = FILA[idx]; if (!p) return;
+        btn.disabled = true;
+        const r = await api({ acao: 'enviar_plataforma', id: p.id, texto: $('spMsg').value, cadencia: '1' });
+        btn.disabled = false;
+        if (!r.ok) { toast(r.erro, 'erro'); return; }
+        toast('Enviando pela plataforma…', 'sucesso');
+        feitos++; $('feitosHoje').textContent = feitos; $('barraMeta').style.width = Math.min(100, feitos / limite * 100) + '%';
+        idx++; mostrarFila();
+    }
+    return { pilotoSalvar, pilotoLigar, pilotoRetomar, pilotoAgora, ptNum, abrirConversa, cvEnviar, cvAbrirWa, cvReler, cvStatus, spPlataforma, responder, aba, spEnviar, spPular, spDescartar, spIa, marcar, marcarGrupo, estimar, cacar, alternar, excluirCacada, carregarMsg, whats, ia, copiarPrevia, copiloto, status, obs, excluir, salvarConfig, testarAlerta };
 })();
 </script>
 </body>
