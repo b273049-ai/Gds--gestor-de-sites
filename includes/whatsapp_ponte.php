@@ -64,6 +64,8 @@ function wa_ponte_sincronizar($dados) {
     global $pdo;
     $a = wa_api();
     if (time() - (int)get_config('wa_ponte_visto', '0') >= 10) set_config('wa_ponte_visto', (string)time());
+    // Conector novo (v18) repassa as respostas que chegam: guarda quando foi visto para a tela avisar quem precisa atualizar
+    if (array_key_exists('recebidas', $dados) && time() - (int)get_config('wa_ponte_ouve', '0') >= 60) set_config('wa_ponte_ouve', (string)time());
 
     // 1) Estado de cada número no conector
     $forcarSaida = [];
@@ -99,6 +101,11 @@ function wa_ponte_sincronizar($dados) {
             $pdo->prepare("UPDATE whatsapp_mensagens SET tentativas=tentativas+1, erro=?, ponte_em=NULL, status=CASE WHEN tentativas+1 >= 3 THEN 'erro' ELSE 'pendente' END WHERE id=? AND status='enviando'")
                 ->execute([mb_substr((string)($r['erro'] ?? 'Falha no conector'), 0, 250), $id]);
         }
+        // Mensagem da prospecção: registra na conversa e avança a cadência
+        if (is_file(__DIR__ . '/prospeccao_piloto.php')) {
+            require_once __DIR__ . '/prospeccao_piloto.php';
+            try { prosp_envio_resultado($id, !empty($r['ok']), (string)($r['erro'] ?? '')); } catch (Throwable $e) { error_log('GDS prospecção envio: ' . $e->getMessage()); }
+        }
     }
 
     // 3) O que o conector deve fazer com cada número
@@ -118,7 +125,7 @@ function wa_ponte_sincronizar($dados) {
     $mensagens = [];
     if ($abertas) {
         $st = $pdo->query("SELECT m.id, m.empresa_id, m.telefone, m.texto, m.canal FROM whatsapp_mensagens m
-            WHERE m.status='pendente' AND m.tentativas < 3 AND m.criado_em > NOW() - INTERVAL '1 day' ORDER BY m.id LIMIT 40");
+            WHERE m.status='pendente' AND m.tentativas < 3 AND m.criado_em > NOW() - INTERVAL '1 day' AND (m.enviar_apos IS NULL OR m.enviar_apos <= NOW()) ORDER BY m.id LIMIT 40");
         $empresas = [];
         foreach ($st->fetchAll() as $m) {
             if ($m['empresa_id']) {
@@ -141,6 +148,20 @@ function wa_ponte_sincronizar($dados) {
     // De carona: lembretes e rotinas (no máximo a cada 5 min) — dispensa o Cron Job
     try { wa_rotina(); } catch (Throwable $e) { error_log('GDS ponte rotina: ' . $e->getMessage()); }
 
+    // Prospecção: respostas que chegaram no número da plataforma + próxima mensagem do piloto automático
+    $ouvir = [];
+    $leadsResponderam = [];
+    if (is_file(__DIR__ . '/prospeccao_piloto.php')) {
+        require_once __DIR__ . '/prospeccao_piloto.php';
+        if (get_config('prosp_ouvir', '1') === '1' && $a['plat_instancia'] !== '') $ouvir[] = $a['plat_instancia'];
+        $porInst = [];
+        foreach (array_slice((array)($dados['recebidas'] ?? []), 0, 100) as $m) if (is_array($m)) $porInst[(string)($m['instancia'] ?? '')][] = $m;
+        foreach ($porInst as $inst => $lista) {
+            try { $leadsResponderam = array_merge($leadsResponderam, prosp_processar_recebidas($lista, $inst)); } catch (Throwable $e) { error_log('GDS respostas: ' . $e->getMessage()); }
+        }
+        try { prosp_piloto_rotina(); } catch (Throwable $e) { error_log('GDS piloto: ' . $e->getMessage()); }
+    }
+
     // 5) Prospecção: leads para o conector verificar (WhatsApp comercial, busca, Instagram)
     $verificar = [];
     $resultadosVerif = array_slice(array_filter((array)($dados['verificacoes'] ?? []), fn($v) => is_array($v) && (int)($v['id'] ?? 0) > 0), 0, 10);
@@ -153,18 +174,22 @@ function wa_ponte_sincronizar($dados) {
             unset($v);
         }
     }
-    // A conferência dos sites candidatos é lenta: roda depois de responder ao conector
-    if ($resultadosVerif && is_file(__DIR__ . '/prospeccao.php')) {
-        register_shutdown_function(function () use ($resultadosVerif) {
+    // A conferência dos sites candidatos e a leitura das respostas pela IA são lentas: rodam depois de responder ao conector
+    if (($resultadosVerif && is_file(__DIR__ . '/prospeccao.php')) || $leadsResponderam) {
+        register_shutdown_function(function () use ($resultadosVerif, $leadsResponderam) {
             ignore_user_abort(true);
+            @set_time_limit(180);
             if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
             elseif (function_exists('litespeed_finish_request')) litespeed_finish_request();
             require_once __DIR__ . '/prospeccao.php';
             foreach ($resultadosVerif as $v) {
                 try { prosp_concluir_verificacao((int)$v['id'], $v); } catch (Throwable $e) { error_log('GDS verificação: ' . $e->getMessage()); }
             }
+            foreach ($leadsResponderam as $lid) {
+                try { prosp_analisar_resposta((int)$lid); } catch (Throwable $e) { error_log('GDS leitura da resposta: ' . $e->getMessage()); }
+            }
         });
     }
 
-    return ['ok' => true, 'instancias' => $instancias, 'mensagens' => $mensagens, 'verificar' => $verificar, 'intervalo' => $mensagens || $verificar ? 2 : 4];
+    return ['ok' => true, 'instancias' => $instancias, 'mensagens' => $mensagens, 'verificar' => $verificar, 'ouvir' => $ouvir, 'intervalo' => $mensagens || $verificar ? 2 : 4];
 }

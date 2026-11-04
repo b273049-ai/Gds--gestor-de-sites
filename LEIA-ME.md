@@ -192,6 +192,22 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   **Variar visual** para nenhum post sair igual ao outro;
 - baixa o **carrossel** completo (capa + 1 slide por item + fechamento);
 - grava o **vídeo MP4 9:16** com gancho em letras gigantes, fotos em movimento e oferta no final.
+- (v18) **Modelos de copy**: AIDA, PAS, Antes → Depois → Ponte, 4U, história curta, mito × verdade e lista.
+- (v18) **Versões A/B/C** do título em cada post (um clique troca a arte) e **texto adaptado** para Facebook,
+  LinkedIn, Status do WhatsApp e Perfil da Empresa no Google (marque as redes nos botões).
+- (v18) **Calendário do mês**: 4 semanas com 3, 5 ou 7 posts por semana, pilares alternados (educativo, prova,
+  dor/objeção, oferta) e progressão atrair → educar → provar → converter. "Criar" em cada linha gera o post.
+
+### Fotos para os sites e para o marketing (v18)
+- **O plano grátis do Google Gemini não gera mais imagem** (só com faturamento ativo) e o **Pexels pausou as chaves
+  novas** (set/2026). Por isso:
+- **Fotos com IA grátis: Cloudflare Workers AI** (FLUX, cerca de 200 fotos por dia, sem cartão). Em Configurações →
+  Fotos exclusivas: crie a conta em dash.cloudflare.com → AI → Workers AI → Use REST API, copie o *Account ID* e crie
+  o token. Reserva: **Pollinations** (chave `sk_` grátis em enter.pollinations.ai). No modo automático a plataforma
+  tenta um por um até gerar — se acabar a cota do dia de um, o próximo assume — e recorta no formato do post.
+- **Banco de fotos**: **Openverse sem chave** (domínio público), **Pixabay** e **Unsplash** com chave grátis. Quem já
+  tem chave do Pexels continua usando. O botão "Testar" em Configurações mostra quem respondeu.
+- Reserva no navegador: **Gerar no navegador (Puter)** no Marketing (pede um login grátis do Puter na 1ª vez).
 
 ## Central de prospecção (Admin → Prospecção de clientes)
 - **Caçada em massa**: marque vários segmentos (ou o atalho "os que mais compram site", ou todos) e várias cidades/bairros
@@ -226,6 +242,24 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   no Google ou no Instagram, use os botões 🔎 e 📸. A conferência do WhatsApp usa o número da plataforma
   conectado (Admin → WhatsApp).
 - A **prévia usa a cor e o logo da empresa** (foto do perfil do WhatsApp, cor no nome ou cor das fotos do Google).
+
+### Piloto automático e conversas (v18)
+- **🤖 Piloto automático**: a plataforma manda a cadência sozinha pelo WhatsApp dela (Admin → WhatsApp → número da
+  plataforma), no horário e nos dias escolhidos nos botões, uma mensagem por vez com intervalo aleatório. A IA escreve
+  uma mensagem diferente para cada empresa (ou usa os seus modelos). Tudo fica registrado na prospecção.
+- **Proteção do número**: aquecimento (10/dia na 1ª semana, 18, 28, 40…), limite por hora, só números conferidos no
+  WhatsApp, nunca 2 vezes no mesmo dia para a mesma pessoa, nunca para quem já é cliente, para na hora quando a pessoa
+  responde e tira da lista (com um "combinado") quem pede para parar. **Pausa sozinho** se muita gente pedir para parar,
+  recusar, ou se 3 envios seguidos falharem — e avisa no seu WhatsApp. O WhatsApp não tem limite "seguro" oficial para
+  contato frio: os freios diminuem o risco, não zeram. Use um chip só para a prospecção.
+- **💬 Conversas**: as respostas que chegam no número da plataforma aparecem com a **leitura da IA** (interessado,
+  pediu o link, preço, já tem site, não quer…), o funil se move sozinho e vêm 2 respostas sugeridas. Responda pela
+  plataforma com um clique, ou ligue "A IA responde sozinha" (casos simples, até 2 vezes por lead, com atraso humano).
+- As respostas chegam pelo **Conector GDS v18** (atualize a pasta `whatsapp-conector` no celular/computador). Com
+  WhatsApp em servidor (Evolution API ou conector em servidor), configure o webhook mostrado na aba Piloto
+  (`/api/whatsapp_receber.php`).
+- Para volume grande e oficial: API da Meta (WhatsApp Cloud) com modelo aprovado — cerca de R$ 0,30 a R$ 0,40 por
+  mensagem de marketing no Brasil.
 
 ## E-mail e senhas
 - **Admin → Configurações → E-mail (SMTP)**: na Hostinger, crie um e-mail em "E-mails" e use `smtp.hostinger.com`,

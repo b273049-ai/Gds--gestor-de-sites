@@ -432,6 +432,11 @@ function wa_rotina($forcar = false) {
     } catch (PDOException $e) {
         error_log('GDS WhatsApp (rotina): ' . $e->getMessage());
     }
+    // Prospecção no piloto automático (respostas agendadas + próxima mensagem da cadência)
+    if (is_file(__DIR__ . '/prospeccao_piloto.php') && (get_config('prosp_auto', '0') === '1' || wa_api()['tipo'] !== 'ponte')) {
+        require_once __DIR__ . '/prospeccao_piloto.php';
+        $res += prosp_piloto_tudo();
+    }
     return $res;
 }
 
