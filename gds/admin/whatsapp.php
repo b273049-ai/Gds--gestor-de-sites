@@ -65,7 +65,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar'])) {
     $tipo = in_array($_POST['wa_api_tipo'] ?? '', ['', 'ponte', 'gds', 'evolution', 'wppconnect', 'zapi', 'ultramsg', 'cloud', 'webhook'], true) ? $_POST['wa_api_tipo'] : '';
     set_config('wa_api_tipo', $tipo);
     set_config('wa_api_url', url_valida_ou_vazia($_POST['wa_api_url'] ?? ''));
-    if (trim($_POST['wa_api_chave'] ?? '') !== '') set_config('wa_api_chave', trim($_POST['wa_api_chave']));
+    // Na ponte a chave é gerada pelo próprio GDS: ignora o campo de senha do modo servidor
+    // (o navegador do celular costuma preenchê-lo sozinho e trocava a chave sem ninguém ver)
+    if ($tipo !== 'ponte' && trim($_POST['wa_api_chave'] ?? '') !== '') set_config('wa_api_chave', trim($_POST['wa_api_chave']));
     if (isset($_POST['limpar_chave'])) set_config('wa_api_chave', '');
     set_config('wa_plataforma_instancia', trim($_POST['wa_plataforma_instancia'] ?? ''));
     if (trim($_POST['wa_plataforma_token'] ?? '') !== '') set_config('wa_plataforma_token', trim($_POST['wa_plataforma_token']));
@@ -143,7 +145,7 @@ $chaveSalva = $a['chave'] !== '';
         </div>
         <div data-tipo="gds evolution wppconnect zapi webhook">
             <label id="rotChave">Chave</label>
-            <input type="password" name="wa_api_chave" autocomplete="off" placeholder="<?= $chaveSalva ? 'Salva — cole outra para trocar' : '' ?>">
+            <input type="password" name="wa_api_chave" autocomplete="new-password" placeholder="<?= $chaveSalva ? 'Salva — cole outra para trocar' : '' ?>">
             <?php if ($chaveSalva): ?><label class="check" style="font-size:12px"><input type="checkbox" name="limpar_chave"> remover a chave salva</label><?php endif; ?>
         </div>
 
