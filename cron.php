@@ -33,6 +33,8 @@ try { $res += pag_rotina(); } catch (Throwable $e) { $res['pix'] = 'erro'; }
 try { $res += retorno_rotina(); } catch (Throwable $e) { $res['retorno'] = 'erro'; }
 // Clube: avisa renovação e vence o que passou do prazo
 try { $res += clube_rotina(); } catch (Throwable $e) { $res['clube'] = 'erro'; }
+// Marketing: continua os planos com os posts prontos (até 3 por execução)
+try { require_once __DIR__ . '/includes/marketing_ia.php'; $res += mkt_rotina(); } catch (Throwable $e) { $res['marketing'] = 'erro'; }
 // Caçadas de prospecção continuam mesmo com a tela fechada
 try { $res += prosp_rotina(); } catch (Throwable $e) { $res['prospeccao'] = 'erro'; }
 echo json_encode($res);

@@ -198,6 +198,22 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - (v18) **Calendário do mês**: 4 semanas com 3, 5 ou 7 posts por semana, pilares alternados (educativo, prova,
   dor/objeção, oferta) e progressão atrair → educar → provar → converter. "Criar" em cada linha gera o post.
 
+### Plano com os posts prontos (v19)
+- **⚡ Gerar meu plano pronto** (Admin → Marketing): escolha semana ou mês, posts por semana (3, 5 ou todo dia) e
+  stories por dia. A IA monta o calendário no **melhor horário de cada formato** (Reels à noite, carrossel no almoço,
+  stories de manhã/almoço/noite — médias do Brasil; o Insights do seu perfil vale mais) e cria cada item: arte com
+  foto feita por IA, legenda com gancho nas primeiras 125 letras, 3–5 hashtags, roteiro e **narração** do Reels,
+  stories com o adesivo certo (enquete, pergunta, quiz, link) e o **prompt para animar a foto** no Kling/Dreamina.
+- O plano continua sozinho com a tela fechada (cron ou carona do conector). Cada post tem os botões **Baixar arte /
+  Carrossel / Stories**, **🎬 Vídeo narrado** (MP4 com a voz), **Legenda**, **Animar no Kling**, **Postei** e
+  **Refazer**; e o **ZIP com tudo** (artes, slides, stories, legendas e roteiros em pastas por dia).
+- **⏰ Lembrete na hora de postar**: 15 min antes chega no seu WhatsApp a legenda pronta e o link do post.
+- **Voz dos Reels**: Azure Speech grátis (500 mil caracteres/mês, vozes pt-BR) em Configurações → Voz dos vídeos.
+  Sem ela, usa a voz grátis do Puter no navegador.
+- **Vídeo com IA de verdade**: não existe API grátis confiável hoje (Veo, Seedance etc. são pagos). O caminho grátis:
+  baixe a capa, cole o prompt pronto em klingai.com → Image to Video (créditos grátis por dia).
+- O quadro **⚡ IAs do marketing** mostra o que já está ligado e o passo a passo do que falta.
+
 ### Fotos para os sites e para o marketing (v18)
 - **O plano grátis do Google Gemini não gera mais imagem** (só com faturamento ativo) e o **Pexels pausou as chaves
   novas** (set/2026). Por isso:

@@ -174,9 +174,15 @@ function wa_ponte_sincronizar($dados) {
             unset($v);
         }
     }
+    // Marketing de carona: com post pendente, gera um (no máximo a cada 90 s) depois de responder ao conector
+    $mktCarona = false;
+    if (is_file(__DIR__ . '/marketing_ia.php') && time() - (int)get_config('mkt_carona', '0') >= 90) {
+        try { $mktCarona = (bool)$pdo->query("SELECT 1 FROM marketing_itens WHERE status='pendente' LIMIT 1")->fetchColumn(); } catch (PDOException $e) { $mktCarona = false; }
+        if ($mktCarona) set_config('mkt_carona', (string)time());
+    }
     // A conferência dos sites candidatos e a leitura das respostas pela IA são lentas: rodam depois de responder ao conector
-    if (($resultadosVerif && is_file(__DIR__ . '/prospeccao.php')) || $leadsResponderam) {
-        register_shutdown_function(function () use ($resultadosVerif, $leadsResponderam) {
+    if (($resultadosVerif && is_file(__DIR__ . '/prospeccao.php')) || $leadsResponderam || $mktCarona) {
+        register_shutdown_function(function () use ($resultadosVerif, $leadsResponderam, $mktCarona) {
             ignore_user_abort(true);
             @set_time_limit(180);
             if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
@@ -187,6 +193,9 @@ function wa_ponte_sincronizar($dados) {
             }
             foreach ($leadsResponderam as $lid) {
                 try { prosp_analisar_resposta((int)$lid); } catch (Throwable $e) { error_log('GDS leitura da resposta: ' . $e->getMessage()); }
+            }
+            if ($mktCarona) {
+                try { require_once __DIR__ . '/marketing_ia.php'; mkt_plano_processar(); } catch (Throwable $e) { error_log('GDS marketing carona: ' . $e->getMessage()); }
             }
         });
     }
