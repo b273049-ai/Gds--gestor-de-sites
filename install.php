@@ -5,6 +5,14 @@
 // ============================================================
 require_once __DIR__ . '/config/db.php';
 
+// Já existe admin: o instalador não aparece mais (ninguém de fora descobre nem tenta usar)
+try {
+    if ($pdo->query("SELECT 1 FROM usuarios WHERE role = 'admin' LIMIT 1")->fetchColumn()) {
+        http_response_code(404);
+        exit('Página não encontrada.');
+    }
+} catch (PDOException $e) { /* banco ainda sem tabelas: segue para a instalação */ }
+
 $mensagem = '';
 $feito = false;
 

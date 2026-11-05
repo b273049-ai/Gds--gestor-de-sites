@@ -60,7 +60,11 @@ function prosp_piloto_cfg() {
         'ouvir' => get_config('prosp_ouvir', '1') === '1',
         'pausa' => get_config('prosp_auto_pausa', ''),
     ];
-    if ($efetivo !== 'personalizado') {
+    if ($efetivo === 'personalizado') {
+        // Aquecimento escolhido semana a semana (ex.: "10,18,28,40"); depois da 4ª semana vale o máximo
+        $r = array_values(array_filter(array_map('intval', explode(',', get_config('prosp_auto_rampa', ''))), fn($n) => $n > 0));
+        if (count($r) === 4) $c['rampa'] = [1 => $r[0], 2 => $r[1], 3 => $r[2], 4 => $r[3]];
+    } else {
         $p = prosp_piloto_perfis()[$efetivo];
         $c = array_merge($c, ['horario' => $p['horario'], 'dias' => $p['dias'], 'ritmo' => $p['ritmo'], 'max_dia' => $p['max'], 'rampa' => $p['rampa'], 'freio_recusa' => $p['freio_recusa']]);
     }
@@ -93,6 +97,9 @@ function prosp_piloto_horas_janela($c) {
 // Limite de hoje com o aquecimento do perfil (ex.: Seguro: 10/dia na 1ª semana, 18, 28, 40; depois o máximo)
 function prosp_piloto_limite_hoje($c = null) {
     $c = $c ?: prosp_piloto_cfg();
+    // Personalizado: "só hoje, N mensagens" vale até a meia-noite
+    $hoje = explode(':', get_config('prosp_auto_hoje', ''));
+    if ($c['perfil'] === 'personalizado' && count($hoje) === 2 && $hoje[0] === date('Y-m-d')) return max(0, min(300, (int)$hoje[1]));
     if ($c['aquecido'] || !$c['inicio']) return $c['max_dia'];
     $semana = intdiv(max(0, time() - $c['inicio']), 7 * 86400) + 1;
     return min($c['max_dia'], $c['rampa'][$semana] ?? $c['max_dia']);

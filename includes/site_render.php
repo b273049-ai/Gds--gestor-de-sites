@@ -134,6 +134,20 @@ function site_eh_spam() {
     $_SESSION['gds_envios'] = array_values(array_filter($_SESSION['gds_envios'] ?? [], fn($x) => $x > time() - 600));
     if (count($_SESSION['gds_envios']) >= 8) return true;
     $_SESSION['gds_envios'][] = time();
+    // Robô sem cookie não passa pelo limite da sessão: no máximo 20 envios a cada 10 minutos por IP
+    global $pdo;
+    try {
+        $id = 'site:' . substr(hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? '')), 0, 40);
+        $st = $pdo->prepare("SELECT tentativas, atualizado_em > NOW() - INTERVAL '10 minutes' AS recente FROM login_tentativas WHERE identificador=?");
+        $st->execute([$id]);
+        $r = $st->fetch();
+        if (!$r) $pdo->prepare("INSERT INTO login_tentativas (identificador, tentativas) VALUES (?, 1)")->execute([$id]);
+        elseif (!pg_bool($r['recente'])) $pdo->prepare("UPDATE login_tentativas SET tentativas=1, atualizado_em=NOW() WHERE identificador=?")->execute([$id]);
+        else {
+            if ((int)$r['tentativas'] >= 20) return true;
+            $pdo->prepare("UPDATE login_tentativas SET tentativas=tentativas+1 WHERE identificador=?")->execute([$id]);
+        }
+    } catch (PDOException $e) { /* sem a tabela, fica só o limite da sessão */ }
     return false;
 }
 
