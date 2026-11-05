@@ -27,6 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['marcar_pago'])) {
     }
     header('Location: financeiro.php'); exit;
 }
+// Link de pagamento do Mercado Pago (Pix, cartão ou boleto): quando pagar, dá baixa sozinho
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['gerar_link'])) {
+    require_once __DIR__ . '/../includes/mp_assinaturas.php';
+    $r = mp_link_assinatura((int)$_POST['pagamento_id']);
+    flash($r['ok'] ? 'sucesso' : 'erro', $r['ok'] ? 'Link de pagamento pronto (copie ou mande no WhatsApp na linha da cobrança). Quando o cliente pagar, a baixa é automática.' : $r['erro']);
+    header('Location: financeiro.php'); exit;
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancelar'])) {
     $pdo->prepare("UPDATE pagamentos_assinaturas SET status='cancelado' WHERE id=? AND status <> 'pago'")->execute([(int)$_POST['pagamento_id']]);
     flash('sucesso', 'Cobrança cancelada.');
@@ -40,7 +47,7 @@ $where = match ($filtro) {
     default => "pa.status IN ('pendente','atrasado')",
 };
 $pagamentos = $pdo->query("
-    SELECT pa.*, e.nome AS empresa_nome, e.id AS empresa_id
+    SELECT pa.*, e.nome AS empresa_nome, e.id AS empresa_id, e.whatsapp AS empresa_whatsapp
     FROM pagamentos_assinaturas pa JOIN empresas e ON e.id = pa.empresa_id
     WHERE $where ORDER BY pa.vencimento DESC LIMIT 300")->fetchAll();
 
@@ -89,6 +96,11 @@ $temToken = trim(get_config('mercadopago_access_token', '')) !== '';
                     <?= csrf_campo() ?><input type="hidden" name="pagamento_id" value="<?= $p['id'] ?>"><input type="hidden" name="gerar_proxima" value="1">
                     <button class="btn btn-sm" type="submit" name="marcar_pago" value="1">Marcar pago</button>
                 </form>
+                <?php if ($temToken && empty($p['link_pagamento'])): ?><form method="post"><?= csrf_campo() ?><input type="hidden" name="pagamento_id" value="<?= $p['id'] ?>"><button class="btn btn-ghost btn-sm" type="submit" name="gerar_link" value="1">🔗 Link de pagamento</button></form><?php endif; ?>
+                <?php if (!empty($p['link_pagamento'])): $msgPg = 'Olá! Segue o link para ativar o site (Pix, cartão ou boleto): ' . $p['link_pagamento']; ?>
+                <a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/<?= e(($p['empresa_whatsapp'] ?? '') !== '' ? (strlen(preg_replace('/\D/', '', $p['empresa_whatsapp'])) <= 11 ? '55' : '') . preg_replace('/\D/', '', $p['empresa_whatsapp']) : '') ?>?text=<?= rawurlencode($msgPg) ?>">Mandar link</a>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(<?= e(json_encode($p['link_pagamento'])) ?>).then(() => this.textContent = 'Copiado ✔')">Copiar link</button>
+                <?php endif; ?>
                 <?php if ($temToken): ?><form method="post" action="mp_gerar_cobranca.php"><?= csrf_campo() ?><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-ghost btn-sm" type="submit">Gerar PIX</button></form><?php endif; ?>
                 <form method="post" onsubmit="return confirm('Cancelar esta cobrança?')"><?= csrf_campo() ?><input type="hidden" name="pagamento_id" value="<?= $p['id'] ?>"><button class="btn btn-perigo btn-sm" type="submit" name="cancelar" value="1">Cancelar</button></form>
                 <?php endif; ?>

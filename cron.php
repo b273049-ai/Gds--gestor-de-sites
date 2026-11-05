@@ -35,6 +35,8 @@ try { $res += retorno_rotina(); } catch (Throwable $e) { $res['retorno'] = 'erro
 try { $res += clube_rotina(); } catch (Throwable $e) { $res['clube'] = 'erro'; }
 // Marketing: continua os planos com os posts prontos (até 3 por execução)
 try { require_once __DIR__ . '/includes/marketing_ia.php'; $res += mkt_rotina(); } catch (Throwable $e) { $res['marketing'] = 'erro'; }
+// Mercado Pago: confere as cobranças com link que ainda estão em aberto (reserva do webhook)
+try { require_once __DIR__ . '/includes/mp_assinaturas.php'; $res += mp_rotina(); } catch (Throwable $e) { $res['mp'] = 'erro'; }
 // Caçadas de prospecção continuam mesmo com a tela fechada
 try { $res += prosp_rotina(); } catch (Throwable $e) { $res['prospeccao'] = 'erro'; }
 echo json_encode($res);

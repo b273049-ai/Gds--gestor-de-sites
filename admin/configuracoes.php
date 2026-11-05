@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('admin');
 
-$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key', 'pixabay_api_key', 'unsplash_api_key', 'img_cf_token', 'azure_tts_key'];
+$segredos = ['ia_api_key_gemini', 'ia_api_key_anthropic', 'ia_api_key_openai', 'mercadopago_access_token', 'google_maps_key', 'pexels_api_key', 'img_openai_key', 'img_pollinations_key', 'smtp_senha', 'google_places_key', 'pixabay_api_key', 'unsplash_api_key', 'img_cf_token', 'azure_tts_key', 'mp_webhook_secret'];
 $provedores = ['gemini', 'anthropic', 'openai'];
 
 // Testa a IA com uma chamada curtinha (o botão "Testar" chama via fetch)
@@ -31,6 +31,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_fotos'])) {
     $out = [];
     foreach (fotos_fontes() as $f) { $n = count(fotos_buscar_em($f, 'barbershop', 4, 'landscape')); $out[] = ucfirst($f) . ': ' . ($n ? "✔ $n fotos" : '✖ não respondeu'); }
     responder_json(['ok' => (bool)$out, 'msg' => $out ? implode(' · ', $out) : 'Nenhum banco de fotos ligado.']);
+}
+// Testa o Mercado Pago: confere o Access Token e cria um link de teste de R$ 1 (não cobra nada)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['testar_mp'])) {
+    session_write_close();
+    require_once __DIR__ . '/../includes/mp_assinaturas.php';
+    $tok = mp_plat_token();
+    if ($tok === '') responder_json(['ok' => false, 'msg' => 'Cole o Access Token e clique em Salvar antes de testar.']);
+    $u = mp_api('GET', '/users/me', $tok);
+    if (empty($u['json']['id'])) responder_json(['ok' => false, 'msg' => 'O Mercado Pago recusou o Access Token (' . ($u['erro'] ?: 'sem resposta') . '). Confira se copiou o de PRODUÇÃO (APP_USR-…).']);
+    $p = mp_criar_preferencia($tok, ['titulo' => 'Teste da plataforma', 'valor' => 1, 'referencia' => 'gds-teste', 'notificacao' => mp_webhook_url()]);
+    responder_json(['ok' => $p['ok'], 'msg' => '✔ Conta: ' . ($u['json']['nickname'] ?? $u['json']['email'] ?? $u['json']['id']) . ($p['ok'] ? ' · link de teste criado (não precisa pagar).' : ' · mas não criou o link: ' . $p['erro'])
+        . (get_config('mp_webhook_secret', '') === '' ? ' ⚠ Falta a assinatura secreta do webhook.' : ' · webhook protegido ✔')]);
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['listar_modelos'])) {
     $prov = in_array($_POST['provedor'] ?? '', $provedores, true) ? $_POST['provedor'] : 'gemini';
@@ -200,7 +212,23 @@ function campo_segredo($nome, $rotulo, $valorAtual, $placeholder) {
         <input type="number" min="0" name="ia_limite_diario_empresa" value="<?= e($limite) ?>">
 
         <h3 style="margin-top:24px">Pagamentos e comunicação</h3>
-        <?= campo_segredo('mercadopago_access_token', 'Mercado Pago — Access Token (cobrança das assinaturas)', $cfg['mercadopago_access_token'], 'APP_USR-...') ?>
+        <div id="mercadopago"></div>
+        <?= campo_segredo('mercadopago_access_token', 'Mercado Pago — Access Token de produção (cobrança das assinaturas)', $cfg['mercadopago_access_token'], 'APP_USR-...') ?>
+        <?= campo_segredo('mp_webhook_secret', 'Mercado Pago — Assinatura secreta do webhook', $cfg['mp_webhook_secret'], 'Cole a assinatura secreta') ?>
+        <?php $mpWebhook = rtrim(get_config('plataforma_url', '') ?: ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? '')), '/') . '/api/mercadopago_webhook.php'; ?>
+        <details class="dica mp-passos" <?= $cfg['mercadopago_access_token'] === '' ? 'open' : '' ?>><summary class="link"><b>Passo a passo do Mercado Pago (10 min, uma vez só)</b></summary>
+            <ol>
+                <li>Tenha uma conta no <a class="link" href="https://www.mercadopago.com.br" target="_blank" rel="noopener">Mercado Pago</a> com CPF ou CNPJ verificado: é nela que o dinheiro dos clientes cai.</li>
+                <li>Entre em <a class="link" href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noopener">mercadopago.com.br/developers</a> → <b>Suas integrações</b> → <b>Criar aplicação</b>. Nome: o da sua marca. Tipo: <b>Pagamentos on-line</b> → <b>Checkout Pro</b> → "não uso plataforma de e-commerce". Aceite e crie.</li>
+                <li>Na aplicação, abra <b>Credenciais de produção</b> → <b>Ativar credenciais</b> (pede o ramo e o site: use <code><?= e(preg_replace('#^https?://#', '', rtrim(get_config('plataforma_url', '') ?: ($_SERVER['HTTP_HOST'] ?? ''), '/'))) ?></code>). Copie o <b>Access Token</b> (começa com <code>APP_USR-</code>) e cole no 1º campo acima.</li>
+                <li>Ainda na aplicação: <b>Webhooks</b> → <b>Configurar notificações</b> → modo <b>Produção</b> → URL: <code class="copiar-mp"><?= e($mpWebhook) ?></code> → marque o evento <b>Pagamentos</b> → Salvar. Copie a <b>Assinatura secreta</b> que aparece e cole no 2º campo.</li>
+                <li>Clique em <b>Salvar</b> lá embaixo e depois em <b>Testar Mercado Pago</b> aqui.</li>
+                <li>Pronto: no <a class="link" href="financeiro.php">Financeiro</a> cada cobrança ganha o botão <b>🔗 Link de pagamento</b> (Pix, cartão ou boleto), e a vendedora IA manda o link sozinha quando fecha (defina o <b>Valor da 1ª cobrança</b> na Prospecção → Piloto). Pagou → a empresa ativa sozinha e você recebe o aviso no WhatsApp.</li>
+            </ol>
+            <p>Nunca mande o Access Token por chat ou e-mail: ele só fica aqui. Para testar sem dinheiro real, use as <b>credenciais de teste</b> da aplicação e os cartões de teste do Mercado Pago.</p>
+        </details>
+        <div class="acoes-form" style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" onclick="testarMidia('testar_mp', this, 'resTesteMp')">Testar Mercado Pago</button></div>
+        <p class="dica" id="resTesteMp" role="status"></p>
         <p class="dica">WhatsApp automático e domínios próprios têm telas próprias: <a class="link" href="whatsapp.php">WhatsApp</a> · <a class="link" href="dominios.php">Domínios</a>.</p>
 
         <h3 style="margin-top:24px" id="fotos">Fotos profissionais para os sites (banco de fotos grátis)</h3>
@@ -330,7 +358,7 @@ async function testarIA(prov, btn) {
 // Testa fotos (salve antes: o teste usa as chaves já gravadas)
 async function testarMidia(acao, btn, alvo) {
     const el = document.getElementById(alvo || 'resTesteMidia');
-    btn.disabled = true; el.style.color = ''; el.textContent = acao === 'testar_imagem' ? 'Gerando uma foto de teste (pode levar até 1 minuto)…' : acao === 'testar_voz' ? 'Gerando a voz…' : 'Consultando os bancos de fotos…';
+    btn.disabled = true; el.style.color = ''; el.textContent = acao === 'testar_imagem' ? 'Gerando uma foto de teste (pode levar até 1 minuto)…' : acao === 'testar_voz' ? 'Gerando a voz…' : acao === 'testar_mp' ? 'Conferindo a conta do Mercado Pago…' : 'Consultando os bancos de fotos…';
     try {
         const d = await post({ [acao]: 1 });
         el.style.color = d.ok ? 'var(--ok)' : 'var(--danger)';

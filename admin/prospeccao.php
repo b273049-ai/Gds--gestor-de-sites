@@ -53,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             set_config('prosp_optout_responder', ($_POST['optout_resp'] ?? '1') === '1' ? '1' : '0');
             if (isset($_POST['ia_fecha'])) set_config('prosp_ia_fecha', $_POST['ia_fecha'] === '1' ? '1' : '0');
             if (isset($_POST['oferta'])) set_config('prosp_oferta', mb_substr(trim((string)$_POST['oferta']), 0, 160));
+            if (isset($_POST['oferta_valor'])) { $v = (float)str_replace(',', '.', preg_replace('/[^\d,.]/', '', (string)$_POST['oferta_valor'])); set_config('prosp_oferta_valor', $v > 0 ? number_format($v, 2, '.', '') : ''); }
             if (isset($_POST['pagamento'])) set_config('prosp_pagamento', mb_substr(trim((string)$_POST['pagamento']), 0, 200));
             if (isset($_POST['ia_max'])) set_config('prosp_ia_max', (string)max(2, min(30, (int)$_POST['ia_max'])));
             responder_json(['ok' => true, 'piloto' => prosp_piloto_status()]);
@@ -141,7 +142,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             require_once __DIR__ . '/../includes/prospeccao_cliente.php';
             session_write_close();
             @set_time_limit(120);
-            responder_json(prosp_virar_cliente($id, ['email' => (string)($_POST['email'] ?? ''), 'plano_id' => (int)($_POST['plano_id'] ?? 0), 'publicar' => ($_POST['publicar'] ?? '1') === '1']));
+            $rv = prosp_virar_cliente($id, ['email' => (string)($_POST['email'] ?? ''), 'plano_id' => (int)($_POST['plano_id'] ?? 0), 'publicar' => ($_POST['publicar'] ?? '1') === '1']);
+            // Link de pagamento do Mercado Pago (plano escolhido ou a oferta de entrada)
+            if (!empty($rv['ok']) && empty($rv['ja_existia'])) {
+                require_once __DIR__ . '/../includes/mp_assinaturas.php';
+                $valor = 0.0;
+                if ((int)($_POST['plano_id'] ?? 0)) { $pv = $pdo->prepare("SELECT valor FROM planos WHERE id=?"); $pv->execute([(int)$_POST['plano_id']]); $valor = (float)$pv->fetchColumn(); }
+                if ($valor <= 0) $valor = (float)str_replace(',', '.', get_config('prosp_oferta_valor', ''));
+                if ($valor > 0 && mp_plat_token() !== '') { $mp = mp_cobranca_nova((int)$rv['empresa_id'], $valor, (int)($_POST['plano_id'] ?? 0) ?: null); if (!empty($mp['ok'])) $rv['pagamento'] = $mp['link']; else $rv['pagamento_erro'] = $mp['erro'] ?? ''; }
+            }
+            responder_json($rv);
         case 'status':
             $st = array_key_exists($_POST['status'] ?? '', $statusNomes) ? $_POST['status'] : 'novo';
             $pdo->prepare("UPDATE prospects SET status=?, proximo_contato = CASE WHEN ? IN ('fechado','descartado','negociando') THEN NULL ELSE proximo_contato END, atualizado_em=NOW() WHERE id=?")->execute([$st, $st, $id]);
@@ -558,7 +568,8 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                 <h4>🤖 Vendedora IA</h4>
                 <div class="form-row">
                     <div><label for="ptOferta">Oferta de entrada <small class="muted">(a IA usa quando perguntam o preço)</small></label><input id="ptOferta" maxlength="160" value="<?= e(get_config('prosp_oferta', '')) ?>" placeholder="Ex.: 1º mês por R$ 49, depois R$ 97/mês, sem fidelidade"></div>
-                    <div><label for="ptPagamento">Como o cliente paga <small class="muted">(vai na mensagem de fechamento)</small></label><input id="ptPagamento" maxlength="200" value="<?= e(get_config('prosp_pagamento', '')) ?>" placeholder="Ex.: Pix na chave 61999999999 (nome Fulano) e me manda o comprovante"></div>
+                    <div><label for="ptValor">Valor da 1ª cobrança (R$) <small class="muted">(gera o link do Mercado Pago)</small></label><input id="ptValor" inputmode="decimal" maxlength="10" value="<?= e(get_config('prosp_oferta_valor', '')) ?>" placeholder="49,00"></div>
+                    <div><label for="ptPagamento">Como o cliente paga <small class="muted">(se não usar o Mercado Pago)</small></label><input id="ptPagamento" maxlength="200" value="<?= e(get_config('prosp_pagamento', '')) ?>" placeholder="Ex.: Pix na chave 61999999999 (nome Fulano) e me manda o comprovante"></div>
                 </div>
                 <label for="ptIaMax">Até quantas respostas a IA manda sozinha por lead</label>
                 <input id="ptIaMax" type="number" min="2" max="30" value="<?= (int)get_config('prosp_ia_max', '12') ?>" style="max-width:120px">
@@ -1156,7 +1167,7 @@ const PR = (() => {
         btn.disabled = true;
         const r = await api({ acao: 'piloto_salvar', perfil: ptEscolha('perfil')[0] || 'auto', freio_recusa: ptChave('freio_recusa'), max: ptMax, rampa: ptRampa(), hoje: ptHojeMexeu ? $('ptHojeN').textContent : '', dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
             ia: ptEscolha('ia')[0] || '1', responde: ptEscolha('responde')[0] || 'sugerir', aquecido: ptChave('aquecido'), alertas: ptChave('alertas'), optout_resp: ptChave('optout_resp'), ouvir: ptChave('ouvir'),
-            ia_fecha: ptChave('ia_fecha'), oferta: $('ptOferta').value, pagamento: $('ptPagamento').value, ia_max: $('ptIaMax').value });
+            ia_fecha: ptChave('ia_fecha'), oferta: $('ptOferta').value, pagamento: $('ptPagamento').value, oferta_valor: $('ptValor').value, ia_max: $('ptIaMax').value });
         btn.disabled = false;
         if (r.ok) { ptMostrar(r.piloto); toast('Salvo!', 'sucesso'); } else toast(r.erro, 'erro');
     }
@@ -1243,9 +1254,11 @@ const PR = (() => {
         box.appendChild(Object.assign(document.createElement('p'), { textContent: r.ja_existia ? '✅ Este lead já era cliente.' : '✅ Pronto! Empresa e site criados' + (r.publicado ? ' e publicados' : '') + ' (' + (r.servicos || 0) + ' serviços, ' + (r.avaliacoes || 0) + ' avaliações do Google, ' + (r.fotos || 0) + ' fotos).' }));
         linha('Site:', r.url, r.url);
         if (r.senha) { linha('Login do dono:', r.email); linha('Senha provisória:', r.senha); }
+        if (r.pagamento) linha('Link de pagamento (Mercado Pago):', r.pagamento, r.pagamento);
+        else if (r.pagamento_erro) linha('Mercado Pago:', '⚠ ' + r.pagamento_erro);
         linha('Painel da empresa:', 'Editar empresa, preços e horários', 'empresa_editar.php?id=' + r.empresa_id);
         if (r.senha) {
-            const msg = 'Prontinho! 🎉 O site da ' + $('dcNome').textContent + ' já está no ar: ' + r.url + '\n\nPara entrar no seu painel (agenda, serviços e preços): ' + location.origin + '/login.php\nLogin: ' + r.email + '\nSenha: ' + r.senha + '\n\nQualquer ajuste é só me falar!';
+            const msg = 'Prontinho! 🎉 O site da ' + $('dcNome').textContent + ' já está no ar: ' + r.url + '\n\nPara entrar no seu painel (agenda, serviços e preços): ' + location.origin + '/login.php\nLogin: ' + r.email + '\nSenha: ' + r.senha + (r.pagamento ? '\n\nPara ativar, pague por aqui (Pix, cartão ou boleto): ' + r.pagamento : '') + '\n\nQualquer ajuste é só me falar!';
             const w = document.createElement('button'); w.type = 'button'; w.className = 'btn btn-wa btn-sm'; w.textContent = 'Mandar o acesso para o cliente no WhatsApp';
             const card = document.querySelector('.prosp-card[data-id="' + dcId + '"]'); const num = card ? card.dataset.wa : (cv && cv.whatsapp) || '';
             w.onclick = () => num ? abrirWa(num, msg) : navigator.clipboard.writeText(msg).then(() => toast('Mensagem copiada.', 'sucesso'));
