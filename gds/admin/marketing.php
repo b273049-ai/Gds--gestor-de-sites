@@ -38,24 +38,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
         case 'plano_criar':
             session_write_close();
             $pid = mkt_plano_criar(['periodo' => $_POST['periodo'] ?? 'semana', 'por_semana' => (int)($_POST['por_semana'] ?? 5), 'stories_dia' => (int)($_POST['stories_dia'] ?? 2),
-                'publico' => $_POST['publico'] ?? '', 'redes' => $_POST['redes'] ?? '']);
+                'publico' => $_POST['publico'] ?? '', 'redes' => $_POST['redes'] ?? '', 'postar_sozinho' => ($_POST['postar_sozinho'] ?? '0') === '1']);
             responder_json(['ok' => true, 'plano_id' => $pid]);
         case 'plano_processar':
             session_write_close();
             @set_time_limit(180);
             responder_json(['ok' => true] + mkt_plano_processar((int)($_POST['plano_id'] ?? 0)));
         case 'plano_itens':
-            $st = $pdo->prepare("SELECT id, data, hora, tipo, objetivo, tema, gancho, status, post, foto_url, erro, postado_em FROM marketing_itens WHERE plano_id=? ORDER BY data, hora, id");
+            $st = $pdo->prepare("SELECT i.id, i.data, i.hora, i.tipo, i.objetivo, i.tema, i.gancho, i.status, i.post, i.foto_url, i.erro, i.postado_em, i.meta, i.publicar, i.pub, i.midia, i.metricas, i.nota_real,
+                (SELECT COUNT(*) FROM marketing_leads l WHERE l.item_id=i.id) leads FROM marketing_itens i WHERE i.plano_id=? ORDER BY i.data, i.hora, i.id");
             $st->execute([(int)($_POST['plano_id'] ?? 0)]);
             $itens = array_map(fn($i) => ['id' => (int)$i['id'], 'data' => $i['data'], 'hora' => $i['hora'], 'tipo' => $i['tipo'], 'tema' => $i['tema'], 'status' => $i['status'],
-                'post' => json_decode((string)$i['post'], true), 'foto' => $i['foto_url'], 'erro' => $i['erro'], 'postado' => (bool)$i['postado_em']], $st->fetchAll());
+                'post' => json_decode((string)$i['post'], true), 'foto' => $i['foto_url'], 'erro' => $i['erro'], 'postado' => (bool)$i['postado_em'],
+                'meta' => $i['meta'] ?: mkt_meta_do($i['tipo'], $i['objetivo']), 'publicar' => (bool)$i['publicar'], 'pub' => json_decode((string)$i['pub'], true) ?: new stdClass(),
+                'preparado' => !empty($i['midia']), 'metricas' => json_decode((string)$i['metricas'], true), 'nota_real' => $i['nota_real'] !== null ? (float)$i['nota_real'] : null, 'leads' => (int)$i['leads']], $st->fetchAll());
             responder_json(['ok' => true, 'itens' => $itens]);
         case 'item_refazer':
-            $pdo->prepare("UPDATE marketing_itens SET status='pendente', tentativas=0, erro=NULL WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
+            $pdo->prepare("UPDATE marketing_itens SET status='pendente', tentativas=0, erro=NULL, midia=NULL, pub=NULL WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
             $pdo->prepare("UPDATE marketing_planos SET status='gerando' WHERE id=(SELECT plano_id FROM marketing_itens WHERE id=?)")->execute([(int)($_POST['id'] ?? 0)]);
             responder_json(['ok' => true]);
         case 'item_postado':
             $pdo->prepare("UPDATE marketing_itens SET status=CASE WHEN status='postado' THEN 'pronto' ELSE 'postado' END, postado_em=CASE WHEN status='postado' THEN NULL ELSE NOW() END WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
+            responder_json(['ok' => true]);
+        // ----- Instagram e TikTok -----
+        case 'redes_salvar':
+            foreach (['ig_app_id' => 40, 'tt_client_key' => 60] as $k => $max) if (isset($_POST[$k])) set_config($k, mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $_POST[$k]), 0, $max));
+            foreach (['ig_app_secret', 'tt_client_secret'] as $k) if (trim($_POST[$k] ?? '') !== '') set_config($k, mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $_POST[$k]), 0, 120));
+            if (isset($_POST['tt_modo'])) set_config('tt_modo', $_POST['tt_modo'] === 'direto' ? 'direto' : 'rascunho');
+            if (isset($_POST['mkt_postar_em'])) set_config('mkt_postar_em', implode(',', array_intersect(explode(',', (string)$_POST['mkt_postar_em']), ['instagram', 'tiktok'])));
+            if (isset($_POST['mkt_palavra'])) set_config('mkt_palavra', mb_strtoupper(mb_substr(preg_replace('/[^\p{L}\p{N}]/u', '', $_POST['mkt_palavra']), 0, 20)) ?: 'QUERO');
+            if (isset($_POST['mkt_isca'])) set_config('mkt_isca', mb_substr(trim($_POST['mkt_isca']), 0, 200));
+            if (isset($_POST['mkt_dm_texto'])) set_config('mkt_dm_texto', mb_substr(trim($_POST['mkt_dm_texto']), 0, 900));
+            foreach (['mkt_dm_auto', 'mkt_resp_publica', 'mkt_dm_ia', 'mkt_aviso_lead'] as $k) if (isset($_POST[$k])) set_config($k, $_POST[$k] === '1' ? '1' : '0');
+            responder_json(['ok' => true]);
+        case 'redes_desconectar':
+            ($_POST['rede'] ?? '') === 'tiktok' ? soc_tt_desconectar() : soc_ig_desconectar();
+            responder_json(['ok' => true]);
+        case 'redes_testar':
+            if (($_POST['rede'] ?? '') === 'tiktok') {
+                $tok = soc_tt_token();
+                $u = $tok ? soc_http('GET', soc_tt_api() . '/v2/user/info/?fields=open_id,display_name', null, ['token' => $tok]) : null;
+                responder_json(!empty($u['json']['data']['user']) ? ['ok' => true, 'msg' => 'TikTok OK: ' . ($u['json']['data']['user']['display_name'] ?? '') . ' · modo ' . (soc_tt_modo() === 'direto' ? 'postar direto' : 'rascunho no app')] : ['ok' => false, 'erro' => $u ? soc_tt_erro($u) : (get_config('tt_erro', '') ?: 'Conecte o TikTok.')]);
+            }
+            $r = soc_ig_req('GET', 'me?fields=user_id,username,followers_count,media_count');
+            if (!empty($r['json']['username'])) { set_config('ig_seguidores', (string)(int)($r['json']['followers_count'] ?? 0)); $lim = soc_ig_req('GET', get_config('ig_user_id', '') . '/content_publishing_limit?fields=quota_usage,config'); }
+            responder_json(!empty($r['json']['username']) ? ['ok' => true, 'msg' => 'Instagram OK: @' . $r['json']['username'] . ' · ' . (int)($r['json']['followers_count'] ?? 0) . ' seguidores'
+                . (isset($lim['json']['data'][0]['quota_usage']) ? ' · ' . (int)$lim['json']['data'][0]['quota_usage'] . ' de ' . (int)($lim['json']['data'][0]['config']['quota_total'] ?? 100) . ' posts nas últimas 24 h' : '')] : ['ok' => false, 'erro' => soc_ig_erro($r)]);
+        case 'midia_limpar':
+            $id = (int)($_POST['id'] ?? 0);
+            $dir = __DIR__ . '/../uploads/mkt/' . $id;
+            foreach (glob($dir . '/*') ?: [] as $f) if (is_file($f)) @unlink($f);
+            $pdo->prepare("UPDATE marketing_itens SET midia=NULL WHERE id=?")->execute([$id]);
+            responder_json(['ok' => true]);
+        case 'midia_enviar':
+            // A arte e o vídeo são desenhados no navegador; aqui ficam num endereço público para a rede buscar
+            session_write_close();
+            $id = (int)($_POST['id'] ?? 0);
+            $parte = in_array($_POST['parte'] ?? '', ['imagem', 'story', 'video', 'capa'], true) ? $_POST['parte'] : '';
+            $ordem = max(0, min(20, (int)($_POST['ordem'] ?? 0)));
+            $f = $_FILES['arquivo'] ?? null;
+            if (!$id || !$parte || !$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) {
+                responder_json(['ok' => false, 'erro' => ($f['error'] ?? 0) === UPLOAD_ERR_INI_SIZE ? 'O arquivo passa do limite do servidor (' . ini_get('upload_max_filesize') . ').' : 'O arquivo não chegou.']);
+            }
+            $cabeca = (string)file_get_contents($f['tmp_name'], false, null, 0, 16);
+            $ext = str_starts_with($cabeca, "\xFF\xD8\xFF") ? 'jpg' : (substr($cabeca, 4, 4) === 'ftyp' ? 'mp4' : (str_starts_with($cabeca, "\x1A\x45\xDF\xA3") ? 'webm' : ''));
+            if ($parte === 'video' ? !in_array($ext, ['mp4', 'webm'], true) : $ext !== 'jpg') responder_json(['ok' => false, 'erro' => 'Formato não aceito.']);
+            if ($f['size'] > ($ext === 'jpg' ? 8 : 64) * 1024 * 1024) responder_json(['ok' => false, 'erro' => 'Arquivo grande demais.']);
+            $existe = $pdo->prepare("SELECT midia FROM marketing_itens WHERE id=?"); $existe->execute([$id]);
+            if (($m = $existe->fetch()) === false) responder_json(['ok' => false, 'erro' => 'Post não encontrado.']);
+            $pasta = img_ia_pasta('mkt/' . $id);
+            if (!$pasta) responder_json(['ok' => false, 'erro' => 'A pasta uploads/ não tem permissão de escrita.']);
+            $nome = $parte . '-' . $ordem . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
+            if (!move_uploaded_file($f['tmp_name'], $pasta . '/' . $nome)) responder_json(['ok' => false, 'erro' => 'Não consegui salvar o arquivo.']);
+            $url = '/uploads/mkt/' . $id . '/' . $nome;
+            $pdo->beginTransaction();
+            $cur = $pdo->prepare("SELECT midia FROM marketing_itens WHERE id=? FOR UPDATE"); $cur->execute([$id]);
+            $midia = json_decode((string)$cur->fetchColumn(), true) ?: [];
+            if ($parte === 'imagem') { $midia['imagens'][$ordem] = $url; ksort($midia['imagens']); }
+            elseif ($parte === 'story') { $midia['stories'][$ordem] = $url; ksort($midia['stories']); }
+            elseif ($parte === 'video') { $midia['video'] = $url; $midia['video_tipo'] = $ext; }
+            else $midia['capa'] = $url;
+            $pdo->prepare("UPDATE marketing_itens SET midia=? WHERE id=?")->execute([json_encode($midia, JSON_UNESCAPED_SLASHES), $id]);
+            $pdo->commit();
+            responder_json(['ok' => true, 'url' => $url]);
+        case 'item_agendar':
+            $ligar = ($_POST['ligado'] ?? '1') === '1';
+            if ($ligar && !soc_redes_ativas()) responder_json(['ok' => false, 'erro' => 'Conecte o Instagram ou o TikTok primeiro (logo acima, em "Instagram e TikTok").']);
+            $pdo->prepare("UPDATE marketing_itens SET publicar=?, pub=CASE WHEN ? THEN NULL ELSE pub END WHERE id=? AND (NOT ? OR midia IS NOT NULL)")
+                ->execute([$ligar ? 'true' : 'false', $ligar && ($_POST['limpar'] ?? '') === '1' ? 'true' : 'false', (int)($_POST['id'] ?? 0), $ligar ? 'true' : 'false']);
+            responder_json(['ok' => true]);
+        case 'item_publicar_agora':
+            session_write_close();
+            @set_time_limit(240);
+            $st = $pdo->prepare("SELECT * FROM marketing_itens WHERE id=?"); $st->execute([(int)($_POST['id'] ?? 0)]);
+            $it = $st->fetch();
+            if (!$it || empty($it['midia'])) responder_json(['ok' => false, 'erro' => 'Prepare a arte primeiro.']);
+            if (!soc_redes_ativas()) responder_json(['ok' => false, 'erro' => 'Conecte o Instagram ou o TikTok primeiro.']);
+            // Tenta de novo o que deu erro
+            $pub = array_filter(soc_pub($it), fn($r) => !in_array($r['status'] ?? '', ['erro'], true));
+            $it['pub'] = json_encode($pub);
+            $pdo->prepare("UPDATE marketing_itens SET publicar=true, pub=? WHERE id=?")->execute([$it['pub'], $it['id']]);
+            if (!soc_travar(240)) responder_json(['ok' => false, 'erro' => 'Já estou publicando outro post agora. Tente em 1 minuto.']);
+            try { $pub = soc_publicar_item($it, true); } finally { soc_destravar(); }
+            responder_json(['ok' => true, 'pub' => $pub]);
+        case 'lead_etapa':
+            $etapa = in_array($_POST['etapa'] ?? '', ['novo', 'conversando', 'cliente', 'perdido'], true) ? $_POST['etapa'] : 'novo';
+            $pdo->prepare("UPDATE marketing_leads SET etapa=? WHERE id=?")->execute([$etapa, (int)($_POST['id'] ?? 0)]);
             responder_json(['ok' => true]);
         case 'plano_excluir':
             $pdo->prepare("DELETE FROM marketing_planos WHERE id=?")->execute([(int)($_POST['plano_id'] ?? 0)]);
@@ -203,6 +291,14 @@ $planos = $pdo->query("SELECT p.*, (SELECT COUNT(*) FROM marketing_itens i WHERE
     (SELECT COUNT(*) FROM marketing_itens i WHERE i.plano_id=p.id AND i.status IN ('pronto','postado')) prontos FROM marketing_planos p ORDER BY p.id DESC LIMIT 12")->fetchAll();
 $planoAtual = (int)($_GET['plano'] ?? ($planos[0]['id'] ?? 0));
 $ias = mkt_ias_status();
+// Redes conectadas, leads e resultados
+$redesAtivas = soc_redes_ativas();
+$res30 = soc_resultados(30);
+$leads = $pdo->query("SELECT l.*, i.tema, i.tipo FROM marketing_leads l LEFT JOIN marketing_itens i ON i.id=l.item_id ORDER BY l.id DESC LIMIT 30")->fetchAll();
+$igExpira = (int)get_config('ig_token_expira', '0');
+$whTok = soc_webhook_token();
+$postarEm = array_filter(explode(',', get_config('mkt_postar_em', 'instagram,tiktok')));
+$algumaIaFalta = (bool)array_filter($ias, fn($x) => !$x['ok']);
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -253,6 +349,39 @@ textarea.mkt-legenda { min-height: 160px; }
 .mkt-paletas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .mkt-paletas button { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--border); padding: 0; margin: 0; cursor: pointer; }
 .mkt-paletas button.ativo { border-color: #fff; box-shadow: 0 0 0 3px var(--primary); }
+.mkt-placar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.placar-item { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; display: grid; gap: 2px; }
+.placar-item span { font-size: 28px; font-weight: 800; font-family: Sora, Inter, sans-serif; line-height: 1.1; }
+.placar-item small { color: var(--text-dim); font-size: 12.5px; } .placar-item abbr { cursor: help; text-decoration: none; border-bottom: 1px dotted; }
+.placar-item.destaque { border-color: rgba(52,199,89,.55); background: linear-gradient(160deg, rgba(52,199,89,.14), transparent 70%); }
+.placar-rodape { grid-column: 1 / -1; margin: 0; font-size: 12.5px; }
+.top-lista { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.redes-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.rede-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: grid; gap: 8px; align-content: start; font-size: 13.5px; }
+.rede-card.ia-ok { border-color: rgba(52,199,89,.45); } .rede-card.ia-falta { border-color: rgba(245,185,76,.55); }
+.rede-topo { display: flex; gap: 10px; align-items: center; } .rede-topo div { display: grid; } .rede-topo small { color: var(--text-dim); }
+.rede-logo { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; flex: 0 0 auto; }
+.rede-logo.ig, .btn-rede.ig { background: linear-gradient(45deg, #f58529, #dd2a7b 50%, #8134af); } .rede-logo.tt, .btn-rede.tt { background: #111; box-shadow: inset -2px 0 #25f4ee, inset 2px 0 #fe2c55; }
+.btn-rede { color: #fff; border: 0; justify-self: start; font-weight: 700; }
+.rede-card .passos { margin: 8px 0; padding-left: 18px; display: grid; gap: 6px; } .rede-card code { word-break: break-all; font-size: 12px; }
+.rede-card .copiar { cursor: copy; background: var(--bg); padding: 1px 6px; border-radius: 6px; }
+.rede-form { display: grid; gap: 8px; } .rede-form .btn { justify-self: start; margin: 0; }
+.erro-txt { color: #ff9b9b; }
+.leads-tab td { vertical-align: top; font-size: 13.5px; } .leads-tab .mkt-chips { margin: 0; flex-wrap: nowrap; } .leads-tab .mkt-chips .btn { padding: 3px 8px; font-size: 12px; }
+details.ias-box > summary { list-style: none; cursor: pointer; } details.ias-box > summary h3 { display: inline; } details.ias-box > summary::-webkit-details-marker { display: none; }
+.cal-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.cal-meta span { padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); }
+.cal-meta .m-lead { border-color: rgba(52,199,89,.6); color: #7be495; } .cal-meta .m-viral { border-color: rgba(255,120,80,.6); color: #ffb08f; }
+.cal-meta .m-nota.boa { border-color: rgba(52,199,89,.6); } .cal-meta .m-nota.media { border-color: rgba(245,185,76,.7); }
+.cal-pub { font-size: 12.5px; display: grid; gap: 2px; } .cal-pub a { color: inherit; }
+.cal-num { font-size: 12.5px; color: var(--text-dim); }
+.cal-dicas { font-size: 12.5px; color: var(--text-dim); } .cal-dicas ul { margin: 4px 0 0; padding-left: 16px; }
+@media (max-width: 700px) {
+  .leads-tab thead { display: none; } .leads-tab, .leads-tab tbody, .leads-tab tr, .leads-tab td { display: block; width: 100%; }
+  .leads-tab tr { border-bottom: 1px solid var(--border); padding: 8px 0; } .leads-tab td { border: 0; padding: 2px 12px; }
+  .leads-tab .mkt-chips { flex-wrap: wrap; }
+}
+.mkt-grade > * { min-width: 0; }
 </style>
 </head>
 <body>
@@ -260,14 +389,153 @@ textarea.mkt-legenda { min-height: 160px; }
 <?php include '_sidebar.php'; ?>
 <main class="content">
     <div class="page-header"><div><h1>Marketing com IA</h1>
-        <p class="subtitulo">Gere posts prontos para vender os sites: arte (PNG), vídeo para Reels/TikTok, legenda, hashtags e roteiro. Tudo com a IA configurada na plataforma.</p></div></div>
+        <p class="subtitulo">Cada post com uma meta: <b>viralizar</b> (chegar em quem não te segue) ou <b>trazer cliente</b> (comentário vira conversa no direct e no WhatsApp). Posta sozinho no Instagram e no TikTok.</p></div></div>
     <?= flash_render() ?>
     <?php if (!ia_configurada()): ?><?= alerta('aviso', 'Sem chave de IA, os posts saem do banco de posts prontos da plataforma (variando modelo, estilo e roteiro) e dos dados reais da sua prospecção. Com a IA ligada (o Google Gemini é grátis), cada post é escrito sob medida.') ?><?php endif; ?>
 
 
+    <!-- ================= RESULTADO ================= -->
+    <section class="mkt-placar" aria-label="Resultado dos últimos 30 dias">
+        <div class="placar-item"><span><?= (int)$res30['posts'] ?></span><small>posts publicados</small></div>
+        <div class="placar-item"><span><?= number_format((int)$res30['alcance'], 0, ',', '.') ?></span><small>contas alcançadas</small></div>
+        <div class="placar-item"><span><?= number_format((int)$res30['envios'] + (int)$res30['salvos'], 0, ',', '.') ?></span><small>envios + salvos <abbr title="O que mais faz o Instagram mostrar o post para quem não te segue">?</abbr></small></div>
+        <div class="placar-item destaque"><span><?= (int)$res30['leads'] ?></span><small>leads (comentário/direct)</small></div>
+        <div class="placar-item"><span><?= (int)$res30['whats'] ?></span><small>viraram conversa</small></div>
+        <p class="muted placar-rodape">Últimos 30 dias · os números do Instagram chegam 1 dia depois de cada post<?= $redesAtivas ? '' : ' · conecte o Instagram abaixo para medir' ?>.</p>
+    </section>
+    <?php if ($res30['top']): ?>
+    <section class="form-box largo" aria-labelledby="t-top">
+        <h3 id="t-top">🏆 O que funcionou <small class="muted">— a IA usa isso para planejar os próximos</small></h3>
+        <ol class="top-lista">
+        <?php foreach ($res30['top'] as $t): $mt = json_decode((string)$t['metricas'], true) ?: []; $lk = (json_decode((string)$t['pub'], true) ?: [])['instagram']['link'] ?? ''; ?>
+            <li><strong><?= e(MKT_TIPOS[$t['tipo']] ?? $t['tipo']) ?></strong> — <?= e(mb_strimwidth((string)($t['gancho'] ?: $t['tema']), 0, 110, '…')) ?>
+                <small class="muted">· 👁 <?= (int)($mt['reach'] ?? 0) ?> · ↗ <?= (int)($mt['shares'] ?? 0) ?> envios · 🔖 <?= (int)($mt['saved'] ?? 0) ?> salvos · 🎯 <?= (int)$t['leads'] ?> leads<?= $t['nota_real'] !== null ? ' · nota ' . e($t['nota_real']) : '' ?></small>
+                <?php if ($lk): ?><a class="link" href="<?= e($lk) ?>" target="_blank" rel="noopener">ver post ↗</a><?php endif; ?></li>
+        <?php endforeach; ?>
+        </ol>
+    </section>
+    <?php endif; ?>
+
+    <!-- ================= INSTAGRAM E TIKTOK ================= -->
+    <section class="form-box largo" id="redes" aria-labelledby="t-redes">
+        <h3 id="t-redes">🔗 Instagram e TikTok <small class="muted">— o plano posta sozinho na hora certa</small></h3>
+        <p class="dica">Conexão oficial (API da Meta e do TikTok), sem senha e sem robô: a rede não bloqueia. Grátis. Você configura uma vez.</p>
+        <div class="redes-grade">
+            <!-- Instagram -->
+            <article class="rede-card <?= soc_ig_conectado() ? 'ia-ok' : 'ia-falta' ?>" id="redeIg">
+                <div class="rede-topo"><span class="rede-logo ig" aria-hidden="true">IG</span><div><strong>Instagram</strong><small>Post, Carrossel, Reels e Stories · comentário vira lead</small></div></div>
+                <?php if (soc_ig_conectado()): ?>
+                    <p class="ia-st">✔ Conectado: @<?= e(get_config('ig_usuario', '')) ?> · <?= number_format((int)get_config('ig_seguidores', '0'), 0, ',', '.') ?> seguidores</p>
+                    <small class="muted">Conexão válida até <?= $igExpira ? date('d/m/Y', $igExpira) : '—' ?> (renova sozinha).<?= get_config('ig_webhook_assinado', '') === '1' ? ' Comentários chegando ✔' : ' Comentários: confira o passo 4 abaixo.' ?></small>
+                    <?php if (get_config('ig_erro', '') !== ''): ?><small class="erro-txt">⚠ <?= e(get_config('ig_erro', '')) ?></small><?php endif; ?>
+                    <div class="mkt-acoes"><button type="button" class="btn btn-ghost btn-sm" onclick="MKTREDES.testar('instagram', this)">Testar</button><button type="button" class="btn btn-ghost btn-sm" onclick="MKTREDES.desconectar('instagram')">Desconectar</button></div>
+                <?php elseif (soc_ig_app_ok()): ?>
+                    <p class="ia-st">✖ Falta entrar com a sua conta</p>
+                    <a class="btn btn-rede ig" href="redes_conectar.php?rede=instagram">Conectar Instagram</a>
+                <?php else: ?>
+                    <p class="ia-st">✖ Não conectado</p>
+                <?php endif; ?>
+                <details <?= soc_ig_app_ok() ? '' : 'open' ?>><summary class="link">Como ligar (10 min, uma vez só)</summary>
+                    <ol class="passos">
+                        <li>Sua conta precisa ser <b>profissional</b> (Empresa ou Criador): Instagram → Configurações → Tipo de conta. Não precisa de Página do Facebook.</li>
+                        <li>Em <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com</a> → Criar app → caso de uso <b>“Gerenciar mensagens e conteúdo no Instagram”</b>.</li>
+                        <li>No app: Instagram → <b>Configuração da API com login do Instagram</b> → “Configurar login empresarial” → URL de redirecionamento:<br><code class="copiar"><?= e(soc_redirect_uri()) ?></code></li>
+                        <li>Na mesma tela, <b>Webhooks</b>: URL <code class="copiar"><?= e(soc_webhook_url()) ?></code> · Token <code class="copiar"><?= e($whTok) ?></code> → Verificar e salvar → assine <b>comments</b> e <b>messages</b>.</li>
+                        <li><b>Funções do app → Testadores do Instagram</b>: adicione a sua conta e aceite no Instagram (Configurações → Apps e sites → Convites). Assim funciona sem a análise da Meta.</li>
+                        <li>Para os comentários chegarem, publique o app (modo <b>Ativo</b>): pede a política de privacidade, use <code class="copiar"><?= e(soc_url_base()) ?>/privacidade.php</code>.</li>
+                        <li>Copie o <b>ID do app do Instagram</b> e a <b>Chave secreta do app do Instagram</b> e cole aqui:</li>
+                    </ol>
+                    <form class="rede-form" onsubmit="return MKTREDES.salvar(this)">
+                        <div class="form-row"><div><label for="igAppId">ID do app do Instagram</label><input id="igAppId" name="ig_app_id" value="<?= e(get_config('ig_app_id', '')) ?>" inputmode="numeric" autocomplete="off"></div>
+                        <div><label for="igSecret">Chave secreta</label><input id="igSecret" name="ig_app_secret" type="password" autocomplete="new-password" placeholder="<?= get_config('ig_app_secret', '') !== '' ? '•••••• salva (deixe vazio para manter)' : 'cole aqui' ?>"></div></div>
+                        <button class="btn btn-sm">Salvar<?= soc_ig_conectado() ? '' : ' e conectar' ?></button>
+                    </form>
+                </details>
+            </article>
+            <!-- TikTok -->
+            <article class="rede-card <?= soc_tt_conectado() ? 'ia-ok' : 'ia-falta' ?>" id="redeTt">
+                <div class="rede-topo"><span class="rede-logo tt" aria-hidden="true">TT</span><div><strong>TikTok</strong><small>Reels viram vídeo · Carrossel vira post de fotos</small></div></div>
+                <?php if (soc_tt_conectado()): ?>
+                    <p class="ia-st">✔ Conectado<?= get_config('tt_usuario', '') !== '' ? ': ' . e(get_config('tt_usuario', '')) : '' ?></p>
+                    <?php if (get_config('tt_erro', '') !== ''): ?><small class="erro-txt">⚠ <?= e(get_config('tt_erro', '')) ?></small><?php endif; ?>
+                    <div class="mkt-acoes"><button type="button" class="btn btn-ghost btn-sm" onclick="MKTREDES.testar('tiktok', this)">Testar</button><button type="button" class="btn btn-ghost btn-sm" onclick="MKTREDES.desconectar('tiktok')">Desconectar</button></div>
+                <?php elseif (soc_tt_app_ok()): ?>
+                    <p class="ia-st">✖ Falta entrar com a sua conta</p>
+                    <a class="btn btn-rede tt" href="redes_conectar.php?rede=tiktok">Conectar TikTok</a>
+                <?php else: ?>
+                    <p class="ia-st">✖ Não conectado</p>
+                <?php endif; ?>
+                <label>Como sai no TikTok</label>
+                <div class="mkt-chips" data-cfg="tt_modo">
+                    <button type="button" class="btn btn-ghost btn-sm" data-v="rascunho" aria-pressed="<?= soc_tt_modo() === 'rascunho' ? 'true' : 'false' ?>">📥 Rascunho no app (recomendado)</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-v="direto" aria-pressed="<?= soc_tt_modo() === 'direto' ? 'true' : 'false' ?>">🚀 Postar direto</button>
+                </div>
+                <small class="muted">Rascunho: chega no app com legenda pronta; você põe uma <b>música em alta</b> (o que mais faz viralizar no TikTok) e publica com 1 toque. “Direto” só fica público depois que o TikTok auditar o seu app — antes disso sai como privado.</small>
+                <details <?= soc_tt_app_ok() ? '' : 'open' ?>><summary class="link">Como ligar (10 min, uma vez só)</summary>
+                    <ol class="passos">
+                        <li>Em <a href="https://developers.tiktok.com/apps" target="_blank" rel="noopener">developers.tiktok.com</a> → Manage apps → <b>Connect an app</b>.</li>
+                        <li>Adicione os produtos <b>Login Kit</b> e <b>Content Posting API</b> (marque “Direct Post” se quiser pedir a auditoria depois).</li>
+                        <li>Login Kit → Redirect URI: <code class="copiar"><?= e(soc_redirect_uri()) ?></code></li>
+                        <li>Para o carrossel virar post de fotos: <b>URL properties</b> → verifique o domínio <code class="copiar"><?= e(preg_replace('#^https?://#', '', soc_url_base())) ?></code>.</li>
+                        <li>Enquanto o app está em revisão, use o <b>Sandbox</b> e adicione a sua conta como usuária de teste.</li>
+                        <li>Copie a <b>Client key</b> e a <b>Client secret</b> e cole aqui:</li>
+                    </ol>
+                    <form class="rede-form" onsubmit="return MKTREDES.salvar(this)">
+                        <div class="form-row"><div><label for="ttKey">Client key</label><input id="ttKey" name="tt_client_key" value="<?= e(get_config('tt_client_key', '')) ?>" autocomplete="off"></div>
+                        <div><label for="ttSecret">Client secret</label><input id="ttSecret" name="tt_client_secret" type="password" autocomplete="new-password" placeholder="<?= get_config('tt_client_secret', '') !== '' ? '•••••• salva (deixe vazio para manter)' : 'cole aqui' ?>"></div></div>
+                        <button class="btn btn-sm">Salvar<?= soc_tt_conectado() ? '' : ' e conectar' ?></button>
+                    </form>
+                </details>
+            </article>
+        </div>
+        <label>Postar sozinho em</label>
+        <div class="mkt-chips" data-cfg="mkt_postar_em" data-multi="1">
+            <button type="button" class="btn btn-ghost btn-sm" data-v="instagram" aria-pressed="<?= in_array('instagram', $postarEm, true) ? 'true' : 'false' ?>">📸 Instagram</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-v="tiktok" aria-pressed="<?= in_array('tiktok', $postarEm, true) ? 'true' : 'false' ?>">🎵 TikTok</button>
+        </div>
+        <small class="muted">Stories com enquete, pergunta ou quiz não podem ser postados por API (regra do Instagram): esses chegam no lembrete do WhatsApp. O resto sai sozinho.</small>
+    </section>
+
+    <!-- ================= COMENTÁRIO VIRA CLIENTE ================= -->
+    <section class="form-box largo" id="leads" aria-labelledby="t-leads">
+        <h3 id="t-leads">🎯 Comentário vira cliente <small class="muted">— o “comente QUERO” que os grandes perfis usam</small></h3>
+        <p class="dica">Os posts com a meta <b>Trazer cliente</b> terminam com “Comente <b><?= e(get_config('mkt_palavra', 'QUERO')) ?></b> que eu te mando…”. Quem comentar recebe a sua oferta no direct em segundos, com o link do seu WhatsApp. Se mandar o número, vira lead quente na Prospecção e você recebe o aviso.</p>
+        <form class="rede-form" onsubmit="return MKTREDES.salvar(this)">
+            <div class="form-row">
+                <div><label for="mkPalavra">Palavra-chave padrão</label><input id="mkPalavra" name="mkt_palavra" value="<?= e(get_config('mkt_palavra', 'QUERO')) ?>" maxlength="20"></div>
+                <div><label for="mkIsca">O que você entrega no direct</label><input id="mkIsca" name="mkt_isca" value="<?= e(get_config('mkt_isca', '')) ?>" placeholder="a prévia grátis do site do seu negócio"></div>
+            </div>
+            <label for="mkDm">Mensagem do direct <small class="muted">— use {nome}, {isca} e {whats}</small></label>
+            <textarea id="mkDm" name="mkt_dm_texto" rows="3" placeholder="Oi, {nome}! 👋 Vi seu comentário e já te mando: {isca} …"><?= e(get_config('mkt_dm_texto', '')) ?></textarea>
+            <div class="mkt-chips">
+                <?php foreach (['mkt_dm_auto' => 'Responder sozinho no direct', 'mkt_resp_publica' => 'Responder no comentário (“te chamei no direct”)', 'mkt_dm_ia' => 'IA continua a conversa no direct (24 h)', 'mkt_aviso_lead' => 'Me avisar no WhatsApp a cada lead'] as $k => $rot): ?>
+                <button type="button" class="btn btn-ghost btn-sm" data-toggle="<?= $k ?>" aria-pressed="<?= get_config($k, '1') === '1' ? 'true' : 'false' ?>"><?= e($rot) ?></button>
+                <?php endforeach; ?>
+            </div>
+            <button class="btn btn-sm">Salvar</button>
+        </form>
+        <?php if ($leads): ?>
+        <div class="tabela-wrap"><table class="leads-tab">
+            <thead><tr><th>Quando</th><th>Quem</th><th>Disse</th><th>Post</th><th>Direct</th><th>Etapa</th></tr></thead>
+            <tbody>
+            <?php foreach ($leads as $l): ?>
+                <tr><td><?= date('d/m H:i', strtotime($l['criado_em'])) ?></td>
+                    <td><?= $l['usuario'] ? '<a class="link" href="https://instagram.com/' . e(rawurlencode($l['usuario'])) . '" target="_blank" rel="noopener">@' . e($l['usuario']) . '</a>' : 'direct' ?></td>
+                    <td><?= e(mb_strimwidth((string)$l['texto'], 0, 90, '…')) ?></td>
+                    <td><?= $l['tema'] ? e(mb_strimwidth((string)$l['tema'], 0, 50, '…')) : '—' ?></td>
+                    <td><?= $l['respondido'] ? '✅' : '<span title="' . e((string)$l['erro']) . '">⚠</span>' ?></td>
+                    <td><div class="mkt-chips etapa" data-lead="<?= (int)$l['id'] ?>"><?php foreach (['novo' => 'Novo', 'conversando' => 'Conversando', 'cliente' => 'Cliente 💰', 'perdido' => 'Perdido'] as $ek => $ev): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $ek ?>" aria-pressed="<?= $l['etapa'] === $ek ? 'true' : 'false' ?>"><?= $ev ?></button><?php endforeach; ?></div></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+        <?php else: ?>
+        <p class="muted">Nenhum lead ainda. Quando alguém comentar a palavra-chave num post publicado, aparece aqui.</p>
+        <?php endif; ?>
+    </section>
+
     <!-- ================= LIGAR AS IAS GRÁTIS ================= -->
-    <section class="form-box largo ias-box" id="ias" aria-labelledby="t-ias">
-        <h3 id="t-ias">⚡ IAs do marketing <small class="muted">— o que já está ligado (tudo grátis)</small></h3>
+    <details class="form-box largo ias-box" id="ias" <?= $algumaIaFalta ? 'open' : '' ?>>
+        <summary><h3 id="t-ias">⚡ IAs do marketing <small class="muted">— <?= count(array_filter($ias, fn($x) => $x['ok'])) ?> de <?= count($ias) ?> ligadas (tudo grátis)</small></h3></summary>
         <div class="ias-grade">
             <?php
             $cards = [
@@ -292,7 +560,7 @@ textarea.mkt-legenda { min-height: 160px; }
                 <small>Cada Reels do plano já traz o prompt pronto: baixe a foto, cole o prompt em klingai.com → Image to Video e baixe o vídeo.</small>
             </div>
         </div>
-    </section>
+    </details>
 
     <!-- ================= PLANO PRONTO ================= -->
     <section class="form-box largo" id="plano" aria-labelledby="t-plano">
@@ -306,6 +574,9 @@ textarea.mkt-legenda { min-height: 160px; }
             <div><label>Stories por dia</label><div class="mkt-chips" id="plStories"><?php foreach ([0 => 'Sem stories', 1 => '1', 2 => '2', 3 => '3'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $k === 2 ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div></div>
             <div><label for="plPublico">Para quem (opcional)</label><input type="text" id="plPublico" list="listaSeg" placeholder="Ex: Barbearia, Hamburgueria, Clínica…"></div>
         </div>
+        <?php if ($redesAtivas): ?>
+        <div class="mkt-chips"><button type="button" class="btn btn-ghost btn-sm" id="plSozinho" aria-pressed="true">🤖 Postar sozinho no <?= e(implode(' e ', array_map('ucfirst', $redesAtivas))) ?></button></div>
+        <?php endif; ?>
         <div class="mkt-acoes">
             <button type="button" class="btn btn-wa-plano" id="btnPlano" onclick="MKTPLANO.criar(this)">⚡ Gerar meu plano pronto</button>
             <span class="muted" id="plStatus" aria-live="polite"></span>
@@ -457,8 +728,8 @@ textarea.mkt-legenda { min-height: 160px; }
 <div id="toasts"></div>
 <script src="/assets/js/gds-criativos.js?v=3"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
-<script>window.MKT_CFG = <?= json_encode(['marca' => $marca, 'voz' => mkt_voz_configurada(), 'tipos' => MKT_TIPOS], JSON_UNESCAPED_UNICODE) ?>;</script>
-<script src="/assets/js/gds-plano-mkt.js?v=1" defer></script>
+<script>window.MKT_CFG = <?= json_encode(['marca' => $marca, 'voz' => mkt_voz_configurada(), 'tipos' => MKT_TIPOS, 'redes' => $redesAtivas, 'palavra' => get_config('mkt_palavra', 'QUERO')], JSON_UNESCAPED_UNICODE) ?>;</script>
+<script src="/assets/js/gds-plano-mkt.js?v=2" defer></script>
 <script>
 const MKT = (() => {
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;

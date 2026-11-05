@@ -27,6 +27,9 @@
             b.addEventListener('click', function () { document.querySelectorAll('#' + id + ' button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); }); });
         });
     });
+    var sozinho = $('plSozinho');
+    if (sozinho) sozinho.addEventListener('click', function () { sozinho.setAttribute('aria-pressed', sozinho.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); });
+    var REDES = CFG.redes || [];
     function escolhido(id) { var b = document.querySelector('#' + id + ' button[aria-pressed="true"]'); return b ? b.dataset.v : ''; }
 
     // ---------- imagens ----------
@@ -79,6 +82,10 @@
         if (!itens.length) return;
         var topo = el('div', 'cal-acoes');
         topo.appendChild(botao('⬇ Baixar tudo (ZIP)', zip));
+        if (REDES.length) {
+            var faltam = itens.filter(function (i) { return i.post && i.status === 'pronto' && (!i.publicar || !i.preparado); }).length;
+            if (faltam) topo.appendChild(botao('🤖 Postar o plano todo sozinho (' + faltam + ')', prepararTodos, 'btn-primario'));
+        }
         topo.appendChild(el('span', 'muted', itens.filter(function (i) { return i.status === 'pronto' || i.status === 'postado'; }).length + ' de ' + itens.length + ' prontos · horários sugeridos pelas médias do Brasil (confira os do seu Insights)'));
         box.appendChild(topo);
         var porDia = {};
@@ -105,6 +112,9 @@
             c.appendChild(img); miniatura(it, img);
         }
         c.appendChild(el('p', 'cal-tema', it.tema || ''));
+        if (it.post) c.appendChild(metaDe(it));
+        var pubEl = pubDe(it); if (pubEl) c.appendChild(pubEl);
+        if (it.metricas || it.leads) c.appendChild(el('p', 'cal-num', numeros(it)));
         if (it.post && (it.post.stories || []).length) {
             var ul = el('ol', 'cal-stories');
             it.post.stories.forEach(function (s, i) { ul.appendChild(el('li', '', (HORAS_STORY[i] || '') + ' — ' + s.texto + ' · ' + dicaAdesivo(s))); });
@@ -118,12 +128,114 @@
             if (it.tipo === 'reels') ac.appendChild(botao('🎬 Vídeo narrado', function (b) { video(it, b); }));
             if (it.tipo !== 'story') ac.appendChild(botao('📋 Legenda', function () { copiar(legendaDe(it), 'Legenda copiada!'); }));
             if (it.tipo === 'reels' && it.post.prompt_video) ac.appendChild(botao('✨ Animar no Kling', function () { copiar(it.post.prompt_video, 'Prompt copiado! Cole em klingai.com → Image to Video, junto com a capa.'); window.open('https://klingai.com/', '_blank', 'noopener'); }));
+            if (REDES.length && it.status !== 'gerando' && it.status !== 'pendente') {
+                if (!it.publicar || !it.preparado) ac.appendChild(botao('🤖 Postar sozinho', function (b) { agendar(it, b); }, 'btn-primario'));
+                else if (!it.postado) ac.appendChild(botao('✋ Não postar sozinho', function () { api({ acao: 'item_agendar', id: it.id, ligado: '0' }).then(carregar); }));
+                if (!it.postado || temErro(it)) ac.appendChild(botao('🚀 Postar agora', function (b) { agora(it, b); }));
+            }
             ac.appendChild(botao(it.status === 'postado' ? '↺ Desmarcar' : '✔ Postei', function () { api({ acao: 'item_postado', id: it.id }).then(carregar); }));
         }
         if (['pronto', 'erro', 'postado'].indexOf(it.status) >= 0) ac.appendChild(botao('↻ Refazer', function () { api({ acao: 'item_refazer', id: it.id }).then(function () { processar(); }); }));
         c.appendChild(ac);
         return c;
     }
+    // Meta do post (viralizar / trazer cliente) + nota antes de postar
+    function metaDe(it) {
+        var p = it.post || {}, box = el('div', 'cal-meta-box');
+        var linha = el('div', 'cal-meta');
+        if (it.meta === 'lead') linha.appendChild(el('span', 'm-lead', '🎯 Trazer cliente' + (p.palavra_chave && it.tipo !== 'story' ? ' · comente ' + p.palavra_chave : '')));
+        else linha.appendChild(el('span', 'm-viral', '🔥 Viralizar'));
+        if (typeof p.nota === 'number') linha.appendChild(el('span', 'm-nota ' + (p.nota >= 85 ? 'boa' : 'media'), 'Nota ' + p.nota + '/100'));
+        box.appendChild(linha);
+        if ((p.nota_dicas || []).length) {
+            var d = el('details', 'cal-dicas'); d.appendChild(el('summary', 'link', 'Como chegar a 100'));
+            var ul = el('ul'); p.nota_dicas.forEach(function (x) { ul.appendChild(el('li', '', x)); }); d.appendChild(ul); box.appendChild(d);
+        }
+        return box;
+    }
+    var NOMES = { instagram: '📸 Instagram', tiktok: '🎵 TikTok' };
+    function pubDe(it) {
+        var pub = it.pub || {}, redes = Object.keys(pub).filter(function (k) { return NOMES[k]; });
+        if (!redes.length && !it.publicar) return null;
+        var box = el('div', 'cal-pub');
+        if (!redes.length) {
+            box.appendChild(el('span', '', it.preparado ? '🤖 Sai sozinho às ' + it.hora + ' em ' + REDES.map(function (r) { return NOMES[r]; }).join(' e ') : '🤖 Vai postar sozinho: falta preparar a arte (clique em "Postar sozinho")'));
+            return box;
+        }
+        redes.forEach(function (r) {
+            var e = pub[r] || {}, linha = el('span');
+            var txt = { publicado: '✔ publicado', parcial: '✔ publicado (stories com adesivo ficam com você)', rascunho: '📥 nos rascunhos do app: ponha uma música em alta e publique', processando: '⏳ processando…', aguardando: '🤖 agendado ' + it.hora, manual: '✋ poste você', erro: '⚠ erro' }[e.status] || e.status;
+            linha.textContent = NOMES[r] + ': ' + txt + (e.erro && e.status !== 'publicado' ? ' — ' + e.erro : '');
+            if (e.link) { var a = el('a', '', ' abrir ↗'); a.href = e.link; a.target = '_blank'; a.rel = 'noopener'; linha.appendChild(a); }
+            box.appendChild(linha);
+        });
+        return box;
+    }
+    function temErro(it) { var pub = it.pub || {}; return Object.keys(pub).some(function (k) { return pub[k] && pub[k].status === 'erro'; }); }
+    function numeros(it) {
+        var m = it.metricas || {}, f = function (n) { return n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' mil' : String(n || 0); };
+        var partes = [];
+        if (it.metricas) partes.push('👁 ' + f(m.reach), '↗ ' + f(m.shares) + ' envios', '🔖 ' + f(m.saved) + ' salvos', '💬 ' + f(m.comments));
+        if (it.leads) partes.push('🎯 ' + it.leads + ' lead' + (it.leads > 1 ? 's' : ''));
+        if (it.nota_real !== null && it.nota_real !== undefined) partes.push('nota real ' + String(it.nota_real).replace('.', ','));
+        return partes.join(' · ');
+    }
+
+    // ---------- postar sozinho ----------
+    function enviar(id, parte, ordem, blob, nome) {
+        var fd = new FormData(); fd.append('csrf_token', CSRF); fd.append('acao', 'midia_enviar'); fd.append('id', id); fd.append('parte', parte); fd.append('ordem', ordem); fd.append('arquivo', blob, nome);
+        return fetch('marketing.php', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); }).then(function (r) { if (!r.ok) throw new Error(r.erro || 'Não enviou.'); return r; });
+    }
+    // Desenha as peças em JPEG (o Instagram só aceita JPEG) e grava o vídeo do Reels; tudo vai para o servidor
+    function preparar(it, aviso) {
+        return api({ acao: 'midia_limpar', id: it.id }).then(function () { return imagem(it.foto); }).then(function (foto) {
+            var seq = Promise.resolve(), nImg = 0, nSt = 0;
+            pecas(it, foto).forEach(function (pc) {
+                var parte = pc.story ? 'story' : (it.tipo === 'reels' ? 'capa' : 'imagem'), ordem = pc.story ? nSt++ : nImg++;
+                seq = seq.then(function () { return blobDe(desenhar(document.createElement('canvas'), pc.conteudo, pc.o), 'image/jpeg').then(function (b) { return enviar(it.id, parte, ordem, b, parte + '.jpg'); }); });
+            });
+            if (it.tipo === 'reels') seq = seq.then(function () { if (aviso) aviso('gravando o vídeo…'); return gravar(it).then(function (r) { return enviar(it.id, 'video', 0, r.blob, r.blob.type.indexOf('mp4') >= 0 ? 'video.mp4' : 'video.webm'); }); });
+            return seq;
+        });
+    }
+    function agendar(it, btn) {
+        var txt = btn.textContent; btn.disabled = true; btn.textContent = 'Preparando…';
+        return preparar(it, function (m) { btn.textContent = m; })
+            .then(function () { return api({ acao: 'item_agendar', id: it.id, ligado: '1', limpar: '1' }); })
+            .then(function (r) { if (!r.ok) throw new Error(r.erro); toast('Pronto! Sai sozinho às ' + it.hora + '.', 'sucesso'); return carregar(); })
+            .catch(function (e) { toast(e.message || 'Não deu para preparar.', 'erro'); btn.disabled = false; btn.textContent = txt; });
+    }
+    function agora(it, btn) {
+        if (!window.confirm('Publicar agora em ' + REDES.map(function (r) { return NOMES[r].replace(/^\S+ /, ''); }).join(' e ') + '?')) return;
+        var txt = btn.textContent; btn.disabled = true; btn.textContent = 'Publicando…';
+        (it.preparado ? Promise.resolve() : preparar(it, function (m) { btn.textContent = m; }))
+            .then(function () { btn.textContent = 'Publicando…'; return api({ acao: 'item_publicar_agora', id: it.id }); })
+            .then(function (r) {
+                if (!r.ok) throw new Error(r.erro);
+                var st = Object.keys(r.pub || {}).map(function (k) { return (NOMES[k] || k) + ': ' + (r.pub[k].status === 'processando' ? 'processando (sai em instantes)' : r.pub[k].status) + (r.pub[k].erro ? ' — ' + r.pub[k].erro : ''); });
+                toast(st.join(' · ') || 'Enviado.', Object.keys(r.pub || {}).some(function (k) { return r.pub[k].status === 'erro'; }) ? 'erro' : 'sucesso');
+                return carregar();
+            })
+            .catch(function (e) { toast(e.message || 'Não publicou.', 'erro'); })
+            .then(function () { btn.disabled = false; btn.textContent = txt; });
+    }
+    var preparando = false;
+    function prepararTodos(btn) {
+        if (preparando) return; preparando = true;
+        var lista = itens.filter(function (i) { return i.post && i.status === 'pronto' && (!i.publicar || !i.preparado); });
+        if (btn) btn.disabled = true;
+        var n = 0, seq = Promise.resolve();
+        lista.forEach(function (it) {
+            seq = seq.then(function () {
+                n++; $('plStatus').textContent = '🤖 Preparando para postar sozinho: ' + n + ' de ' + lista.length + ' (' + (TIPOS[it.tipo] || it.tipo) + ')… deixe esta aba aberta na frente.';
+                return preparar(it).then(function () { return api({ acao: 'item_agendar', id: it.id, ligado: '1', limpar: '1' }); })
+                    .catch(function (e) { toast((TIPOS[it.tipo] || '') + ' ' + it.data.slice(8, 10) + '/' + it.data.slice(5, 7) + ': ' + e.message, 'erro'); });
+            });
+        });
+        return seq.then(function () { preparando = false; $('plStatus').textContent = '✅ Tudo agendado: cada post sai sozinho no horário. Você recebe o aviso no WhatsApp.'; return carregar(); });
+    }
+
     var fila = Promise.resolve();
     function miniatura(it, img) {
         fila = fila.then(function () {
@@ -164,12 +276,20 @@
             .catch(function () { toast('Sem narração agora (ligue a voz da Azure em Configurações). O vídeo sai com legendas.', 'info'); return null; });
     }
     function video(it, btn) {
+        btn.disabled = true; var txt = btn.textContent; btn.textContent = 'Preparando a voz…';
+        gravar(it, function (m) { btn.textContent = m; }).then(function (r) {
+            baixar(r.blob, nomeBase(it) + (r.blob.type.indexOf('mp4') >= 0 ? '.mp4' : '.webm'));
+            toast(r.audio ? 'Vídeo narrado pronto!' : 'Vídeo pronto (sem narração).', 'sucesso');
+        }).catch(function (e) { toast(e.message || 'Não foi possível gravar o vídeo.', 'erro'); })
+          .then(function () { btn.disabled = false; btn.textContent = txt; });
+    }
+    // Grava o vídeo do Reels (cenas do roteiro + narração). Resolve {blob, audio}
+    function gravar(it, aviso) {
         var p = it.post || {}, c = p.conteudo || {};
         var passos = (p.roteiro || []).slice(0, 7);
         if (!passos.length) passos = [{ texto_tela: c.titulo }, { texto_tela: c.subtitulo }, { texto_tela: c.cta }];
         var narracao = p.narracao || passos.map(function (x) { return x.fala || ''; }).join(' ');
-        btn.disabled = true; var txt = btn.textContent; btn.textContent = 'Preparando a voz…';
-        Promise.all([imagem(it.foto), vozDe(narracao)]).then(function (r) {
+        return Promise.all([imagem(it.foto), vozDe(narracao)]).then(function (r) {
             var foto = r[0], audio = r[1];
             var cenas = passos.map(function (x, i, arr) {
                 var t = x.texto_tela || c.titulo;
@@ -178,14 +298,12 @@
                 return foto ? { modelo: i % 2 ? 'foto_titulo' : 'foto_split', segundos: 3, conteudo: { titulo: t, subtitulo: '' }, foto: foto } : { modelo: i % 2 ? 'impacto' : 'numero', segundos: 3, conteudo: { titulo: t, preco: c.preco || '' } };
             });
             var tela = document.createElement('canvas'); tela.style.cssText = 'position:fixed;left:-99999px;top:0'; document.body.appendChild(tela);
-            btn.textContent = 'Gravando o vídeo…';
+            if (aviso) aviso('Gravando o vídeo…');
             return window.GDSCriativos.gravarVideo(tela, cenas, Object.assign(opcoes(it, null, foto, 'story'), { audio: audio })).then(function (blob) {
                 tela.remove();
-                baixar(blob, nomeBase(it) + (blob.type.indexOf('mp4') >= 0 ? '.mp4' : '.webm'));
-                toast(audio ? 'Vídeo narrado pronto!' : 'Vídeo pronto (sem narração).', 'sucesso');
-            });
-        }).catch(function (e) { toast(e.message || 'Não foi possível gravar o vídeo.', 'erro'); })
-          .then(function () { btn.disabled = false; btn.textContent = txt; });
+                return { blob: blob, audio: !!audio };
+            }, function (e) { tela.remove(); throw e; });
+        });
     }
 
     // ---------- ZIP com tudo ----------
@@ -232,7 +350,11 @@
                 if (!r.ok) { $('plStatus').textContent = r.erro || 'Erro'; rodando = false; return; }
                 barra(r.feitos, r.total);
                 if (n % 2 === 0 || r.terminou) carregar();
-                if (r.terminou || !r.item) { rodando = false; carregar(); return; }
+                if (r.terminou || !r.item) {
+                    rodando = false;
+                    carregar().then(function () { if (REDES.length && itens.some(function (i) { return i.publicar && !i.preparado && i.status === 'pronto'; })) prepararTodos(); });
+                    return;
+                }
                 return volta(n + 1);
             });
         };
@@ -240,7 +362,8 @@
     }
     function criar(btn) {
         btn.disabled = true; $('plStatus').textContent = 'Montando o calendário (temas e horários)…';
-        api({ acao: 'plano_criar', periodo: escolhido('plPeriodo') || 'semana', por_semana: escolhido('plPorSemana') || 5, stories_dia: escolhido('plStories') || 2, publico: ($('plPublico') || {}).value || '' })
+        api({ acao: 'plano_criar', periodo: escolhido('plPeriodo') || 'semana', por_semana: escolhido('plPorSemana') || 5, stories_dia: escolhido('plStories') || 2, publico: ($('plPublico') || {}).value || '',
+              postar_sozinho: sozinho && sozinho.getAttribute('aria-pressed') === 'true' ? '1' : '0' })
             .then(function (r) {
                 btn.disabled = false;
                 if (!r.ok) { toast(r.erro, 'erro'); return; }
@@ -256,6 +379,45 @@
     }
 
     window.MKTPLANO = { criar: criar, lembrete: lembrete, carregar: carregar };
+
+    // ---------- Instagram e TikTok / comentário vira cliente ----------
+    function salvarCfg(dados) { dados.acao = 'redes_salvar'; return api(dados).then(function (r) { toast(r.ok ? 'Salvo!' : (r.erro || 'Erro'), r.ok ? 'sucesso' : 'erro'); return r; }); }
+    window.MKTREDES = {
+        salvar: function (form) {
+            var d = {};
+            form.querySelectorAll('input[name], textarea[name]').forEach(function (i) { d[i.name] = i.value; });
+            form.querySelectorAll('[data-toggle]').forEach(function (b) { d[b.dataset.toggle] = b.getAttribute('aria-pressed') === 'true' ? '1' : '0'; });
+            var conecta = /e conectar/.test((form.querySelector('button:not([type=button])') || {}).textContent || '');
+            salvarCfg(d).then(function (r) {
+                if (!r.ok) return;
+                var rede = 'ig_app_id' in d ? 'instagram' : ('tt_client_key' in d ? 'tiktok' : '');
+                if (rede && conecta && (d.ig_app_id || d.tt_client_key)) location.href = 'redes_conectar.php?rede=' + rede; else if (rede) location.reload();
+            });
+            return false;
+        },
+        desconectar: function (rede) { if (window.confirm('Desconectar? O plano para de postar sozinho nessa rede.')) api({ acao: 'redes_desconectar', rede: rede }).then(function () { location.reload(); }); },
+        testar: function (rede, btn) { btn.disabled = true; api({ acao: 'redes_testar', rede: rede }).then(function (r) { btn.disabled = false; toast(r.ok ? r.msg : r.erro, r.ok ? 'sucesso' : 'erro'); }); }
+    };
+    document.querySelectorAll('[data-toggle]').forEach(function (b) { b.addEventListener('click', function () { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); }); });
+    document.querySelectorAll('[data-cfg]').forEach(function (g) {
+        g.querySelectorAll('button').forEach(function (b) {
+            b.addEventListener('click', function () {
+                if (g.dataset.multi) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+                else g.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+                var v = Array.prototype.filter.call(g.querySelectorAll('button'), function (x) { return x.getAttribute('aria-pressed') === 'true'; }).map(function (x) { return x.dataset.v; }).join(',');
+                var d = {}; d[g.dataset.cfg] = v; salvarCfg(d);
+            });
+        });
+    });
+    document.querySelectorAll('.etapa[data-lead]').forEach(function (g) {
+        g.querySelectorAll('button').forEach(function (b) {
+            b.addEventListener('click', function () {
+                g.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+                api({ acao: 'lead_etapa', id: g.dataset.lead, etapa: b.dataset.v }).then(function (r) { if (r.ok && b.dataset.v === 'cliente') toast('💰 Mais um cliente que veio do Instagram!', 'sucesso'); });
+            });
+        });
+    });
+    document.querySelectorAll('code.copiar').forEach(function (c) { c.title = 'Clique para copiar'; c.addEventListener('click', function () { copiar(c.textContent, 'Copiado!'); }); });
     // Abre o plano escolhido e continua sozinho se ainda tiver post na fila
     function iniciar() { carregar().then(function () { if (itens.some(function (i) { return i.status === 'pendente' || i.status === 'gerando'; })) processar(); }); }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();

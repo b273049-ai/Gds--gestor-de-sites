@@ -214,6 +214,33 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   baixe a capa, cole o prompt pronto em klingai.com → Image to Video (créditos grátis por dia).
 - O quadro **⚡ IAs do marketing** mostra o que já está ligado e o passo a passo do que falta.
 
+### Instagram e TikTok conectados: posta sozinho e comentário vira cliente (v20)
+- **Conexão oficial e grátis** (Admin → Marketing → 🔗 Instagram e TikTok), sem senha e sem robô:
+  - **Instagram**: "Instagram API com login do Instagram" da Meta. Precisa de conta **profissional**; não precisa de
+    Página do Facebook. Cadastre a sua conta como **Testadora do Instagram** no seu app: assim ela publica sem a
+    análise da Meta. A tela mostra o endereço de retorno, o webhook e o token para copiar.
+  - **TikTok**: "Content Posting API". Sem a auditoria do TikTok, post direto sai **privado**; por isso o padrão é
+    **rascunho no app** (chega com a legenda; você põe uma música em alta e publica com 1 toque). Depois de auditado,
+    troque para "Postar direto".
+- **🤖 Postar sozinho**: o navegador desenha as artes em JPEG e grava o vídeo do Reels, sobe tudo para
+  `uploads/mkt/` e o cron (ou a carona do conector, ou a rotina do painel) publica na hora do plano:
+  Post, Carrossel (até 10), Reels (MP4) e Stories no Instagram; Reels e Carrossel (modo foto) no TikTok.
+  Stories com enquete/pergunta/quiz/link não existem na API: esses continuam no lembrete do WhatsApp.
+  Se algo não puder sair sozinho (ex.: vídeo WebM no Instagram), chega o aviso para postar à mão. Trava no banco
+  impede postar o mesmo post duas vezes. **🚀 Postar agora** publica na hora (e refaz o que deu erro).
+- **Cada post tem uma meta**: 🔥 **Viralizar** (feito para ser MANDADO para outro dono de negócio e salvo — envios
+  e tempo assistido são o que o Instagram mais usa para mostrar a quem não te segue) ou 🎯 **Trazer cliente**
+  (termina com "Comente QUERO que eu te mando…"). Nota de 0 a 100 antes de postar, com o que falta para chegar a 100
+  (gancho curto, 1ª linha até 125 letras, sem link na legenda, 3–5 hashtags, termos de busca, chamada certa).
+- **🎯 Comentário vira cliente** (webhook `api/instagram_webhook.php`, assinado pela Meta): quem comenta a palavra-chave
+  (ou "quanto custa", "preço", "tenho interesse"…) recebe na hora a **resposta privada no direct** com a sua oferta e o
+  link do seu WhatsApp, e uma resposta curta no comentário. Se a pessoa responder no direct, a IA continua a conversa
+  (24 h, regra da Meta); se mandar o número, vira **prospect quente na Prospecção** e você recebe o aviso.
+- **Métricas que ensinam a IA**: 1 dia depois de cada post o Insights traz alcance, envios, salvos e comentários; a
+  "nota real" (por 100 contas alcançadas) monta o ranking **🏆 O que funcionou**, e a IA usa os melhores e os piores
+  para planejar o próximo plano. O topo da tela mostra o placar dos últimos 30 dias (posts, alcance, envios+salvos, leads).
+- Política de privacidade pública em `/privacidade.php` (a Meta pede para ativar o app).
+
 ### Fotos para os sites e para o marketing (v18)
 - **O plano grátis do Google Gemini não gera mais imagem** (só com faturamento ativo) e o **Pexels pausou as chaves
   novas** (set/2026). Por isso:

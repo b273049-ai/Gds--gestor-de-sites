@@ -19,6 +19,7 @@
 require_once __DIR__ . '/marketing_banco.php';
 require_once __DIR__ . '/fotos.php';
 require_once __DIR__ . '/whatsapp.php';
+require_once __DIR__ . '/redes_sociais.php';
 
 const MKT_TIPOS = ['reels' => 'Reels', 'carrossel' => 'Carrossel', 'feed' => 'Post', 'story' => 'Stories'];
 
@@ -50,6 +51,12 @@ function mkt_grade_semana($porSemana) {
     return $out;
 }
 
+// Cada post tem UMA meta: viralizar (alcançar quem não te segue) ou trazer cliente (comentário → direct)
+function mkt_meta_do($tipo, $objetivo) {
+    if ($tipo === 'story') return 'lead';
+    return in_array($objetivo, ['oferta', 'prova', 'objecao', 'antes_depois'], true) ? 'lead' : 'viralizar';
+}
+
 // Funil do mês: atrair → educar → provar → converter
 function mkt_objetivos_semana($semana) {
     return [1 => ['dor', 'educativo', 'bastidores'], 2 => ['educativo', 'recursos', 'objecao'], 3 => ['prova', 'antes_depois', 'bastidores'], 4 => ['objecao', 'oferta', 'prova']][(($semana - 1) % 4) + 1];
@@ -77,12 +84,15 @@ function mkt_plano_criar($opts) {
     $st = $pdo->prepare("INSERT INTO marketing_planos (nome, publico, periodo, inicio, por_semana, stories_dia, redes) VALUES (?,?,?,?,?,?,?) RETURNING id");
     $st->execute([($mes ? 'Mês de ' : 'Semana de ') . date('d/m', $inicio) . ($publico ? ' · ' . $publico : ''), $publico, $mes ? 'mes' : 'semana', date('Y-m-d', $inicio), $porSemana, $storiesDia, (string)($opts['redes'] ?? '')]);
     $planoId = (int)$st->fetchColumn();
-    $ins = $pdo->prepare("INSERT INTO marketing_itens (plano_id, data, hora, tipo, objetivo, framework, tema, gancho) VALUES (?,?,?,?,?,?,?,?)");
+    $ins = $pdo->prepare("INSERT INTO marketing_itens (plano_id, data, hora, tipo, objetivo, framework, tema, gancho, meta, publicar) VALUES (?,?,?,?,?,?,?,?,?,?)");
+    $auto = !empty($opts['postar_sozinho']) && soc_redes_ativas();
     foreach ($slots as $i => $s) {
         $t = $temas[$i] ?? [];
         $obj = mkt_objetivos_semana($s['semana']);
-        $ins->execute([$planoId, $s['data'], mkt_horario($s['tipo'], $s['dow']), $s['tipo'], $t['objetivo'] ?? $obj[$i % 3], $t['framework'] ?? '',
-            mb_substr((string)($t['tema'] ?? ''), 0, 300), mb_substr((string)($t['gancho'] ?? ''), 0, 300)]);
+        $objetivo = $t['objetivo'] ?? $obj[$i % 3];
+        $meta = in_array($t['meta'] ?? '', ['viralizar', 'lead'], true) && $s['tipo'] !== 'story' ? $t['meta'] : mkt_meta_do($s['tipo'], $objetivo);
+        $ins->execute([$planoId, $s['data'], mkt_horario($s['tipo'], $s['dow']), $s['tipo'], $objetivo, $t['framework'] ?? '',
+            mb_substr((string)($t['tema'] ?? ''), 0, 300), mb_substr((string)($t['gancho'] ?? ''), 0, 300), $meta, $auto ? 'true' : 'false']);
     }
     return $planoId;
 }
@@ -95,7 +105,11 @@ function mkt_plano_temas($slots, $publico, $mes) {
                 . "Público: " . ($publico ?: 'pequenos negócios locais') . ". Crie o tema de CADA item do calendário abaixo, na mesma ordem, seguindo o funil "
                 . ($mes ? '(semana 1 atrai, 2 educa, 3 prova, 4 converte com oferta no fim)' : '(atrair, educar, provar e converter dentro da semana)') . ". "
                 . "Stories são conversa e bastidor (enquete, pergunta, contagem), não anúncio. Cada gancho deve ser diferente (pergunta, número, erro comum, contraste, história). "
-                . "Responda APENAS JSON: {\"itens\":[{\"tema\":\"...\",\"gancho\":\"primeira frase\",\"objetivo\":\"dor|antes_depois|recursos|prova|oferta|educativo|bastidores|objecao\",\"framework\":\"aida|pas|bab|4u|historia|mito|lista\"}]}\n\nCALENDÁRIO:\n$lista";
+                . "Cada post tem UMA meta: \"viralizar\" (tema que o dono de negócio quer MANDAR para outro dono: dor do dia a dia, erro comum, curiosidade; ~60% dos posts) "
+                . "ou \"lead\" (traz cliente: prova, antes e depois, oferta, quebra de objeção, terminando com \"comente PALAVRA que eu te mando…\"; ~40%). "
+                . "Ganchos que param o dedo: contraste (\"pare de…\"), número específico, erro comum, pergunta que dói, promessa concreta. Nada genérico como \"Você sabia?\". "
+                . soc_aprendizado()
+                . "\nResponda APENAS JSON: {\"itens\":[{\"tema\":\"...\",\"gancho\":\"primeira frase\",\"meta\":\"viralizar|lead\",\"objetivo\":\"dor|antes_depois|recursos|prova|oferta|educativo|bastidores|objecao\",\"framework\":\"aida|pas|bab|4u|historia|mito|lista\"}]}\n\nCALENDÁRIO:\n$lista";
         $r = chamar_ia_json($prompt, 6000, 90, 0.9, ['esforco' => 'low']);
         if ($r['ok'] && !empty($r['dados']['itens'])) return array_values((array)$r['dados']['itens']);
     }
@@ -121,18 +135,28 @@ function mkt_item_gerar($item) {
             'feed' => 'É um POST de imagem única. Título forte e curto, subtítulo que completa a ideia.',
             'story' => 'É uma SEQUÊNCIA DE STORIES (conversa e bastidor). Capriche nos "stories": cada um com texto curto e um adesivo que gera resposta.',
         ][$tipo];
+        $meta = $item['meta'] ?: mkt_meta_do($tipo, $item['objetivo']);
+        $palavra = mb_strtoupper(get_config('mkt_palavra', 'QUERO') ?: 'QUERO');
+        $isca = get_config('mkt_isca', '') ?: 'a prévia grátis do site do seu negócio';
+        $regraMeta = $meta === 'lead'
+            ? "META: TRAZER CLIENTE. Termine com UMA chamada só: \"Comente PALAVRA que eu te mando $isca\". A PALAVRA (\"palavra_chave\") é 1 palavra curta em maiúsculas ligada ao tema (ex.: SITE, AGENDA, PRÉVIA, $palavra) e aparece no \"cta\" da arte, no fim do vídeo e na legenda. Quem comentar recebe sozinho no direct o \"dm_texto\": a entrega da isca em até 300 letras, sem link, terminando com 1 pergunta (qual é o seu negócio?). "
+            : "META: VIRALIZAR (chegar em quem não te segue). O Instagram entrega para não seguidores o que é MANDADO por mensagem e assistido até o fim. Faça um conteúdo identificável que um dono de negócio quer mandar para outro, sem cara de anúncio, e termine com UMA chamada: \"Manda pra aquele amigo que tem [negócio]\" ou \"Salva pra não esquecer\". Mesmo assim, ponha \"palavra_chave\" e \"dm_texto\" (quem comentar a palavra recebe a isca: $isca). ";
         $prompt = "Você é social media e copywriter de resposta direta que vende para pequenos negócios brasileiros. Crie o conteúdo para a marca \"$marca\" "
                 . "(sites com IA para negócios locais: agendamento online, confirmação e lembrete no WhatsApp, orçamento, delivery, domínio próprio). " . ($preco ? "Preço/condição: $preco. " : '')
                 . "\nPÚBLICO: $publico\nTEMA: {$item['tema']}\nGANCHO SUGERIDO: {$item['gancho']}\nOBJETIVO: {$item['objetivo']}" . ($item['framework'] ? "\nESTRUTURA DA COPY: {$item['framework']}" : '')
-                . "\n$regrasTipo\n"
+                . "\n$regrasTipo\n$regraMeta\n"
                 . "Regras: português do Brasil, simples e direto, sem números inventados nem promessas exageradas. Título com no máximo 9 palavras e *asteriscos* em 1 a 3 palavras de destaque. "
-                . "Legenda: a 1ª linha (até 125 letras) é o gancho; 3 a 6 linhas curtas; chamada para comentar, salvar ou chamar no direct. 3 a 5 hashtags certeiras (nicho + local), sem #. "
+                . "Legenda: a 1ª linha (até 125 letras) é o gancho; 3 a 6 linhas curtas; sem link (não é clicável); use naturalmente 2 ou 3 termos que o cliente PESQUISA (ex.: \"site para barbearia\", \"agendamento online\") — vão em \"busca\". 3 a 5 hashtags certeiras (nicho + local), sem #. "
+                . "\"legenda_tiktok\": versão para o TikTok, até 150 letras, tom mais solto, com 1 termo de busca. "
+                . ($tipo === 'reels' ? "Reels: a 1ª cena tem o gancho ESCRITO na tela; a última frase conecta com a primeira (o vídeo dá a volta e a pessoa assiste de novo). " : '')
+                . ($tipo === 'story' && $meta === 'lead' ? "Um dos stories convida: \"Responde PALAVRA aqui que eu te mando…\" (quem responder recebe o direct sozinho). " : '')
+                . ""
                 . "\"cena_foto\": EM INGLÊS, foto realista e vertical de uma pessoa real do público no ambiente do negócio, rosto visível, luz natural, espaço livre no topo para o título, sem texto na imagem. "
                 . "\"prompt_video\": EM INGLÊS, como animar essa foto num gerador de vídeo (movimento de câmera sutil + ação da pessoa, 5 segundos). "
                 . ($tipo === 'story' ? "\"stories\": $nStories stories para postar no dia, cada um {\"texto\":\"até 14 palavras\",\"adesivo\":\"enquete|pergunta|quiz|contagem|link|nenhum\",\"opcoes\":[\"para enquete/quiz\"]}. " : "\"stories\": []. ")
                 . "Modelo de arte (VARIE): impacto | lista | antes_depois | oferta | foto_titulo | foto_split | pergunta | numero. Estilo: neon | editorial | bold | pop | minimal | luxo.\n"
                 . 'Responda APENAS JSON: {"modelo":"","estilo":"","cena_foto":"","prompt_video":"","conteudo":{"selo":"até 5 palavras","titulo":"","subtitulo":"","itens":[],"antes":[],"depois":[],"preco":"","cta":"até 4 palavras"},'
-                . '"legenda":"","hashtags":[],"roteiro":[{"tempo":"0-3s","texto_tela":"","fala":""}],"narracao":"","stories":[]}';
+                . '"legenda":"","legenda_tiktok":"","hashtags":[],"busca":[],"palavra_chave":"","dm_texto":"","roteiro":[{"tempo":"0-3s","texto_tela":"","fala":""}],"narracao":"","stories":[]}';
         $r = chamar_ia_json($prompt, 2500, 75, 0.9, ['esforco' => 'low']);
         if ($r['ok']) $post = $r['dados'];
         elseif (!empty($r['temporario']) || (int)$item['tentativas'] < 1) return ['ok' => false, 'erro' => $r['erro'], 'tentar_de_novo' => true];
@@ -145,12 +169,23 @@ function mkt_item_gerar($item) {
         $post['prompt_video'] = 'Subtle slow camera push-in, the person smiles and looks at the phone, natural light, 5 seconds, realistic.';
     }
     // Normaliza
+    $meta = $item['meta'] ?: mkt_meta_do($tipo, $item['objetivo']);
+    $post['meta'] = $meta;
+    $post['palavra_chave'] = mb_strtoupper(preg_replace('/[^\p{L}\p{N}]/u', '', (string)($post['palavra_chave'] ?? ''))) ?: mb_strtoupper(get_config('mkt_palavra', 'QUERO') ?: 'QUERO');
+    $post['dm_texto'] = mb_substr(trim((string)($post['dm_texto'] ?? '')), 0, 400);
+    if ($meta === 'lead' && $tipo !== 'story' && mb_stripos((string)($post['legenda'] ?? ''), $post['palavra_chave']) === false) {
+        $post['legenda'] = rtrim((string)($post['legenda'] ?? '')) . "\n\n👇 Comente " . $post['palavra_chave'] . ' que eu te mando ' . (get_config('mkt_isca', '') ?: 'a prévia grátis do site do seu negócio') . '.';
+    }
     if (!in_array($post['modelo'] ?? '', ['impacto', 'lista', 'antes_depois', 'depoimento', 'oferta', 'foto_titulo', 'foto_split', 'pergunta', 'numero'], true)) $post['modelo'] = 'foto_titulo';
     if ($tipo === 'carrossel' && empty($post['conteudo']['itens'])) $post['conteudo']['itens'] = array_map(fn($c) => $c['texto_tela'] ?? '', array_slice((array)($post['roteiro'] ?? []), 1, 5));
     if (!in_array($post['estilo'] ?? '', ['neon', 'editorial', 'bold', 'pop', 'minimal', 'luxo'], true)) $post['estilo'] = ['neon', 'editorial', 'bold', 'pop', 'minimal', 'luxo'][random_int(0, 5)];
     $post['stories'] = $tipo === 'story' ? array_slice(array_values(array_filter((array)($post['stories'] ?? []), fn($s) => is_array($s) && !empty($s['texto']))), 0, 5) : [];
     if ($tipo === 'story' && !$post['stories']) $post['stories'] = mkt_stories_sem_ia($item, $nStories);
-    $post['hashtags'] = array_slice(array_values(array_filter(array_map(fn($h) => preg_replace('/[#\s]+/u', '', (string)$h), (array)($post['hashtags'] ?? [])))), 0, 8);
+    $post['hashtags'] = array_slice(array_values(array_filter(array_map(fn($h) => preg_replace('/[#\s]+/u', '', (string)$h), (array)($post['hashtags'] ?? [])))), 0, 5);
+    $post['busca'] = array_slice(array_values(array_filter(array_map('strval', (array)($post['busca'] ?? [])))), 0, 4);
+    $nota = mkt_nota_post($tipo, $meta, $post);
+    $post['nota'] = $nota['nota'];
+    $post['nota_dicas'] = $nota['dicas'];
     // Foto: IA primeiro; se não der, banco de fotos
     $foto = null;
     $cena = trim((string)($post['cena_foto'] ?? '')) ?: 'small business owner smiling while checking appointments on a smartphone in a modern local shop';
@@ -167,11 +202,42 @@ function mkt_item_gerar($item) {
     return ['ok' => true];
 }
 
+// Nota antes de postar: confere o que mais pesa para viralizar ou converter
+function mkt_nota_post($tipo, $meta, $p) {
+    $pts = 100; $dicas = [];
+    $menos = function ($n, $dica) use (&$pts, &$dicas) { $pts -= $n; $dicas[] = $dica; };
+    $c = (array)($p['conteudo'] ?? []);
+    if ($tipo === 'story') {
+        $st = (array)($p['stories'] ?? []);
+        if (!array_filter($st, fn($s) => in_array($s['adesivo'] ?? '', ['enquete', 'pergunta', 'quiz'], true))) $menos(20, 'Coloque 1 adesivo de enquete, pergunta ou quiz: resposta nos stories faz o Instagram mostrar mais.');
+        if ($meta === 'lead' && !array_filter($st, fn($s) => mb_stripos((string)($s['texto'] ?? ''), (string)($p['palavra_chave'] ?? '#')) !== false)) $menos(10, 'Convide a responder a palavra-chave no direct (quem responde recebe a oferta sozinho).');
+        return ['nota' => max(0, $pts), 'dicas' => $dicas];
+    }
+    $tit = trim(str_replace('*', '', (string)($c['titulo'] ?? '')));
+    if (count(preg_split('/\s+/u', $tit, -1, PREG_SPLIT_NO_EMPTY)) > 10) $menos(15, 'Gancho da capa com mais de 10 palavras: corte para parar o dedo.');
+    $leg = trim((string)($p['legenda'] ?? ''));
+    $l1 = trim(strtok($leg, "\n") ?: '');
+    if (mb_strlen($l1) > 125) $menos(10, 'A 1ª linha da legenda passa de 125 letras e some no "… mais".');
+    if (preg_match('#https?://|www\.#i', $leg)) $menos(10, 'Link na legenda não é clicável: use a palavra-chave no comentário.');
+    $nh = count((array)($p['hashtags'] ?? []));
+    if ($nh < 3 || $nh > 5) $menos(5, 'Use de 3 a 5 hashtags certeiras (nicho + cidade).');
+    if (empty($p['busca'])) $menos(5, 'Coloque na legenda o que o cliente pesquisa (ex.: "site para barbearia"): o Instagram também é buscador.');
+    if ($meta === 'lead' && mb_stripos($leg, (string)($p['palavra_chave'] ?? '#')) === false) $menos(20, 'Falta o "Comente PALAVRA" na legenda: é ele que transforma comentário em cliente.');
+    if ($meta === 'viralizar' && !preg_match('/mand|envi|compartilh|salv|marc/iu', $leg . ' ' . ($c['cta'] ?? ''))) $menos(15, 'Peça para MANDAR para um amigo ou SALVAR: envios levam o post a quem não te segue.');
+    if ($tipo === 'reels') {
+        if (count((array)($p['roteiro'] ?? [])) < 3) $menos(10, 'Reels com poucas cenas: troque de cena a cada 3–5 segundos.');
+        if (trim((string)($p['roteiro'][0]['texto_tela'] ?? '')) === '') $menos(10, 'Escreva o gancho na tela na 1ª cena (muita gente assiste sem som).');
+        if (mb_strlen((string)($p['narracao'] ?? '')) < 40) $menos(5, 'Sem narração: vídeo com voz segura mais.');
+    }
+    if ($tipo === 'carrossel' && count((array)($c['itens'] ?? [])) < 4) $menos(10, 'Carrossel com poucos slides: 5 a 8 seguram mais (cada arrastada conta).');
+    return ['nota' => max(0, $pts), 'dicas' => $dicas];
+}
+
 function mkt_stories_sem_ia($item, $n) {
     $base = [['texto' => 'Bom dia! Hoje é dia de ' . mb_strtolower(MKT_TIPOS[$item['tipo']] ?? 'novidade') . ' por aqui ☀️', 'adesivo' => 'nenhum'],
              ['texto' => 'Seu cliente consegue marcar com você às 22h de domingo?', 'adesivo' => 'enquete', 'opcoes' => ['Consegue', 'Ainda não']],
              ['texto' => 'Qual a sua maior dor no atendimento?', 'adesivo' => 'pergunta'],
-             ['texto' => 'Site pronto em minutos, com agendamento e WhatsApp automático', 'adesivo' => 'link'],
+             ['texto' => 'Responde ' . mb_strtoupper(get_config('mkt_palavra', 'QUERO') ?: 'QUERO') . ' aqui que eu te mando a prévia grátis do seu site 📩', 'adesivo' => 'nenhum'],
              ['texto' => 'Quanto tempo você gasta respondendo "tem horário?" por dia?', 'adesivo' => 'quiz', 'opcoes' => ['10 min', '1 hora', 'O dia todo']]];
     return array_slice($base, 0, $n);
 }
@@ -227,6 +293,7 @@ function mkt_rotina() {
         for ($i = 0; $i < 3 && time() - $t0 < 60; $i++) { $r = mkt_plano_processar(); if (empty($r['item'])) break; }
         $res['mkt_itens'] = $i;
         $res['mkt_lembretes'] = mkt_lembretes();
+        $res += soc_rotina();
     } catch (Throwable $e) { $res['mkt'] = 'erro: ' . $e->getMessage(); }
     return $res;
 }
@@ -239,7 +306,9 @@ function mkt_lembretes() {
     if ($numero === '' || !function_exists('wa_remetente')) return 0;
     $rem = wa_remetente(['wa_modo' => 'plataforma']);
     if (!$rem) return 0;
+    // Os que vão sair sozinhos não precisam de lembrete (só os stories, por causa dos adesivos)
     $st = $pdo->query("SELECT * FROM marketing_itens WHERE status='pronto' AND lembrado_em IS NULL
+        AND NOT (COALESCE(publicar, false) AND midia IS NOT NULL AND tipo <> 'story')
         AND (data + hora::time) BETWEEN NOW() - INTERVAL '10 minutes' AND NOW() + INTERVAL '15 minutes' ORDER BY data, hora LIMIT 3");
     $n = 0;
     foreach ($st->fetchAll() as $it) {

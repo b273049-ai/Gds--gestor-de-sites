@@ -440,7 +440,12 @@ function wa_rotina($forcar = false) {
     }
     // Marketing: lembrete "hora de postar" no WhatsApp do dono (rápido; a geração dos posts roda no cron/carona)
     if (is_file(__DIR__ . '/marketing_ia.php')) {
-        try { require_once __DIR__ . '/marketing_ia.php'; $res['mkt_lembretes'] = mkt_lembretes(); } catch (Throwable $e) { error_log('GDS marketing lembrete: ' . $e->getMessage()); }
+        try {
+            require_once __DIR__ . '/marketing_ia.php';
+            $res['mkt_lembretes'] = mkt_lembretes();
+            // Instagram/TikTok: publica o que chegou a hora (no máximo a cada minuto)
+            if (time() - (int)get_config('soc_rotina_em', '0') >= 60 && soc_tem_devido()) { set_config('soc_rotina_em', (string)time()); $res += soc_rotina(); }
+        } catch (Throwable $e) { error_log('GDS marketing lembrete: ' . $e->getMessage()); }
     }
     // Prospecção no piloto automático (respostas agendadas + próxima mensagem da cadência)
     if (is_file(__DIR__ . '/prospeccao_piloto.php') && (get_config('prosp_auto', '0') === '1' || wa_api()['tipo'] !== 'ponte')) {
