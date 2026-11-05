@@ -57,6 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             $pdo->prepare("UPDATE marketing_itens SET status='pendente', tentativas=0, erro=NULL, midia=NULL, pub=NULL WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
             $pdo->prepare("UPDATE marketing_planos SET status='gerando' WHERE id=(SELECT plano_id FROM marketing_itens WHERE id=?)")->execute([(int)($_POST['id'] ?? 0)]);
             responder_json(['ok' => true]);
+        case 'plano_refazer_erros':
+            $pdo->prepare("UPDATE marketing_itens SET status='pendente', tentativas=0, erro=NULL WHERE plano_id=? AND status='erro'")->execute([(int)($_POST['plano_id'] ?? 0)]);
+            $pdo->prepare("UPDATE marketing_planos SET status='gerando' WHERE id=?")->execute([(int)($_POST['plano_id'] ?? 0)]);
+            set_config('mkt_pausas', '0');
+            responder_json(['ok' => true]);
         case 'item_postado':
             $pdo->prepare("UPDATE marketing_itens SET status=CASE WHEN status='postado' THEN 'pronto' ELSE 'postado' END, postado_em=CASE WHEN status='postado' THEN NULL ELSE NOW() END WHERE id=?")->execute([(int)($_POST['id'] ?? 0)]);
             responder_json(['ok' => true]);
@@ -733,7 +738,7 @@ details.ias-box > summary { list-style: none; cursor: pointer; } details.ias-box
 <script src="/assets/js/gds-criativos.js?v=3"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
 <script>window.MKT_CFG = <?= json_encode(['marca' => $marca, 'voz' => mkt_voz_configurada(), 'tipos' => MKT_TIPOS, 'redes' => $redesAtivas, 'palavra' => get_config('mkt_palavra', 'QUERO')], JSON_UNESCAPED_UNICODE) ?>;</script>
-<script src="/assets/js/gds-plano-mkt.js?v=2" defer></script>
+<script src="/assets/js/gds-plano-mkt.js?v=3" defer></script>
 <script>
 const MKT = (() => {
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;

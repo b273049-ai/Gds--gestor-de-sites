@@ -386,7 +386,8 @@ function soc_legenda($post, $rede = 'instagram') {
     return trim((string)($post['legenda'] ?? '') . "\n\n" . implode(' ', array_map(fn($h) => '#' . $h, $tags)));
 }
 // Stories que precisam de adesivo (enquete, pergunta…) não dá para postar pela API
-function soc_story_precisa_mao($s) { return in_array($s['adesivo'] ?? 'nenhum', ['enquete', 'pergunta', 'quiz', 'contagem', 'link'], true); }
+// (o de "pergunta" sai sozinho: quem quiser responde pelo direct, e o "Responde PALAVRA" vira lead)
+function soc_story_precisa_mao($s) { return in_array($s['adesivo'] ?? 'nenhum', ['enquete', 'quiz', 'contagem', 'link'], true); }
 
 // Publica (ou continua publicando) UM item numa rede. Devolve o estado daquela rede.
 function soc_publicar_rede($it, $rede, $agora = false) {
