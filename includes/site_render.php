@@ -91,6 +91,10 @@ function site_carregar_dados($empresa) {
     $dist = []; $total = 0; $soma = 0;
     foreach ($res as $r) { $dist[(int)$r['nota']] = (int)$r['c']; $total += (int)$r['c']; $soma += (int)$r['nota'] * (int)$r['c']; }
     $d['avaliacoes_resumo'] = ['total' => $total, 'media' => $total ? $soma / $total : 0, 'dist' => $dist];
+    // Cliente que veio do Google: mostra a nota de lá até ter mais avaliações próprias no site
+    if ((int)($empresa['google_avaliacoes'] ?? 0) > $total && (float)($empresa['google_nota'] ?? 0) > 0) {
+        $d['avaliacoes_resumo'] = ['total' => (int)$empresa['google_avaliacoes'], 'media' => (float)$empresa['google_nota'], 'dist' => [], 'fonte' => 'google'];
+    }
     $d['galeria'] = array_values(array_filter(array_map('trim', explode(',', $empresa['galeria_imagens'] ?? ''))));
     $d['maps_key'] = trim(get_config('google_maps_key', ''));
     $d['analytics_id'] = trim(get_config('google_analytics_id', ''));
@@ -706,7 +710,7 @@ function site_json_ld($empresa, $dados) {
         'dayOfWeek' => array_map(fn($d) => $nomesDias[$d], array_map('intval', explode(',', $ag['dias']))),
         'opens' => $ag['abertura'], 'closes' => $ag['fechamento'],
     ]];
-    if ($dados['avaliacoes_resumo']['total'] > 0) {
+    if ($dados['avaliacoes_resumo']['total'] > 0 && empty($dados['avaliacoes_resumo']['fonte'])) {
         $ld['aggregateRating'] = ['@type' => 'AggregateRating', 'ratingValue' => round($dados['avaliacoes_resumo']['media'], 1), 'reviewCount' => $dados['avaliacoes_resumo']['total']];
     }
     $ofertas = [];

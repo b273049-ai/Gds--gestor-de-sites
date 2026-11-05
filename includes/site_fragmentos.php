@@ -253,8 +253,8 @@ function frag_avaliacoes($avaliacoes, $estado = [], $permitirEnvio = true, $resu
         $media = $resumo['media'] ?? (array_sum(array_column($avaliacoes, 'nota')) / max(1, count($avaliacoes)));
         $dist = $resumo['dist'] ?? array_count_values(array_map('intval', array_column($avaliacoes, 'nota')));
         $html .= '<div class="gds-resumo-aval"><div><div class="gds-nota-grande">' . number_format($media, 1, ',', '') . '</div>' . frag_estrelas($media)
-               . '<p class="gds-mute" style="font-size:.85rem">' . $total . ' avaliação' . ($total === 1 ? '' : 'ões') . '</p></div><div class="gds-barras">';
-        for ($n = 5; $n >= 1; $n--) {
+               . '<p class="gds-mute" style="font-size:.85rem">' . $total . ' avaliação' . ($total === 1 ? '' : 'ões') . (($resumo['fonte'] ?? '') === 'google' ? ' no Google' : '') . '</p></div><div class="gds-barras">';
+        for ($n = 5; $n >= 1 && ($resumo['fonte'] ?? '') !== 'google'; $n--) {
             $q = (int)($dist[$n] ?? 0);
             $html .= '<div class="gds-barra"><span>' . $n . '★</span><span><i style="width:' . round($q / $total * 100) . '%"></i></span><span>' . $q . '</span></div>';
         }

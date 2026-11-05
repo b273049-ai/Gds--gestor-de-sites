@@ -257,6 +257,11 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - Reserva no navegador: **Gerar no navegador (Puter)** no Marketing (pede um login grátis do Puter na 1ª vez).
 
 ## Central de prospecção (Admin → Prospecção de clientes)
+- **🎉 Fechou! Virar cliente** (no cartão do lead e na conversa): em 1 clique cria a empresa com o que o Google trouxe
+  (nome, ramo, WhatsApp, telefone, endereço, horário de funcionamento → agenda, logo/cor, fotos e avaliações reais), o
+  acesso do dono (login e senha provisória para mandar no WhatsApp), os serviços do ramo e o site publicado com a mesma
+  cara da prévia. O site mostra a nota do Google (ex.: 4,7 · 86 avaliações) até juntar avaliações próprias. O lead vira
+  "Fechado" e as mensagens da cadência param.
 - **Caçada em massa**: marque vários segmentos (ou o atalho "os que mais compram site", ou todos) e várias cidades/bairros
   (um por linha). Com o Google, cada região é dividida em quadrantes (grade 2×2, 3×3, 4×4) para passar do limite de 60
   resultados por busca. A tela mostra antes quantas buscas serão feitas, roda com barra de progresso e, se você fechar,
