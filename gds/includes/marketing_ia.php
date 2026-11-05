@@ -119,7 +119,7 @@ function mkt_plano_temas($slots, $publico, $mes) {
 }
 
 // Gera o conteúdo completo de UM item (texto + foto). Retorna ['ok'=>bool,'erro'=>...]
-function mkt_item_gerar($item) {
+function mkt_item_gerar($item, $semIa = false) {
     global $pdo;
     $plano = $pdo->prepare("SELECT * FROM marketing_planos WHERE id=?"); $plano->execute([$item['plano_id']]); $plano = $plano->fetch();
     $marca = get_config('mkt_marca', 'GDS Sites');
@@ -128,7 +128,7 @@ function mkt_item_gerar($item) {
     $tipo = $item['tipo'];
     $nStories = max(1, min(5, (int)$plano['stories_dia']));
     $post = null;
-    if (ia_configurada()) {
+    if (ia_configurada() && !$semIa) {
         $regrasTipo = [
             'reels' => 'É um REELS (vídeo vertical 9:16). O gancho aparece escrito na tela em até 2 segundos. Roteiro de 5 a 7 cenas curtas (15 a 30 s no total), uma ideia por cena, final pedindo para SALVAR ou MANDAR para um amigo dono de negócio. "narracao" é o texto falado inteiro, natural, 40 a 70 palavras.',
             'carrossel' => 'É um CARROSSEL. "conteudo.titulo" é a capa (gancho que faz arrastar). "conteudo.itens" são 5 a 7 slides, cada um com UMA ideia em até 12 palavras. O último slide é a chamada (vai em "cta").',
@@ -159,6 +159,7 @@ function mkt_item_gerar($item) {
                 . '"legenda":"","legenda_tiktok":"","hashtags":[],"busca":[],"palavra_chave":"","dm_texto":"","roteiro":[{"tempo":"0-3s","texto_tela":"","fala":""}],"narracao":"","stories":[]}';
         $r = chamar_ia_json($prompt, 2500, 75, 0.9, ['esforco' => 'low']);
         if ($r['ok']) $post = $r['dados'];
+        elseif (mkt_erro_cota($r)) return ['ok' => false, 'erro' => $r['erro'], 'cota' => true];
         elseif (!empty($r['temporario']) || (int)$item['tentativas'] < 1) return ['ok' => false, 'erro' => $r['erro'], 'tentar_de_novo' => true];
     }
     if (!$post) {
@@ -262,9 +263,22 @@ function mkt_foto_banco($termo, $orientacao = 'landscape') {
     return null;
 }
 
+// Cota da IA grátis (por minuto/dia) ou IA sobrecarregada: vale esperar, não é defeito do post
+function mkt_erro_cota($r) {
+    $e = mb_strtolower((string)($r['erro'] ?? ''));
+    return !empty($r['temporario']) && (str_contains($e, 'limite de uso') || str_contains($e, 'sobrecarregad') || str_contains($e, 'quota') || str_contains($e, 'rate'));
+}
+
 // Processa o próximo item pendente (de um plano ou de qualquer um). Retorna o progresso.
+// Se a IA grátis bater o limite, pausa um pouco e continua; depois de várias pausas seguidas
+// (cota do dia acabou), termina o plano com o banco de posts prontos para não ficar pela metade.
 function mkt_plano_processar($planoId = null) {
     global $pdo;
+    $falta = (int)get_config('mkt_pausa_ate', '0') - time();
+    if ($falta > 0) {
+        $c = $planoId ? $pdo->query("SELECT COUNT(*) total, COUNT(*) FILTER (WHERE status IN ('pronto','postado','erro')) feitos, COUNT(*) FILTER (WHERE status='erro') erros FROM marketing_itens WHERE plano_id=" . (int)$planoId)->fetch() : ['total' => 0, 'feitos' => 0, 'erros' => 0];
+        return ['feitos' => (int)$c['feitos'], 'total' => (int)$c['total'], 'erros' => (int)$c['erros'], 'terminou' => false, 'item' => null, 'pausa' => $falta];
+    }
     $pdo->exec("UPDATE marketing_itens SET status='pendente' WHERE status='gerando' AND atualizado_em < NOW() - INTERVAL '4 minutes'");
     $sql = "SELECT * FROM marketing_itens WHERE status='pendente'" . ($planoId ? ' AND plano_id=' . (int)$planoId : '') . " ORDER BY data, hora, id LIMIT 1 FOR UPDATE SKIP LOCKED";
     $pdo->beginTransaction();
@@ -272,7 +286,17 @@ function mkt_plano_processar($planoId = null) {
     if ($it) $pdo->prepare("UPDATE marketing_itens SET status='gerando', tentativas=tentativas+1, atualizado_em=NOW() WHERE id=?")->execute([$it['id']]);
     $pdo->commit();
     if ($it) {
-        try { $r = mkt_item_gerar($it); } catch (Throwable $e) { $r = ['ok' => false, 'erro' => $e->getMessage()]; }
+        $semIa = (int)get_config('mkt_pausas', '0') >= 5;
+        try { $r = mkt_item_gerar($it, $semIa); } catch (Throwable $e) { $r = ['ok' => false, 'erro' => $e->getMessage()]; }
+        if ($r['ok']) { if (!$semIa) set_config('mkt_pausas', '0'); }
+        elseif (!empty($r['cota'])) {
+            // Volta para a fila sem gastar tentativa e espera a cota liberar (60 s, 90 s, 2 min…)
+            $n = (int)get_config('mkt_pausas', '0') + 1;
+            set_config('mkt_pausas', (string)$n);
+            set_config('mkt_pausa_ate', (string)(time() + min(180, 45 + 15 * $n)));
+            $pdo->prepare("UPDATE marketing_itens SET status='pendente', tentativas=GREATEST(tentativas-1,0), erro=?, atualizado_em=NOW() WHERE id=?")->execute([mb_substr((string)$r['erro'], 0, 300), $it['id']]);
+            $r['ok'] = true; // não é erro final
+        }
         if (!$r['ok']) {
             $final = empty($r['tentar_de_novo']) || (int)$it['tentativas'] + 1 >= 3;
             $pdo->prepare("UPDATE marketing_itens SET status=?, erro=?, atualizado_em=NOW() WHERE id=?")->execute([$final ? 'erro' : 'pendente', mb_substr((string)$r['erro'], 0, 300), $it['id']]);
@@ -281,8 +305,9 @@ function mkt_plano_processar($planoId = null) {
     $pid = $planoId ?: ($it['plano_id'] ?? null);
     if (!$pid) return ['feitos' => 0, 'total' => 0, 'terminou' => true];
     $c = $pdo->query("SELECT COUNT(*) total, COUNT(*) FILTER (WHERE status IN ('pronto','postado','erro')) feitos, COUNT(*) FILTER (WHERE status='erro') erros FROM marketing_itens WHERE plano_id=" . (int)$pid)->fetch();
-    if ((int)$c['feitos'] >= (int)$c['total']) $pdo->prepare("UPDATE marketing_planos SET status='pronto' WHERE id=?")->execute([$pid]);
-    return ['feitos' => (int)$c['feitos'], 'total' => (int)$c['total'], 'erros' => (int)$c['erros'], 'terminou' => (int)$c['feitos'] >= (int)$c['total'], 'item' => $it ? (int)$it['id'] : null];
+    if ((int)$c['feitos'] >= (int)$c['total']) { $pdo->prepare("UPDATE marketing_planos SET status='pronto' WHERE id=?")->execute([$pid]); set_config('mkt_pausas', '0'); }
+    $pausa = max(0, (int)get_config('mkt_pausa_ate', '0') - time());
+    return ['pausa' => $pausa, 'sem_ia' => (int)get_config('mkt_pausas', '0') >= 5, 'feitos' => (int)$c['feitos'], 'total' => (int)$c['total'], 'erros' => (int)$c['erros'], 'terminou' => (int)$c['feitos'] >= (int)$c['total'], 'item' => $it ? (int)$it['id'] : null];
 }
 
 // Cron / de carona: continua os planos sozinho e manda os lembretes de postar

@@ -82,6 +82,8 @@
         if (!itens.length) return;
         var topo = el('div', 'cal-acoes');
         topo.appendChild(botao('⬇ Baixar tudo (ZIP)', zip));
+        var comErro = itens.filter(function (i) { return i.status === 'erro'; }).length;
+        if (comErro) topo.appendChild(botao('↻ Refazer os ' + comErro + ' com erro', function () { api({ acao: 'plano_refazer_erros', plano_id: plano() }).then(function () { carregar().then(processar); }); }));
         if (REDES.length) {
             var faltam = itens.filter(function (i) { return i.post && i.status === 'pronto' && (!i.publicar || !i.preparado); }).length;
             if (faltam) topo.appendChild(botao('🤖 Postar o plano todo sozinho (' + faltam + ')', prepararTodos, 'btn-primario'));
@@ -349,13 +351,20 @@
             return api({ acao: 'plano_processar', plano_id: plano() }).then(function (r) {
                 if (!r.ok) { $('plStatus').textContent = r.erro || 'Erro'; rodando = false; return; }
                 barra(r.feitos, r.total);
+                if (r.pausa > 0 && !r.terminou) {
+                    // A IA grátis bateu o limite por minuto: espera e continua sozinho
+                    $('plStatus').textContent = '⏳ A IA grátis chegou no limite por minuto. Continuo sozinho em ' + r.pausa + ' s (' + r.feitos + ' de ' + r.total + ' prontos)… pode deixar a tela aberta ou fechar: o cron também continua.';
+                    if (n % 2 === 0) carregar();
+                    return new Promise(function (ok) { setTimeout(ok, (r.pausa + 1) * 1000); }).then(function () { return volta(n + 1); });
+                }
+                if (r.sem_ia && !r.terminou) $('plStatus').textContent = 'A cota de hoje da IA acabou: termino o plano com o banco de posts prontos (dá para clicar em "Refazer" amanhã para a IA reescrever).';
                 if (n % 2 === 0 || r.terminou) carregar();
                 if (r.terminou || !r.item) {
                     rodando = false;
                     carregar().then(function () { if (REDES.length && itens.some(function (i) { return i.publicar && !i.preparado && i.status === 'pronto'; })) prepararTodos(); });
                     return;
                 }
-                return volta(n + 1);
+                return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return volta(n + 1); }); // ritmo leve para não estourar a cota grátis
             });
         };
         volta(0);
