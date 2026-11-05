@@ -39,6 +39,19 @@ function prosp_horario_google($lista) {
     return ['dias' => implode(',', $dias), 'abertura' => $abre, 'fechamento' => $fecha, 'pausa' => $pausa];
 }
 
+// Endereço do site (roda também fora do painel: na ponte do WhatsApp e no cron, sem o auth.php)
+function prosp_slug_unico($nome) {
+    global $pdo;
+    $t = trim((string)$nome);
+    if (function_exists('iconv')) { $c = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $t); if ($c !== false) $t = $c; }
+    $base = trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-') ?: 'empresa';
+    $base = mb_substr($base, 0, 60);
+    if (in_array($base, ['admin', 'empresa', 'site', 'assets', 'includes', 'config', 'sql', 'login', 'logout', 'install', 'index', 'api', 'uploads', 'previa', 'indica', 'privacidade', 'cron'], true)) $base .= '-site';
+    $slug = $base; $n = 2;
+    $st = $pdo->prepare("SELECT 1 FROM empresas WHERE slug=?");
+    while (true) { $st->execute([$slug]); if (!$st->fetchColumn()) return $slug; $slug = $base . '-' . $n++; }
+}
+
 // Duração típica por tipo de serviço (o dono ajusta no painel)
 function prosp_duracao_servico($nome) {
     $n = mb_strtolower($nome);
@@ -118,7 +131,7 @@ function prosp_virar_cliente($id, $opts = []) {
     $email = mb_strtolower(trim((string)($opts['email'] ?? '')));
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'erro' => 'E-mail inválido.'];
     $host = preg_replace('#^https?://(www\.)?#', '', parse_url(prosp_url_base(), PHP_URL_HOST) ?: 'sitegestor.com');
-    $slug = slug_unico('empresas', slugify($p['nome']) ?: 'empresa');
+    $slug = prosp_slug_unico($p['nome']);
     if ($email === '') $email = $slug . '@clientes.' . $host;
     $ja = $pdo->prepare("SELECT 1 FROM usuarios WHERE LOWER(email)=?"); $ja->execute([$email]);
     if ($ja->fetchColumn()) return ['ok' => false, 'erro' => "Já existe um acesso com o e-mail $email."];
@@ -174,6 +187,8 @@ function prosp_virar_cliente($id, $opts = []) {
         error_log('GDS virar cliente: ' . $e->getMessage());
         return ['ok' => false, 'erro' => 'Não consegui criar a empresa: ' . mb_substr($e->getMessage(), 0, 200)];
     }
+    // Quem indicou ganha 1 mês grátis
+    if (!empty($p['indicado_por'])) { try { require_once __DIR__ . '/prospeccao_vendedor.php'; prosp_indica_premiar($p); } catch (Throwable $e) { error_log('GDS indicação prêmio: ' . $e->getMessage()); } }
     // Nota do Google no site (opcional: nunca impede a criação)
     if ($p['nota'] && $p['avaliacoes'] && prosp_tem_coluna('empresas', 'google_nota')) {
         try { $pdo->prepare("UPDATE empresas SET google_nota=?, google_avaliacoes=? WHERE id=?")->execute([round((float)$p['nota'], 1), (int)$p['avaliacoes'], $empresaId]); } catch (Throwable $e) {}

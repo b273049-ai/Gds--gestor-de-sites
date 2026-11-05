@@ -257,6 +257,15 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - Reserva no navegador: **Gerar no navegador (Puter)** no Marketing (pede um login grátis do Puter na 1ª vez).
 
 ## Central de prospecção (Admin → Prospecção de clientes)
+- **🤖 Vendedora IA** (Piloto → "A IA vende sozinha"): conversa no WhatsApp até fechar — garante que o dono viu a
+  prévia, pergunta o que achou, mostra 1 benefício do ramo, usa a **oferta de entrada** (campo no Piloto), trata as
+  objeções e fecha. Quando ele aceita, **cria a empresa e o site sozinha** e manda o link, o login, **como pagar**
+  (campo "Como o cliente paga") e o link de indicação. Teto de respostas por lead configurável (padrão 12).
+- **🧪 Tom testado**: cada lead recebe um tom (vizinho que ajuda, consultor ou direto); depois de 8 leads por tom a IA
+  usa mais o que mais fecha e segue testando 20% das vezes. O placar aparece no Piloto.
+- **🎁 Indique e ganhe**: cada cliente tem um link (`/indica/CODIGO`) no painel dele, com botão para mandar no
+  WhatsApp. O indicado preenche e vira lead quente na Prospecção ("🎁 Indicação de …"); se fechar, quem indicou ganha
+  **+1 mês grátis** automático e recebe o aviso no WhatsApp.
 - **🎉 Fechou! Virar cliente** (no cartão do lead e na conversa): em 1 clique cria a empresa com o que o Google trouxe
   (nome, ramo, WhatsApp, telefone, endereço, horário de funcionamento → agenda, logo/cor, fotos e avaliações reais), o
   acesso do dono (login e senha provisória para mandar no WhatsApp), os serviços do ramo e o site publicado com a mesma
