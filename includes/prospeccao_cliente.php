@@ -86,12 +86,29 @@ function prosp_copiar_imagem($url, $empresaId, $nome) {
 }
 
 // Transforma o lead em empresa + site. $opts: email, plano_id, publicar (bool)
+// Garante as colunas novas mesmo se a atualização automática do banco ainda não rodou
+function prosp_cliente_garantir_colunas() {
+    global $pdo;
+    if (function_exists('gds_garantir_schema')) { try { gds_garantir_schema(true); } catch (Throwable $e) {} }
+    foreach (["ALTER TABLE prospects ADD COLUMN IF NOT EXISTS empresa_id INT", "ALTER TABLE empresas ADD COLUMN IF NOT EXISTS google_nota NUMERIC(2,1)", "ALTER TABLE empresas ADD COLUMN IF NOT EXISTS google_avaliacoes INT"] as $sql) {
+        try { $pdo->exec($sql); } catch (Throwable $e) { error_log('GDS virar cliente (coluna): ' . $e->getMessage()); }
+    }
+}
+function prosp_tem_coluna($tabela, $coluna) {
+    global $pdo;
+    $st = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=? AND column_name=?");
+    $st->execute([$tabela, $coluna]);
+    return (bool)$st->fetchColumn();
+}
+
 function prosp_virar_cliente($id, $opts = []) {
     global $pdo;
+    prosp_cliente_garantir_colunas();
+    $temEmpresaId = prosp_tem_coluna('prospects', 'empresa_id');
     $st = $pdo->prepare("SELECT * FROM prospects WHERE id=?"); $st->execute([(int)$id]);
     $p = $st->fetch();
     if (!$p) return ['ok' => false, 'erro' => 'Lead não encontrado.'];
-    if (!empty($p['empresa_id'])) {
+    if ($temEmpresaId && !empty($p['empresa_id'])) {
         $e = $pdo->prepare("SELECT id, slug FROM empresas WHERE id=?"); $e->execute([$p['empresa_id']]);
         if ($e = $e->fetch()) return ['ok' => true, 'ja_existia' => true, 'empresa_id' => (int)$e['id'], 'slug' => $e['slug'], 'url' => prosp_url_base() . '/' . $e['slug']];
     }
@@ -129,7 +146,6 @@ function prosp_virar_cliente($id, $opts = []) {
             $p['endereco'] ?: null, $p['instagram'] ?: null, mb_substr((string)$p['categoria'], 0, 150) ?: null,
             $hor['abertura'] ?? '09:00', $hor['fechamento'] ?? '18:00', $hor['dias'] ?? '1,2,3,4,5,6', $hor['pausa'][0] ?? null, $hor['pausa'][1] ?? null]);
         $empresaId = (int)$ins->fetchColumn();
-        if ($p['nota'] && $p['avaliacoes']) $pdo->prepare("UPDATE empresas SET google_nota=?, google_avaliacoes=? WHERE id=?")->execute([round((float)$p['nota'], 1), (int)$p['avaliacoes'], $empresaId]);
         $pdo->prepare("INSERT INTO usuarios (empresa_id, nome, email, senha_hash, role) VALUES (?, ?, ?, ?, 'empresa')")
             ->execute([$empresaId, $p['nome'], $email, password_hash($senha, PASSWORD_DEFAULT)]);
         $fotosEmp = array_values(array_filter(array_map(fn($u, $i) => prosp_copiar_imagem($u, $empresaId, 'foto-' . ($i + 1)), $fotos, array_keys($fotos))));
@@ -148,15 +164,19 @@ function prosp_virar_cliente($id, $opts = []) {
             $pl = $pdo->prepare("SELECT valor FROM planos WHERE id=?"); $pl->execute([$planoId]);
             if (($valor = $pl->fetchColumn()) !== false) $pdo->prepare("INSERT INTO pagamentos_assinaturas (empresa_id, plano_id, valor, vencimento, status) VALUES (?,?,?, CURRENT_DATE + INTERVAL '30 days', 'pendente')")->execute([$empresaId, $planoId, $valor]);
         }
-        $pdo->prepare("UPDATE prospects SET status='fechado', empresa_id=?, proximo_contato=NULL, atualizado_em=NOW(),
-            observacoes=TRIM(COALESCE(observacoes,'') || ' · Virou cliente em ' || TO_CHAR(NOW(),'DD/MM/YYYY')) WHERE id=?")->execute([$empresaId, $p['id']]);
+        $pdo->prepare("UPDATE prospects SET status='fechado', " . ($temEmpresaId ? 'empresa_id=' . (int)$empresaId . ', ' : '') . "proximo_contato=NULL, atualizado_em=NOW(),
+            observacoes=TRIM(COALESCE(observacoes,'') || ' · Virou cliente em ' || TO_CHAR(NOW(),'DD/MM/YYYY')) WHERE id=?")->execute([$p['id']]);
         // Cancela qualquer mensagem de prospecção ainda na fila para este número
         $pdo->prepare("DELETE FROM whatsapp_mensagens WHERE ref_tipo='prospect' AND ref_id=? AND status='pendente'")->execute([$p['id']]);
         $pdo->commit();
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('GDS virar cliente: ' . $e->getMessage());
         return ['ok' => false, 'erro' => 'Não consegui criar a empresa: ' . mb_substr($e->getMessage(), 0, 200)];
+    }
+    // Nota do Google no site (opcional: nunca impede a criação)
+    if ($p['nota'] && $p['avaliacoes'] && prosp_tem_coluna('empresas', 'google_nota')) {
+        try { $pdo->prepare("UPDATE empresas SET google_nota=?, google_avaliacoes=? WHERE id=?")->execute([round((float)$p['nota'], 1), (int)$p['avaliacoes'], $empresaId]); } catch (Throwable $e) {}
     }
     return ['ok' => true, 'empresa_id' => $empresaId, 'slug' => $slug, 'url' => prosp_url_base() . '/' . $slug, 'email' => $email, 'senha' => $senha,
             'publicado' => $publicar, 'servicos' => count($servicos), 'avaliacoes' => min(10, count($reviews)), 'fotos' => count($fotosEmp ?? []), 'horario' => $hor];
