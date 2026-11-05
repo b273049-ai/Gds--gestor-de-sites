@@ -470,11 +470,11 @@ details.ias-box > summary { list-style: none; cursor: pointer; } details.ias-box
                     <button type="button" class="btn btn-ghost btn-sm" data-v="rascunho" aria-pressed="<?= soc_tt_modo() === 'rascunho' ? 'true' : 'false' ?>">📥 Rascunho no app (recomendado)</button>
                     <button type="button" class="btn btn-ghost btn-sm" data-v="direto" aria-pressed="<?= soc_tt_modo() === 'direto' ? 'true' : 'false' ?>">🚀 Postar direto</button>
                 </div>
-                <small class="muted">Rascunho: chega no app com legenda pronta; você põe uma <b>música em alta</b> (o que mais faz viralizar no TikTok) e publica com 1 toque. “Direto” só fica público depois que o TikTok auditar o seu app — antes disso sai como privado.</small>
+                <small class="muted">Rascunho: chega no app com legenda pronta; você põe uma <b>música em alta</b> (o que mais faz viralizar no TikTok) e publica com 1 toque. “Direto” só fica público depois que o TikTok auditar o seu app — antes disso sai como privado. Ao trocar para “Direto”, ligue o <b>Direct Post</b> no app do TikTok e clique em Conectar de novo.</small>
                 <details <?= soc_tt_app_ok() ? '' : 'open' ?>><summary class="link">Como ligar (10 min, uma vez só)</summary>
                     <ol class="passos">
                         <li>Em <a href="https://developers.tiktok.com/apps" target="_blank" rel="noopener">developers.tiktok.com</a> → Manage apps → <b>Connect an app</b>.</li>
-                        <li>Adicione os produtos <b>Login Kit</b> e <b>Content Posting API</b> (marque “Direct Post” se quiser pedir a auditoria depois).</li>
+                        <li>Adicione os produtos <b>Login Kit</b> e <b>Content Posting API</b>. Em <b>Scopes</b> precisam estar <code>user.info.basic</code> e <code>video.upload</code> (o <code>video.publish</code> só aparece se ligar o “Direct Post”).</li>
                         <li>Login Kit → Redirect URI: <code class="copiar"><?= e(soc_redirect_uri()) ?></code></li>
                         <li>Para o carrossel virar post de fotos: <b>URL properties</b> → verifique o domínio <code class="copiar"><?= e(preg_replace('#^https?://#', '', soc_url_base())) ?></code>.</li>
                         <li>Enquanto o app está em revisão, use o <b>Sandbox</b> e adicione a sua conta como usuária de teste.</li>

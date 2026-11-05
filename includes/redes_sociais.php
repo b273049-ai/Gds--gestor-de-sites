@@ -20,7 +20,8 @@ require_once __DIR__ . '/../config/db.php';
 
 const SOC_IG_VERSAO = 'v24.0';
 const SOC_IG_ESCOPOS = 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages';
-const SOC_TT_ESCOPOS = 'user.info.basic,video.upload,video.publish';
+// Rascunho no app só precisa de video.upload; video.publish só existe com o "Direct Post" ligado no app do TikTok
+function soc_tt_escopos() { return 'user.info.basic,video.upload' . (soc_tt_modo() === 'direto' ? ',video.publish' : ''); }
 
 function soc_ig_graph() { return rtrim(getenv('GDS_IG_GRAPH') ?: 'https://graph.instagram.com', '/'); }
 function soc_ig_api() { return rtrim(getenv('GDS_IG_API') ?: 'https://api.instagram.com', '/'); }
@@ -160,7 +161,7 @@ function soc_tt_conectado() { return get_config('tt_refresh', '') !== '' || get_
 function soc_tt_modo() { return get_config('tt_modo', 'rascunho') === 'direto' ? 'direto' : 'rascunho'; }
 
 function soc_tt_link_autorizar($state) {
-    return 'https://www.tiktok.com/v2/auth/authorize/?' . http_build_query(['client_key' => get_config('tt_client_key', ''), 'scope' => SOC_TT_ESCOPOS,
+    return 'https://www.tiktok.com/v2/auth/authorize/?' . http_build_query(['client_key' => get_config('tt_client_key', ''), 'scope' => soc_tt_escopos(),
         'response_type' => 'code', 'redirect_uri' => soc_redirect_uri(), 'state' => $state]);
 }
 
