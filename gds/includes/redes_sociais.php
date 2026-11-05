@@ -23,7 +23,11 @@ const SOC_IG_ESCOPOS = 'instagram_business_basic,instagram_business_content_publ
 // Rascunho no app só precisa de video.upload; video.publish só existe com o "Direct Post" ligado no app do TikTok
 function soc_tt_escopos() { return 'user.info.basic,video.upload' . (soc_tt_modo() === 'direto' ? ',video.publish' : ''); }
 
-function soc_ig_graph() { return rtrim(getenv('GDS_IG_GRAPH') ?: 'https://graph.instagram.com', '/'); }
+// Apps novos da Meta (2026) só têm o "login unificado" (Login do Facebook para Empresas com um ID de configuração):
+// aí tudo passa pelo graph.facebook.com. Apps antigos continuam no login do Instagram (graph.instagram.com).
+function soc_ig_unificado() { return get_config('ig_config_id', '') !== ''; }
+function soc_fb_graph() { return rtrim(getenv('GDS_FB_GRAPH') ?: 'https://graph.facebook.com', '/'); }
+function soc_ig_graph() { return soc_ig_unificado() ? soc_fb_graph() : rtrim(getenv('GDS_IG_GRAPH') ?: 'https://graph.instagram.com', '/'); }
 function soc_ig_api() { return rtrim(getenv('GDS_IG_API') ?: 'https://api.instagram.com', '/'); }
 function soc_tt_api() { return rtrim(getenv('GDS_TT_API') ?: 'https://open.tiktokapis.com', '/'); }
 
@@ -72,6 +76,10 @@ function soc_ig_app_ok() { return get_config('ig_app_id', '') !== '' && get_conf
 function soc_ig_conectado() { return get_config('ig_token', '') !== '' && get_config('ig_user_id', '') !== ''; }
 
 function soc_ig_link_autorizar($state) {
+    if (soc_ig_unificado()) {
+        return 'https://www.facebook.com/' . SOC_IG_VERSAO . '/dialog/oauth?' . http_build_query(['client_id' => get_config('ig_app_id', ''),
+            'config_id' => get_config('ig_config_id', ''), 'response_type' => 'code', 'redirect_uri' => soc_redirect_uri(), 'state' => $state]);
+    }
     return 'https://www.instagram.com/oauth/authorize?' . http_build_query(['enable_fb_login' => '0', 'force_authentication' => '1',
         'client_id' => get_config('ig_app_id', ''), 'redirect_uri' => soc_redirect_uri(), 'response_type' => 'code', 'scope' => SOC_IG_ESCOPOS, 'state' => $state]);
 }
@@ -95,6 +103,7 @@ function soc_ig_req($metodo, $caminho, $dados = null, $timeout = 30, $json = fal
 
 // Troca o código do login pelo token de 60 dias e guarda a conta
 function soc_ig_conectar($code) {
+    if (soc_ig_unificado()) return soc_ig_conectar_unificado($code);
     $r = soc_http('POST', soc_ig_api() . '/oauth/access_token', ['client_id' => get_config('ig_app_id', ''), 'client_secret' => get_config('ig_app_secret', ''),
         'grant_type' => 'authorization_code', 'redirect_uri' => soc_redirect_uri(), 'code' => $code]);
     $j = $r['json']['data'][0] ?? $r['json'];
@@ -119,14 +128,64 @@ function soc_ig_conectar($code) {
     return ['ok' => true, 'usuario' => get_config('ig_usuario', '')];
 }
 
+// Login unificado: código → token (longo) → descobre a conta do Instagram liberada no login
+function soc_ig_conectar_unificado($code) {
+    $fb = soc_fb_graph() . '/' . SOC_IG_VERSAO;
+    $app = ['client_id' => get_config('ig_app_id', ''), 'client_secret' => get_config('ig_app_secret', '')];
+    $r = soc_http('GET', $fb . '/oauth/access_token?' . http_build_query($app + ['redirect_uri' => soc_redirect_uri(), 'code' => $code]));
+    $token = (string)($r['json']['access_token'] ?? '');
+    if ($token === '') return ['ok' => false, 'erro' => soc_ig_erro($r, 'A Meta não liberou o acesso.')];
+    $expira = !empty($r['json']['expires_in']) ? time() + (int)$r['json']['expires_in'] : 0;
+    $l = soc_http('GET', $fb . '/oauth/access_token?' . http_build_query($app + ['grant_type' => 'fb_exchange_token', 'fb_exchange_token' => $token]));
+    if (!empty($l['json']['access_token'])) { $token = (string)$l['json']['access_token']; $expira = !empty($l['json']['expires_in']) ? time() + (int)$l['json']['expires_in'] : 0; }
+    // Qual conta do Instagram a pessoa liberou: 1) permissões do token  2) Página ligada ao Instagram
+    $igId = ''; $pagina = ''; $tokPagina = '';
+    $d = soc_http('GET', $fb . '/debug_token?' . http_build_query(['input_token' => $token, 'access_token' => $app['client_id'] . '|' . $app['client_secret']]));
+    foreach ((array)($d['json']['data']['granular_scopes'] ?? []) as $g) {
+        if (str_starts_with((string)($g['scope'] ?? ''), 'instagram') && !empty($g['target_ids'][0])) { $igId = (string)$g['target_ids'][0]; break; }
+    }
+    $pgs = soc_http('GET', $fb . '/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50', null, ['token' => $token]);
+    foreach ((array)($pgs['json']['data'] ?? []) as $pg) {
+        $ib = (string)($pg['instagram_business_account']['id'] ?? '');
+        if ($ib !== '' && ($igId === '' || $ib === $igId)) { $igId = $ib; $pagina = (string)$pg['id']; $tokPagina = (string)($pg['access_token'] ?? ''); break; }
+    }
+    if ($igId === '') return ['ok' => false, 'erro' => 'Entrou, mas nenhuma conta do Instagram foi liberada. Conecte de novo e marque a sua conta profissional na tela da Meta (e confira se ela está na configuração do login unificado).'];
+    $me = soc_http('GET', $fb . '/' . $igId . '?fields=id,username,followers_count,media_count', null, ['token' => $token]);
+    set_config('ig_token', $token);
+    set_config('ig_user_id', $igId);
+    set_config('ig_usuario', (string)($me['json']['username'] ?? ''));
+    set_config('ig_seguidores', (string)(int)($me['json']['followers_count'] ?? 0));
+    set_config('ig_token_expira', (string)$expira);
+    set_config('ig_conectado_em', (string)time());
+    set_config('ig_page_id', $pagina);
+    set_config('ig_page_token', $tokPagina);
+    set_config('ig_erro', '');
+    // Webhook: pela Página (quando tem) ou pela própria conta do Instagram
+    $s = $pagina !== '' && $tokPagina !== ''
+        ? soc_http('POST', $fb . '/' . $pagina . '/subscribed_apps', ['subscribed_fields' => 'feed'], ['token' => $tokPagina])
+        : soc_ig_req('POST', $igId . '/subscribed_apps', ['subscribed_fields' => 'comments,messages']);
+    set_config('ig_webhook_assinado', !empty($s['json']['success']) ? '1' : '0');
+    return ['ok' => true, 'usuario' => get_config('ig_usuario', '') ?: $igId];
+}
+
 function soc_ig_desconectar() {
-    foreach (['ig_token', 'ig_user_id', 'ig_usuario', 'ig_seguidores', 'ig_token_expira', 'ig_conectado_em', 'ig_webhook_assinado', 'ig_erro'] as $k) set_config($k, '');
+    foreach (['ig_token', 'ig_user_id', 'ig_usuario', 'ig_seguidores', 'ig_token_expira', 'ig_conectado_em', 'ig_webhook_assinado', 'ig_erro', 'ig_page_id', 'ig_page_token'] as $k) set_config($k, '');
 }
 
 // O token dura 60 dias; renova quando faltam menos de 15 (precisa ter mais de 24 h)
 function soc_ig_renovar() {
     if (!soc_ig_conectado()) return false;
     $exp = (int)get_config('ig_token_expira', '0');
+    if (soc_ig_unificado()) {
+        if ($exp === 0 || $exp - time() > 15 * 86400 || time() - (int)get_config('ig_renovado_tentativa', '0') < 6 * 3600) return false;
+        set_config('ig_renovado_tentativa', (string)time());
+        $r = soc_http('GET', soc_fb_graph() . '/' . SOC_IG_VERSAO . '/oauth/access_token?' . http_build_query(['grant_type' => 'fb_exchange_token',
+            'client_id' => get_config('ig_app_id', ''), 'client_secret' => get_config('ig_app_secret', ''), 'fb_exchange_token' => get_config('ig_token', '')]));
+        if (empty($r['json']['access_token'])) { set_config('ig_erro', soc_ig_erro($r)); return false; }
+        set_config('ig_token', $r['json']['access_token']);
+        set_config('ig_token_expira', (string)(!empty($r['json']['expires_in']) ? time() + (int)$r['json']['expires_in'] : 0));
+        return true;
+    }
     if ($exp - time() > 15 * 86400 || time() - (int)get_config('ig_conectado_em', '0') < 86400) return false;
     if (time() - (int)get_config('ig_renovado_tentativa', '0') < 6 * 3600) return false;
     set_config('ig_renovado_tentativa', (string)time());
@@ -581,7 +640,7 @@ function soc_ig_comentario($v) {
     } catch (PDOException $e) { return 'repetido'; }
     if (get_config('mkt_dm_auto', '1') !== '1') return 'salvo';
     // 1) Resposta privada no direct (a Meta permite 1 por comentário, em até 7 dias)
-    $r = soc_ig_req('POST', get_config('ig_user_id', '') . '/messages', ['recipient' => ['comment_id' => $cid], 'message' => ['text' => soc_texto_dm((string)($de['username'] ?? ''), $post)]], 30, true);
+    $r = soc_ig_enviar_msg(['recipient' => ['comment_id' => $cid], 'message' => ['text' => soc_texto_dm((string)($de['username'] ?? ''), $post)]]);
     $ok = !empty($r['json']['message_id']) || !empty($r['json']['recipient_id']);
     $pdo->prepare("UPDATE marketing_leads SET respondido=?, erro=? WHERE id=?")->execute([$ok, $ok ? null : mb_substr(soc_ig_erro($r), 0, 300), $leadId]);
     // 2) Resposta pública curta (mostra que você responde e gera mais conversa no post)
@@ -628,8 +687,16 @@ function soc_ig_mensagem($m) {
     }
     return 'salvo';
 }
+// Envia pelo direct: pela conta do Instagram; no login unificado com Página, tenta também pela Página
+function soc_ig_enviar_msg($dados) {
+    $r = soc_ig_req('POST', get_config('ig_user_id', '') . '/messages', $dados, 30, true);
+    if (empty($r['json']['message_id']) && soc_ig_unificado() && get_config('ig_page_id', '') !== '' && get_config('ig_page_token', '') !== '') {
+        $r = soc_http('POST', soc_fb_graph() . '/' . SOC_IG_VERSAO . '/' . get_config('ig_page_id', '') . '/messages', $dados, ['token' => get_config('ig_page_token', ''), 'json' => true]);
+    }
+    return $r;
+}
 function soc_ig_enviar_dm($igsid, $texto) {
-    $r = soc_ig_req('POST', get_config('ig_user_id', '') . '/messages', ['recipient' => ['id' => $igsid], 'message' => ['text' => mb_substr($texto, 0, 950)]], 30, true);
+    $r = soc_ig_enviar_msg(['recipient' => ['id' => $igsid], 'message' => ['text' => mb_substr($texto, 0, 950)]]);
     $ok = !empty($r['json']['message_id']);
     return ['ok' => $ok, 'erro' => $ok ? null : mb_substr(soc_ig_erro($r), 0, 300)];
 }

@@ -62,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             responder_json(['ok' => true]);
         // ----- Instagram e TikTok -----
         case 'redes_salvar':
+            if (isset($_POST['ig_config_id'])) set_config('ig_config_id', mb_substr(preg_replace('/\D/', '', $_POST['ig_config_id']), 0, 30));
             foreach (['ig_app_id' => 40, 'tt_client_key' => 60] as $k => $max) if (isset($_POST[$k])) set_config($k, mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $_POST[$k]), 0, $max));
             foreach (['ig_app_secret', 'tt_client_secret'] as $k) if (trim($_POST[$k] ?? '') !== '') set_config($k, mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $_POST[$k]), 0, 120));
             if (isset($_POST['tt_modo'])) set_config('tt_modo', $_POST['tt_modo'] === 'direto' ? 'direto' : 'rascunho');
@@ -80,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
                 $u = $tok ? soc_http('GET', soc_tt_api() . '/v2/user/info/?fields=open_id,display_name', null, ['token' => $tok]) : null;
                 responder_json(!empty($u['json']['data']['user']) ? ['ok' => true, 'msg' => 'TikTok OK: ' . ($u['json']['data']['user']['display_name'] ?? '') . ' · modo ' . (soc_tt_modo() === 'direto' ? 'postar direto' : 'rascunho no app')] : ['ok' => false, 'erro' => $u ? soc_tt_erro($u) : (get_config('tt_erro', '') ?: 'Conecte o TikTok.')]);
             }
-            $r = soc_ig_req('GET', 'me?fields=user_id,username,followers_count,media_count');
+            $r = soc_ig_req('GET', get_config('ig_user_id', '') . '?fields=id,username,followers_count,media_count');
             if (!empty($r['json']['username'])) { set_config('ig_seguidores', (string)(int)($r['json']['followers_count'] ?? 0)); $lim = soc_ig_req('GET', get_config('ig_user_id', '') . '/content_publishing_limit?fields=quota_usage,config'); }
             responder_json(!empty($r['json']['username']) ? ['ok' => true, 'msg' => 'Instagram OK: @' . $r['json']['username'] . ' · ' . (int)($r['json']['followers_count'] ?? 0) . ' seguidores'
                 . (isset($lim['json']['data'][0]['quota_usage']) ? ' · ' . (int)$lim['json']['data'][0]['quota_usage'] . ' de ' . (int)($lim['json']['data'][0]['config']['quota_total'] ?? 100) . ' posts nas últimas 24 h' : '')] : ['ok' => false, 'erro' => soc_ig_erro($r)]);
@@ -438,16 +439,17 @@ details.ias-box > summary { list-style: none; cursor: pointer; } details.ias-box
                 <details <?= soc_ig_app_ok() ? '' : 'open' ?>><summary class="link">Como ligar (10 min, uma vez só)</summary>
                     <ol class="passos">
                         <li>Sua conta precisa ser <b>profissional</b> (Empresa ou Criador): Instagram → Configurações → Tipo de conta. Não precisa de Página do Facebook.</li>
-                        <li>Em <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com</a> → Criar app → caso de uso <b>“Gerenciar mensagens e conteúdo no Instagram”</b>.</li>
-                        <li>No app: Instagram → <b>Configuração da API com login do Instagram</b> → “Configurar login empresarial” → URL de redirecionamento:<br><code class="copiar"><?= e(soc_redirect_uri()) ?></code></li>
-                        <li>Na mesma tela, <b>Webhooks</b>: URL <code class="copiar"><?= e(soc_webhook_url()) ?></code> · Token <code class="copiar"><?= e($whTok) ?></code> → Verificar e salvar → assine <b>comments</b> e <b>messages</b>.</li>
-                        <li><b>Funções do app → Testadores do Instagram</b>: adicione a sua conta e aceite no Instagram (Configurações → Apps e sites → Convites). Assim funciona sem a análise da Meta.</li>
+                        <li>Em <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com</a> → Criar app → caso de uso <b>“Gerenciar mensagens e conteúdo no Instagram”</b> → ligue um <b>portfólio empresarial</b> (grátis; apps novos exigem).</li>
+                        <li>Casos de uso → Instagram → Personalizar → <b>API setup with Unified login</b> → “1. Configure seu app”: crie a configuração <b>API do Instagram (login unificado)</b> com a sua conta do Instagram e as permissões de conteúdo, comentários e mensagens. Em URL de redirecionamento, registre:<br><code class="copiar"><?= e(soc_redirect_uri()) ?></code></li>
+                        <li>“2. Gerar tokens”: em <b>Funções do app</b>, dê à sua conta a função <b>Testador do Instagram</b> e aceite no Instagram (Configurações → Apps e sites → Convites).</li>
+                        <li>“3. Configurar webhooks”: URL <code class="copiar"><?= e(soc_webhook_url()) ?></code> · Token <code class="copiar"><?= e($whTok) ?></code> → Verificar e salvar → assine <b>comments</b> e <b>messages</b>.</li>
                         <li>Para os comentários chegarem, publique o app (modo <b>Ativo</b>): pede a política de privacidade, use <code class="copiar"><?= e(soc_url_base()) ?>/privacidade.php</code>.</li>
-                        <li>Copie o <b>ID do app do Instagram</b> e a <b>Chave secreta do app do Instagram</b> e cole aqui:</li>
+                        <li>Cole aqui o <b>ID do app</b> (o número no endereço do painel da Meta), a <b>Chave secreta do app</b> (Configurações do app → Básico → Mostrar) e a <b>Identificação da configuração</b> (aparece no passo 1).<br><small class="muted">App antigo, que ainda tem “API setup with Instagram login”? Deixe a configuração vazia e use o ID e a chave do Instagram dessa tela.</small></li>
                     </ol>
                     <form class="rede-form" onsubmit="return MKTREDES.salvar(this)">
-                        <div class="form-row"><div><label for="igAppId">ID do app do Instagram</label><input id="igAppId" name="ig_app_id" value="<?= e(get_config('ig_app_id', '')) ?>" inputmode="numeric" autocomplete="off"></div>
-                        <div><label for="igSecret">Chave secreta</label><input id="igSecret" name="ig_app_secret" type="password" autocomplete="new-password" placeholder="<?= get_config('ig_app_secret', '') !== '' ? '•••••• salva (deixe vazio para manter)' : 'cole aqui' ?>"></div></div>
+                        <div class="form-row"><div><label for="igAppId">ID do app</label><input id="igAppId" name="ig_app_id" value="<?= e(get_config('ig_app_id', '')) ?>" inputmode="numeric" autocomplete="off"></div>
+                        <div><label for="igSecret">Chave secreta do app</label><input id="igSecret" name="ig_app_secret" type="password" autocomplete="new-password" placeholder="<?= get_config('ig_app_secret', '') !== '' ? '•••••• salva (deixe vazio para manter)' : 'cole aqui' ?>"></div></div>
+                        <div><label for="igConfig">Identificação da configuração <small class="muted">(login unificado)</small></label><input id="igConfig" name="ig_config_id" value="<?= e(get_config('ig_config_id', '')) ?>" inputmode="numeric" autocomplete="off" placeholder="ex.: 1790814925975205"></div>
                         <button class="btn btn-sm">Salvar<?= soc_ig_conectado() ? '' : ' e conectar' ?></button>
                     </form>
                 </details>
