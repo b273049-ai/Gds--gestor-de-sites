@@ -1,15 +1,21 @@
 // Cria um pedido + preferência do Mercado Pago (Checkout Pro) para um serviço
 // escolhido na conversa com a Vendedora IA de um site público.
 //
-// Segredos necessários (supabase secrets set ...):
-//   MP_ACCESS_TOKEN   Access Token da conta Mercado Pago (APP_USR-... ou TEST-...)
-//   SITE_PUBLIC_URL   (opcional) URL pública do app, ex.: https://meusite.com — usada nas back_urls.
-//                     Sem ela, usa o header Origin da requisição.
+// Quem recebe:
+//   - empresa conectada via OAuth (mp-oauth) → o dinheiro cai direto na conta dela;
+//     a plataforma retém MP_COMISSAO_PERCENT (marketplace_fee).
+//   - empresa não conectada → conta da plataforma (MP_ACCESS_TOKEN), a menos que
+//     MP_EXIGIR_CONTA_EMPRESA=true.
+//
+// Segredos (supabase secrets set ...):
+//   MP_ACCESS_TOKEN          (opcional) token da conta da plataforma, usado como fallback
+//   MP_COMISSAO_PERCENT      (opcional) comissão da plataforma sobre vendas das empresas, ex.: 10
+//   MP_EXIGIR_CONTA_EMPRESA  (opcional) "true" para só vender se a empresa estiver conectada
+//   SITE_PUBLIC_URL          (opcional) URL pública do app — usada nas back_urls. Sem ela, usa o Origin.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
 import { parsePreco } from '../_shared/preco.ts';
-
-const MP_API = 'https://api.mercadopago.com';
+import { MP_API, tokenParaEmpresa } from '../_shared/mercadopago.ts';
 
 function baseUrlPublica(req: Request): string | null {
   const candidata = Deno.env.get('SITE_PUBLIC_URL') || req.headers.get('origin');
@@ -32,12 +38,6 @@ function textoCurto(valor: unknown, max: number): string | null {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ erro: 'Método não permitido' }, 405);
-
-  const accessToken = Deno.env.get('MP_ACCESS_TOKEN');
-  if (!accessToken) {
-    console.error('MP_ACCESS_TOKEN não configurado');
-    return json({ erro: 'Pagamentos indisponíveis no momento.' }, 500);
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -81,6 +81,13 @@ Deno.serve(async (req) => {
   const base = baseUrlPublica(req);
   if (!base) return json({ erro: 'Origem inválida' }, 400);
 
+  const credencial = await tokenParaEmpresa(supabase, site.empresa_id);
+  if (!credencial) return json({ erro: 'Esta empresa ainda não conectou o Mercado Pago.' }, 503);
+  const { token: accessToken, recebedor } = credencial;
+
+  const percentual = Math.min(Math.max(Number(Deno.env.get('MP_COMISSAO_PERCENT') || 0), 0), 50);
+  const comissao = recebedor === 'empresa' ? Math.round(valor * percentual) / 100 : 0;
+
   const empresa = Array.isArray(site.empresas) ? site.empresas[0] : site.empresas;
   const nomeNegocio: string = empresa?.nome_negocio || 'GDS';
   const servicoNome = String(servico.nome || 'Serviço').slice(0, 200);
@@ -94,6 +101,8 @@ Deno.serve(async (req) => {
       valor,
       nome_cliente: nomeCliente,
       email_cliente: emailCliente,
+      recebedor,
+      comissao,
     })
     .select('id')
     .single();
@@ -122,13 +131,15 @@ Deno.serve(async (req) => {
     },
     external_reference: pedido.id,
     statement_descriptor: nomeNegocio.replace(/[^A-Za-z0-9 ]/g, '').slice(0, 22) || undefined,
-    notification_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/mp-webhook`,
+    // ?pedido= diz ao webhook com qual token (empresa ou plataforma) consultar o pagamento.
+    notification_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/mp-webhook?pedido=${pedido.id}`,
+    ...(comissao > 0 ? { marketplace_fee: comissao } : {}),
     back_urls: {
       success: retorno('sucesso'),
       pending: retorno('pendente'),
       failure: retorno('falha'),
     },
-    metadata: { pedido_id: pedido.id, site_id: site.id, origem: 'vendedora_ia' },
+    metadata: { pedido_id: pedido.id, site_id: site.id, origem: 'vendedora_ia', recebedor },
   };
   // auto_return só é aceito pelo Mercado Pago com back_urls https.
   if (base.startsWith('https://')) preferencia.auto_return = 'approved';

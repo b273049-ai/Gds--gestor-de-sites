@@ -2,25 +2,11 @@
 // Deploy sem verificação de JWT (ver supabase/config.toml).
 //
 // Segredos necessários:
-//   MP_ACCESS_TOKEN     mesmo token usado em mp-criar-pagamento
-//   MP_WEBHOOK_SECRET   "Assinatura secreta" em Suas integrações > Webhooks
+//   MP_WEBHOOK_SECRET   "Assinatura secreta" em Suas integrações > (sua aplicação) > Webhooks
+//   MP_ACCESS_TOKEN     token da plataforma (para pedidos recebidos pela plataforma)
+// Pedidos de empresas conectadas via OAuth são consultados com o token da própria empresa.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-
-const MP_API = 'https://api.mercadopago.com';
-const encoder = new TextEncoder();
-
-async function hmacSha256Hex(segredo: string, mensagem: string): Promise<string> {
-  const chave = await crypto.subtle.importKey('raw', encoder.encode(segredo), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const assinatura = await crypto.subtle.sign('HMAC', chave, encoder.encode(mensagem));
-  return Array.from(new Uint8Array(assinatura)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function comparacaoSegura(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
+import { comparacaoSegura, hmacSha256Hex, MP_API, tokenParaEmpresa, type Recebedor } from '../_shared/mercadopago.ts';
 
 // Valida o header x-signature: "ts=<timestamp>,v1=<hmac>"
 // manifest = "id:<data.id>;request-id:<x-request-id>;ts:<ts>;"
@@ -65,10 +51,9 @@ function statusPedido(mpStatus: string): string {
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('ok');
 
-  const accessToken = Deno.env.get('MP_ACCESS_TOKEN');
   const segredo = Deno.env.get('MP_WEBHOOK_SECRET');
-  if (!accessToken || !segredo) {
-    console.error('MP_ACCESS_TOKEN ou MP_WEBHOOK_SECRET não configurado');
+  if (!segredo) {
+    console.error('MP_WEBHOOK_SECRET não configurado');
     return new Response('not configured', { status: 500 });
   }
 
@@ -85,25 +70,50 @@ Deno.serve(async (req) => {
     return new Response('invalid signature', { status: 401 });
   }
 
-  // Nunca confiar no corpo da notificação: consultar o pagamento na API.
-  const resp = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(dataId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!resp.ok) {
-    console.error('Erro ao consultar pagamento', resp.status, await resp.text());
-    return new Response('retry', { status: 502 }); // MP reenvia a notificação
-  }
-  const pagamento = await resp.json();
-  const pedidoId = pagamento.external_reference;
-  if (!pedidoId) return new Response('no reference');
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     { auth: { persistSession: false } },
   );
 
-  const { data: pedido } = await supabase.from('pedidos').select('id, valor').eq('id', pedidoId).single();
+  // O pedido vem na notification_url (?pedido=). Sem ele (notificação configurada no painel),
+  // tenta com o token da plataforma.
+  const pedidoParam = url.searchParams.get('pedido');
+  let pedidoEsperado: { id: string; empresa_id: number | null; recebedor: Recebedor } | null = null;
+  if (pedidoParam) {
+    const { data } = await supabase.from('pedidos').select('id, empresa_id, recebedor').eq('id', pedidoParam).maybeSingle();
+    if (!data) return new Response('unknown order');
+    pedidoEsperado = data;
+  }
+
+  const credencial = await tokenParaEmpresa(
+    supabase,
+    pedidoEsperado?.empresa_id ?? null,
+    pedidoEsperado?.recebedor ?? 'plataforma',
+  );
+  if (!credencial) {
+    console.error('Sem token para consultar pagamento', { dataId, pedido: pedidoParam });
+    return new Response('no credentials');
+  }
+
+  // Nunca confiar no corpo da notificação: consultar o pagamento na API.
+  const resp = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(dataId)}`, {
+    headers: { Authorization: `Bearer ${credencial.token}` },
+  });
+  if (resp.status === 404) return new Response('payment not found for this account');
+  if (!resp.ok) {
+    console.error('Erro ao consultar pagamento', resp.status);
+    return new Response('retry', { status: 502 }); // MP reenvia a notificação
+  }
+  const pagamento = await resp.json();
+  const pedidoId = pagamento.external_reference;
+  if (!pedidoId) return new Response('no reference');
+  if (pedidoEsperado && pedidoEsperado.id !== pedidoId) {
+    console.warn('external_reference não confere com o pedido da notificação', { pedidoParam, pedidoId });
+    return new Response('reference mismatch');
+  }
+
+  const { data: pedido } = await supabase.from('pedidos').select('id, valor').eq('id', pedidoId).maybeSingle();
   if (!pedido) return new Response('unknown order');
 
   let status = statusPedido(pagamento.status);

@@ -72,6 +72,13 @@ export default function App() {
   const [publicSiteId, setPublicSiteId] = useState<string | null>(null);
   const [retornoPagamento, setRetornoPagamento] = useState<RetornoPagamento | null>(null);
 
+  // Retorno do OAuth do Mercado Pago (?mp_conectado=ok|erro) — quem chega aqui é o dono da empresa
+  const [retornoConexaoMP] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const r = params.get('mp_conectado');
+    return r ? { ok: r === 'ok', motivo: params.get('motivo') || '' } : null;
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const siteParam = params.get('site');
@@ -85,6 +92,28 @@ export default function App() {
       window.history.replaceState({}, '', siteParam ? `?site=${siteParam}` : window.location.pathname);
     }
   }, []);
+
+  if (retornoConexaoMP) {
+    const motivos: Record<string, string> = {
+      autorizacao_negada: 'A autorização foi cancelada no Mercado Pago.',
+      link_expirado: 'O link de conexão expirou. Peça um novo link.',
+      link_invalido: 'O link de conexão é inválido. Peça um novo link.',
+      falha_ao_obter_token: 'O Mercado Pago não confirmou a conexão. Tente novamente.',
+    };
+    return (
+      <div style={{ fontFamily: 'sans-serif', background: '#0d1117', color: '#fff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ background: '#161b22', border: `1px solid ${retornoConexaoMP.ok ? '#238636' : '#da3633'}`, borderRadius: '12px', padding: '25px', maxWidth: '380px', textAlign: 'center' }}>
+          <div style={{ fontSize: '40px' }}>{retornoConexaoMP.ok ? '✅' : '⚠️'}</div>
+          <h2 style={{ fontSize: '18px' }}>{retornoConexaoMP.ok ? 'Conta Mercado Pago conectada!' : 'Não foi possível conectar'}</h2>
+          <p style={{ fontSize: '13px', color: '#8b949e', lineHeight: 1.5 }}>
+            {retornoConexaoMP.ok
+              ? 'Pronto! As vendas feitas pela Vendedora IA no seu site agora caem direto na sua conta Mercado Pago. Você já pode fechar esta página.'
+              : motivos[retornoConexaoMP.motivo] || 'Tente novamente ou fale com o suporte.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (publicSiteId) {
     return <PaginaPublicaSite siteId={publicSiteId} retornoPagamento={retornoPagamento} voltarAoPainel={() => { setPublicSiteId(null); window.history.pushState({}, '', window.location.pathname); }} />;
@@ -256,6 +285,11 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
   // Vendas da Vendedora IA (Mercado Pago)
   const [pedidos, setPedidos] = useState<any[]>([]);
 
+  // Conexão Mercado Pago (Marketplace / OAuth) por empresa
+  const [mpStatus, setMpStatus] = useState<Record<string, any>>({});
+  const [linkConexao, setLinkConexao] = useState<{ empresa: any; url: string } | null>(null);
+  const [mpCarregando, setMpCarregando] = useState<number | null>(null);
+
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('Todos');
 
@@ -270,6 +304,35 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
     if (dSites) setSites(dSites);
     const { data: dPedidos } = await supabase.from('pedidos').select('*').order('criado_em', { ascending: false }).limit(50);
     if (dPedidos) setPedidos(dPedidos);
+    const { data: dMp } = await supabase.from('empresas_mp_status').select('*');
+    if (dMp) setMpStatus(Object.fromEntries(dMp.map(m => [String(m.empresa_id), m])));
+  }
+
+  // Ações administrativas: a senha do login vai no header e é validada pela função (GDS_ADMIN_KEY).
+  async function chamarMpOauth(acao: 'iniciar' | 'desconectar', empresaIdMp: number) {
+    setMpCarregando(empresaIdMp);
+    const { data, error } = await supabase.functions.invoke('mp-oauth', {
+      body: { acao, empresa_id: empresaIdMp },
+      headers: { 'x-gds-admin-key': senhaAdmin },
+    });
+    setMpCarregando(null);
+    if (error) {
+      let msg = error.message;
+      try { msg = (await (error as any).context?.json())?.erro || msg; } catch { /* mantém msg */ }
+      alert('Mercado Pago: ' + msg);
+      return null;
+    }
+    return data;
+  }
+
+  async function conectarMercadoPago(emp: any) {
+    const data = await chamarMpOauth('iniciar', emp.id);
+    if (data?.url) setLinkConexao({ empresa: emp, url: data.url });
+  }
+
+  async function desconectarMercadoPago(emp: any) {
+    if (!confirm(`Desconectar a conta Mercado Pago de ${emp.nome_negocio}? As próximas vendas não cairão mais na conta dela.`)) return;
+    if (await chamarMpOauth('desconectar', emp.id)) carregarDados();
   }
 
   function loginAdmin(e: React.FormEvent) {
@@ -566,6 +629,7 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
                 <strong style={{ fontSize: '13px' }}>{p.servico_nome}</strong>
                 <div style={{ fontSize: '11px', color: '#8b949e' }}>
                   {site?.empresas?.nome_negocio || `Site #${p.site_id}`} · {p.nome_cliente || 'Cliente'} · {new Date(p.criado_em).toLocaleDateString('pt-BR')}
+                  {' · '}{p.recebedor === 'empresa' ? `conta da empresa${Number(p.comissao) > 0 ? ` (comissão ${Number(p.comissao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})` : ''}` : 'conta da plataforma'}
                 </div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -577,19 +641,53 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
         })}
       </div>
 
+      {/* Link de conexão Mercado Pago */}
+      {linkConexao && (
+        <div style={{ background: '#161b22', padding: '15px', borderRadius: '8px', border: '1px solid #009ee3', marginBottom: '15px' }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#009ee3' }}>🔗 Conectar Mercado Pago — {linkConexao.empresa.nome_negocio}</h3>
+          <p style={{ fontSize: '12px', color: '#8b949e', margin: '0 0 10px', lineHeight: 1.5 }}>
+            Envie este link para o dono da empresa. Ele entra com a conta Mercado Pago <strong>dele</strong> e clica em "Permitir".
+            A partir daí, as vendas da Vendedora IA caem direto na conta dele. O link vale por 7 dias.
+          </p>
+          <input readOnly value={linkConexao.url} onFocus={e => e.target.select()} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#8b949e', borderRadius: '4px', fontSize: '11px' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+            <a
+              href={`https://wa.me/${String(linkConexao.empresa.whatsapp || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Para receber as vendas do seu site direto na sua conta Mercado Pago, acesse este link e clique em "Permitir": ${linkConexao.url}`)}`}
+              target="_blank" rel="noreferrer"
+              style={{ padding: '10px', background: '#238636', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', textDecoration: 'none' }}
+            >
+              💬 Enviar no WhatsApp
+            </a>
+            <button onClick={() => { navigator.clipboard?.writeText(linkConexao.url); alert('Link copiado!'); }} style={{ padding: '10px', background: '#1f6feb', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px' }}>📋 Copiar link</button>
+          </div>
+          <button onClick={() => { setLinkConexao(null); carregarDados(); }} style={{ width: '100%', marginTop: '8px', padding: '8px', background: '#21262d', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', fontSize: '12px' }}>Fechar</button>
+        </div>
+      )}
+
       {/* Lista Empresas */}
       <div style={{ background: '#161b22', padding: '15px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '15px' }}>
         <h4 style={{ margin: '0 0 10px', fontSize: '14px' }}>Empresas & Pagamentos ({empresasFiltradas.length})</h4>
         {empresasFiltradas.map(emp => {
           const statusPag = emp.status_pagamento || 'Em dia';
           const corStatus = statusPag === 'Em dia' ? '#238636' : statusPag === 'Pendente' ? '#d29922' : '#da3633';
+          const mp = mpStatus[String(emp.id)];
           return (
-            <div key={emp.id} style={{ borderBottom: '1px solid #30363d', padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div key={emp.id} style={{ borderBottom: '1px solid #30363d', padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <div>
                 <strong style={{ fontSize: '13px' }}>{emp.nome_negocio}</strong>
                 <div style={{ fontSize: '11px', color: '#8b949e' }}>{emp.whatsapp}</div>
+                <div style={{ fontSize: '10px', marginTop: '3px', color: mp ? '#2ea043' : '#8b949e' }}>
+                  {mp ? `✅ Mercado Pago conectado${mp.live_mode === false ? ' (teste)' : ''}` : '⚪ Mercado Pago não conectado'}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {mp ? (
+                  <button disabled={mpCarregando === emp.id} onClick={() => desconectarMercadoPago(emp)} style={{ fontSize: '10px', background: '#21262d', color: '#8b949e', border: '1px solid #30363d', padding: '4px 8px', borderRadius: '10px' }}>Desconectar MP</button>
+                ) : (
+                  <button disabled={mpCarregando === emp.id} onClick={() => conectarMercadoPago(emp)} style={{ fontSize: '10px', background: '#009ee3', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '10px' }}>
+                    {mpCarregando === emp.id ? '...' : '🔗 Conectar MP'}
+                  </button>
+                )}
                 <button onClick={() => alternarStatusPagamento(emp.id, statusPag)} style={{ fontSize: '10px', background: corStatus, color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '10px' }}>💳 {statusPag}</button>
                 <button onClick={() => deletarEmpresa(emp.id)} style={{ padding: '4px 8px', background: '#21262d', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', fontSize: '11px' }}>🗑️</button>
               </div>

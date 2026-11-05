@@ -3,3 +3,7 @@
 # validada pela assinatura x-signature (MP_WEBHOOK_SECRET).
 [functions.mp-webhook]
 verify_jwt = false
+
+# Retorno do OAuth do Mercado Pago (o navegador chega aqui sem JWT; validado pelo "state" assinado).
+[functions.mp-oauth-callback]
+verify_jwt = false
