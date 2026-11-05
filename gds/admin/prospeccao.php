@@ -34,6 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             $perfil = array_key_exists($_POST['perfil'] ?? '', prosp_piloto_perfis()) ? $_POST['perfil'] : 'auto';
             set_config('prosp_auto_perfil', $perfil);
             set_config('prosp_auto_freio_recusa', ($_POST['freio_recusa'] ?? '1') === '1' ? '1' : '0');
+            if ($perfil === 'personalizado') {
+                $rampa = array_map(fn($n) => max(1, min(300, (int)$n)), array_slice(explode(',', (string)($_POST['rampa'] ?? '')), 0, 4));
+                if (count($rampa) === 4) set_config('prosp_auto_rampa', implode(',', $rampa));
+                $hojeN = trim((string)($_POST['hoje'] ?? ''));
+                set_config('prosp_auto_hoje', $hojeN !== '' ? date('Y-m-d') . ':' . max(0, min(300, (int)$hojeN)) : '');
+            } else set_config('prosp_auto_hoje', '');
             set_config('prosp_auto_max', (string)max(5, min(300, (int)($_POST['max'] ?? 40))));
             $dias = array_values(array_intersect(array_map('intval', explode(',', (string)($_POST['dias'] ?? ''))), [1, 2, 3, 4, 5, 6, 7]));
             set_config('prosp_auto_dias', implode(',', $dias ?: [1, 2, 3, 4, 5]));
@@ -276,6 +282,14 @@ $filaJson = array_map(fn($p) => ['id' => (int)$p['id'], 'nome' => $p['nome'], 'c
 $ab = prosp_resultado_ab();
 $aprendeu = prosp_aprendizado();
 $respostas = prosp_respostas_padrao();
+// Dinheiro na mesa: ticket mensal tirado do preço do Marketing (ex.: "a partir de R$ 97/mês")
+$ticket = preg_match('/(\d+(?:[.,]\d{1,2})?)/', str_replace('.', '', (string)get_config('mkt_preco', '')), $mt) ? (float)str_replace(',', '.', $mt[1]) : 0.0;
+$ticketReal = $ticket > 0;
+if (!$ticketReal) $ticket = 97.0;
+$brl = fn($v) => 'R$ ' . number_format($v, 0, ',', '.');
+$vNegociando = (int)$f['negociando'] * $ticket;
+$vFechado = (int)$f['fechados'] * $ticket;
+$vPotencial = round((int)$f['quentes'] * 0.1) * $ticket;
 // Piloto automático e conversas
 $piloto = prosp_piloto_status();
 $pc = prosp_piloto_cfg();
@@ -292,6 +306,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 <!DOCTYPE html>
 <html lang="pt-br">
 <head><?= painel_head('Prospecção de clientes - GDS Admin') ?>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 .abas-p { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
@@ -353,6 +368,11 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 .chaves-p { margin-top: 14px; }
 .perfis-p button { font-weight: 600; }
 .perfil-desc { min-height: 2.6em; }
+.rampa-p { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.rampa-sem { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; display: grid; gap: 4px; }
+.rampa-sem span { font-size: 12.5px; color: var(--text-dim); } .rampa-sem.atual { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(91,124,255,.2); }
+.rampa-sem strong { font-size: 18px; min-width: 34px; }
+.hoje-p { margin-bottom: 4px; }
 .passos-num { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .passos-num strong { font-size: 22px; min-width: 40px; text-align: center; }
 .lista-dicas li { margin-bottom: 6px; font-size: 14px; }
 .conv-grade { display: grid; grid-template-columns: minmax(240px, 330px) 1fr; gap: 14px; align-items: start; }
@@ -374,6 +394,35 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 .conv-sug div { display: flex; gap: 6px; flex-wrap: wrap; }
 #cvTexto { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px; font: inherit; font-size: 14px; }
 @media (max-width: 860px) { .conv-grade { grid-template-columns: 1fr; } }
+
+/* ---------- Cédula: o dinheiro na mesa ---------- */
+.cedula { --tinta: #0c2a2b; --tinta2: #12393a; --latao: #e3b341; --papel: #f3efe2; --verde: #7fd6b0;
+  position: relative; overflow: hidden; border-radius: 20px; padding: 26px 28px 20px; margin-bottom: 22px; color: var(--papel);
+  background-color: var(--tinta);
+  background-image: repeating-radial-gradient(circle at 92% 18%, rgba(227,179,65,.09) 0 1px, transparent 1px 9px),
+                    repeating-radial-gradient(circle at 8% 120%, rgba(127,214,176,.07) 0 1px, transparent 1px 11px),
+                    linear-gradient(135deg, var(--tinta), var(--tinta2));
+  border: 1px solid rgba(227,179,65,.35); box-shadow: inset 0 0 0 6px var(--tinta), inset 0 0 0 7px rgba(227,179,65,.25); }
+.cedula-topo { display: flex; justify-content: space-between; gap: 22px; flex-wrap: wrap; align-items: flex-end; }
+.cedula-rot { margin: 0; font-size: 14px; color: var(--verde); font-weight: 600; letter-spacing: .01em; }
+.cedula-valor { margin: 2px 0 4px; font-family: 'Instrument Serif', Georgia, serif; font-size: clamp(46px, 7vw, 76px); line-height: 1; color: var(--latao); font-variant-numeric: tabular-nums; }
+.cedula-valor small { font-size: .38em; color: var(--papel); opacity: .8; margin-left: 6px; font-family: inherit; }
+.cedula-conta { margin: 0; font-size: 13.5px; color: rgba(243,239,226,.78); max-width: 60ch; }
+.cedula-lado { margin: 0; display: grid; gap: 10px; min-width: 230px; }
+.cedula-lado div { border-left: 2px solid rgba(227,179,65,.45); padding-left: 12px; }
+.cedula-lado dt { font-size: 12.5px; color: rgba(243,239,226,.72); } .cedula-lado dd { margin: 0; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fita { list-style: none; margin: 22px 0 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px dashed rgba(227,179,65,.4); }
+.fita li { padding: 12px 10px 4px; display: grid; gap: 1px; position: relative; }
+.fita li + li { border-left: 1px dashed rgba(243,239,226,.18); }
+.fita-n { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; } .fita-nome { font-size: 12.5px; color: rgba(243,239,226,.75); }
+.fita-pct { font-size: 12px; color: var(--verde); font-weight: 600; }
+.cedula-dica { margin: 12px 0 0; font-size: 13.5px; color: rgba(243,239,226,.85); }
+.ao-vivo { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #34c77b; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 0 rgba(52,199,123,.6); animation: pulso 1.8s ease-out infinite; }
+.ao-vivo.parado { background: #8a8f9c; animation: none; }
+@keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(52,199,123,.55); } 100% { box-shadow: 0 0 0 9px rgba(52,199,123,0); } }
+@media (prefers-reduced-motion: reduce) { .ao-vivo { animation: none; } }
+.pt-sit { display: flex; align-items: center; }
+@media (max-width: 760px) { .cedula { padding: 20px 18px 16px; } .fita { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fita li:nth-child(4) { border-left: 0; } }
 @media (max-width: 760px) { .prosp-card { grid-template-columns: 1fr; } .prosp-nota { text-align: left; } #mapa { height: 420px; } }
 </style>
 </head>
@@ -386,14 +435,28 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
         <div class="acoes"><a class="btn btn-ghost" href="?exportar=1"><?= icone('download', 16) ?> Exportar planilha</a></div></div>
     <?= flash_render() ?>
 
-    <div class="kpis">
-        <div><strong><?= (int)$f['leads'] ?></strong><span>empresas sem site na base</span></div>
-        <div><strong class="temp-quente"><?= (int)$f['quentes'] ?></strong><span>🔥 quentes ainda não contatadas</span></div>
-        <div><strong><?= (int)$f['contatados'] ?></strong><span>contatadas</span></div>
-        <div><strong class="temp-quente"><?= (int)$f['abriram'] ?></strong><span>👀 abriram a prévia (<?= $pct($f['abriram'], $f['contatados']) ?>%)</span></div>
-        <div><strong><?= (int)$f['querem'] ?></strong><span>clicaram "Quero este site"</span></div>
-        <div><strong><?= (int)$f['fechados'] ?></strong><span>✅ fechadas (<?= $pct($f['fechados'], $f['contatados']) ?>%)</span></div>
-    </div>
+    <section class="cedula" aria-labelledby="t-cedula">
+        <div class="cedula-topo">
+            <div>
+                <p class="cedula-rot" id="t-cedula">Em negociação agora</p>
+                <p class="cedula-valor"><?= $brl($vNegociando) ?><small>/mês</small></p>
+                <p class="cedula-conta"><?= (int)$f['negociando'] ?> <?= (int)$f['negociando'] === 1 ? 'negócio' : 'negócios' ?> × <?= $brl($ticket) ?> por site<?= $ticketReal ? '' : ' (ticket de exemplo — coloque o seu preço em Marketing → Sua marca)' ?></p>
+            </div>
+            <dl class="cedula-lado">
+                <div><dt>Já fechado</dt><dd><?= $brl($vFechado) ?>/mês</dd></div>
+                <div><dt>Se 1 em 10 dos <?= (int)$f['quentes'] ?> quentes fechar</dt><dd><?= $brl($vPotencial) ?>/mês</dd></div>
+                <?php if ($piloto['ligado']): ?><div><dt>Piloto automático</dt><dd><span class="ao-vivo<?= $piloto['pausa'] ? ' parado' : '' ?>" aria-hidden="true"></span><?= $piloto['pausa'] ? 'pausado' : (int)$piloto['hoje'] . ' de ' . (int)$piloto['limite'] . ' hoje' ?></dd></div><?php endif; ?>
+            </dl>
+        </div>
+        <ol class="fita" aria-label="Funil de vendas">
+            <?php $etapas = [['Na base', $f['leads'], null], ['Contatadas', $f['contatados'], $f['leads']], ['Abriram a prévia', $f['abriram'], $f['contatados']],
+                ['Responderam', $f['responderam'] + $f['negociando'] + $f['fechados'], $f['contatados']], ['Negociando', $f['negociando'], $f['contatados']], ['Fecharam', $f['fechados'], $f['contatados']]];
+            foreach ($etapas as [$nomeEt, $nEt, $base]): ?>
+            <li><span class="fita-n"><?= (int)$nEt ?></span><span class="fita-nome"><?= e($nomeEt) ?></span><?php if ($base !== null): ?><span class="fita-pct"><?= min(100, $pct($nEt, $base)) ?>%</span><?php endif; ?></li>
+            <?php endforeach; ?>
+        </ol>
+        <p class="cedula-dica"><?= (int)$f['quentes'] ?> empresas quentes ainda não receberam mensagem<?= $piloto['ligado'] ? ' — o piloto está cuidando delas.' : '. Ligue o piloto automático e elas entram na fila.' ?></p>
+    </section>
 
     <nav class="abas-p" id="abas" aria-label="Seções da prospecção">
         <a href="#piloto" data-aba="piloto">🤖 Piloto automático<?= $piloto['ligado'] && !$piloto['pausa'] ? ' <b>ligado</b>' : '' ?></a>
@@ -411,7 +474,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
     <section class="aba-p" id="aba-piloto">
         <div class="piloto-topo form-box largo">
             <div class="piloto-linha">
-                <div><span class="muted">Situação</span><h2 id="ptSituacao"><?= e($piloto['situacao']) ?></h2></div>
+                <div><span class="muted">Situação</span><h2 class="pt-sit"><span class="ao-vivo<?= $piloto['ligado'] && !$piloto['pausa'] ? '' : ' parado' ?>" id="ptLuz" aria-hidden="true"></span><span id="ptSituacao"><?= e($piloto['situacao']) ?></span></h2></div>
                 <button type="button" class="btn <?= $piloto['ligado'] ? 'btn-ghost' : 'btn-wa' ?>" id="ptLigar" onclick="PR.pilotoLigar()"><?= $piloto['ligado'] ? '⏹ Desligar o piloto' : '▶ Ligar o piloto automático' ?></button>
             </div>
             <div class="alerta alerta-aviso" id="ptPausa" <?= $piloto['pausa'] ? '' : 'hidden' ?>><span id="ptPausaTxt">⏸ Pausado sozinho: <?= e($piloto['pausa']) ?></span> <button type="button" class="btn btn-sm" onclick="PR.pilotoRetomar()">Retomar</button></div>
@@ -439,7 +502,19 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
             <label>Máximo de mensagens por dia (depois do aquecimento)</label>
             <div class="passos-num"><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(-5)" aria-label="Diminuir">−</button><strong id="ptMax"><?= (int)$pc['max_dia'] ?></strong><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(5)" aria-label="Aumentar">+</button>
                 <span class="chips-p" data-grupo="max"><?php foreach ([20, 40, 70, 150, 300] as $n): ?><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptNum(0, <?= $n ?>)"><?= $n ?></button><?php endforeach; ?></span></div>
-            <p class="dica">O aquecimento segue o perfil (no Seguro: 10 por dia na 1ª semana, 18, 28 e 40; no Agressivo: 40 e depois 100). Para pular, marque "número já aquecido".</p>
+            <label>Aquecimento — mensagens por dia em cada semana</label>
+            <div class="rampa-p" id="ptRampa">
+                <?php $semAtual = prosp_piloto_semana($pc); for ($w = 1; $w <= 4; $w++): $vw = (int)($pc['rampa'][$w] ?? $pc['max_dia']); ?>
+                <div class="rampa-sem<?= $semAtual === $w && !$pc['aquecido'] ? ' atual' : '' ?>"><span>Semana <?= $w ?><?= $semAtual === $w && !$pc['aquecido'] ? ' · você está aqui' : '' ?></span>
+                    <div class="passos-num"><button type="button" class="btn btn-ghost btn-sm" data-rampa="<?= $w ?>" data-d="-5" aria-label="Menos na semana <?= $w ?>">−</button><strong data-rampa-v="<?= $w ?>"><?= $vw ?></strong><button type="button" class="btn btn-ghost btn-sm" data-rampa="<?= $w ?>" data-d="5" aria-label="Mais na semana <?= $w ?>">+</button></div></div>
+                <?php endfor; ?>
+                <div class="rampa-sem"><span>Depois</span><div class="passos-num"><strong>o máximo</strong></div></div>
+            </div>
+            <?php $hojeOv = explode(':', get_config('prosp_auto_hoje', '')); $temHoje = $pc['perfil'] === 'personalizado' && count($hojeOv) === 2 && $hojeOv[0] === date('Y-m-d'); ?>
+            <label>Só hoje</label>
+            <div class="passos-num hoje-p"><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptHoje(-5)" aria-label="Menos mensagens hoje">−</button><strong id="ptHojeN"><?= (int)prosp_piloto_limite_hoje($pc) ?></strong><button type="button" class="btn btn-ghost btn-sm" onclick="PR.ptHoje(5)" aria-label="Mais mensagens hoje">+</button>
+                <span class="muted" id="ptHojeTxt"><?= $temHoje ? 'mensagens hoje (ajuste manual, volta ao normal amanhã)' : 'mensagens hoje (pelo aquecimento)' ?></span></div>
+            <p class="dica">Mexeu no aquecimento ou no "Só hoje", vira Personalizado. O "Só hoje" vale até a meia-noite. Para pular o aquecimento, marque "número já aquecido".</p>
             <label>Dias</label>
             <div class="chips-p" data-grupo="dias" data-multi="1"><?php foreach ([1 => 'Seg', 2 => 'Ter', 3 => 'Qua', 4 => 'Qui', 5 => 'Sex', 6 => 'Sáb', 7 => 'Dom'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= in_array($k, $pc['dias'], true) ? 'true' : 'false' ?>"><?= $v ?></button><?php endforeach; ?></div>
             <label>Horário</label>
@@ -986,6 +1061,8 @@ const PR = (() => {
             marcar1('horario', p.horario); marcar1('ritmo', p.ritmo);
             document.querySelectorAll('.chips-p[data-grupo="dias"] button[data-v]').forEach(x => x.setAttribute('aria-pressed', p.dias.includes(Number(x.dataset.v)) ? 'true' : 'false'));
             ptMax = p.max; $('ptMax').textContent = ptMax;
+            [1, 2, 3, 4].forEach(w => { document.querySelector('[data-rampa-v="' + w + '"]').textContent = p.rampa[w] || p.max; });
+            ptHojeMexeu = false; $('ptHojeTxt').textContent = 'mensagens hoje (pelo aquecimento)';
             document.querySelector('.chaves-p [data-chave="freio_recusa"]').setAttribute('aria-pressed', p.freio_recusa ? 'true' : 'false');
         }
         ptRisco();
@@ -1003,14 +1080,22 @@ const PR = (() => {
         if (b.dataset.chave === 'freio_recusa') virouPersonalizado();
     }));
     function ptNum(d, v) { ptMax = Math.max(5, Math.min(300, v || ptMax + d)); $('ptMax').textContent = ptMax; virouPersonalizado(); }
+    let ptHojeMexeu = <?= $temHoje ? 'true' : 'false' ?>;
+    function ptHoje(d) { const el = $('ptHojeN'); el.textContent = Math.max(0, Math.min(300, Number(el.textContent) + d)); ptHojeMexeu = true; $('ptHojeTxt').textContent = 'mensagens hoje (ajuste manual, volta ao normal amanhã)'; virouPersonalizado(); }
+    document.querySelectorAll('[data-rampa]').forEach(b => b.addEventListener('click', () => {
+        const v = document.querySelector('[data-rampa-v="' + b.dataset.rampa + '"]'); v.textContent = Math.max(1, Math.min(300, Number(v.textContent) + Number(b.dataset.d))); virouPersonalizado();
+    }));
+    const ptRampa = () => [1, 2, 3, 4].map(w => document.querySelector('[data-rampa-v="' + w + '"]').textContent).join(',');
     const ptEscolha = (g) => [...document.querySelectorAll('.chips-p[data-grupo="' + g + '"] button[aria-pressed="true"]')].map(b => b.dataset.v);
     const ptChave = (k) => document.querySelector('.chaves-p [data-chave="' + k + '"]').getAttribute('aria-pressed') === 'true' ? '1' : '0';
     function ptMostrar(p) {
         if (!p) return;
         ptLigado = p.ligado;
         $('ptSituacao').textContent = p.situacao;
+        if ($('ptLuz')) $('ptLuz').className = 'ao-vivo' + (p.ligado && !p.pausa ? '' : ' parado');
         if (p.perfil_txt) $('ptPerfil').textContent = p.perfil_txt;
         $('ptHoje').textContent = p.hoje + ' / ' + p.limite;
+        if ($('ptHojeN') && !ptHojeMexeu) $('ptHojeN').textContent = p.limite;
         $('ptSemana').textContent = p.aquecido ? 'aquecido' : 'semana ' + p.semana;
         $('ptResp').textContent = p.saude.taxa_resposta + '%'; $('ptParar').textContent = p.saude.taxa_parar + '%'; $('ptFalhas').textContent = p.saude.falhas;
         $('ptPausa').hidden = !p.pausa; $('ptPausaTxt').textContent = '⏸ Pausado sozinho: ' + (p.pausa || '');
@@ -1018,7 +1103,7 @@ const PR = (() => {
     }
     async function pilotoSalvar(btn) {
         btn.disabled = true;
-        const r = await api({ acao: 'piloto_salvar', perfil: ptEscolha('perfil')[0] || 'auto', freio_recusa: ptChave('freio_recusa'), max: ptMax, dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
+        const r = await api({ acao: 'piloto_salvar', perfil: ptEscolha('perfil')[0] || 'auto', freio_recusa: ptChave('freio_recusa'), max: ptMax, rampa: ptRampa(), hoje: ptHojeMexeu ? $('ptHojeN').textContent : '', dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
             ia: ptEscolha('ia')[0] || '1', responde: ptEscolha('responde')[0] || 'sugerir', aquecido: ptChave('aquecido'), alertas: ptChave('alertas'), optout_resp: ptChave('optout_resp'), ouvir: ptChave('ouvir') });
         btn.disabled = false;
         if (r.ok) { ptMostrar(r.piloto); toast('Salvo!', 'sucesso'); } else toast(r.erro, 'erro');
@@ -1086,7 +1171,7 @@ const PR = (() => {
         feitos++; $('feitosHoje').textContent = feitos; $('barraMeta').style.width = Math.min(100, feitos / limite * 100) + '%';
         idx++; mostrarFila();
     }
-    return { pilotoSalvar, pilotoLigar, pilotoRetomar, pilotoAgora, ptNum, abrirConversa, cvEnviar, cvAbrirWa, cvReler, cvStatus, spPlataforma, responder, aba, spEnviar, spPular, spDescartar, spIa, marcar, marcarGrupo, estimar, cacar, alternar, excluirCacada, carregarMsg, whats, ia, copiarPrevia, copiloto, status, obs, excluir, salvarConfig, testarAlerta };
+    return { ptHoje, pilotoSalvar, pilotoLigar, pilotoRetomar, pilotoAgora, ptNum, abrirConversa, cvEnviar, cvAbrirWa, cvReler, cvStatus, spPlataforma, responder, aba, spEnviar, spPular, spDescartar, spIa, marcar, marcarGrupo, estimar, cacar, alternar, excluirCacada, carregarMsg, whats, ia, copiarPrevia, copiloto, status, obs, excluir, salvarConfig, testarAlerta };
 })();
 </script>
 </body>
