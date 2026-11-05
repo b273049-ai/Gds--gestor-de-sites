@@ -138,18 +138,56 @@ function soc_ig_conectar_unificado($code) {
     $expira = !empty($r['json']['expires_in']) ? time() + (int)$r['json']['expires_in'] : 0;
     $l = soc_http('GET', $fb . '/oauth/access_token?' . http_build_query($app + ['grant_type' => 'fb_exchange_token', 'fb_exchange_token' => $token]));
     if (!empty($l['json']['access_token'])) { $token = (string)$l['json']['access_token']; $expira = !empty($l['json']['expires_in']) ? time() + (int)$l['json']['expires_in'] : 0; }
-    // Qual conta do Instagram a pessoa liberou: 1) permissões do token  2) Página ligada ao Instagram
-    $igId = ''; $pagina = ''; $tokPagina = '';
+    // Qual conta do Instagram a pessoa liberou: 1) permissões do token  2) Página ligada  3) contas do portfólio empresarial
+    $igId = ''; $pagina = ''; $tokPagina = ''; $empresas = []; $diag = [];
     $d = soc_http('GET', $fb . '/debug_token?' . http_build_query(['input_token' => $token, 'access_token' => $app['client_id'] . '|' . $app['client_secret']]));
-    foreach ((array)($d['json']['data']['granular_scopes'] ?? []) as $g) {
-        if (str_starts_with((string)($g['scope'] ?? ''), 'instagram') && !empty($g['target_ids'][0])) { $igId = (string)$g['target_ids'][0]; break; }
+    $dd = (array)($d['json']['data'] ?? []);
+    foreach ((array)($dd['granular_scopes'] ?? []) as $g) {
+        $sc = (string)($g['scope'] ?? '');
+        if ($igId === '' && str_starts_with($sc, 'instagram') && !empty($g['target_ids'][0])) $igId = (string)$g['target_ids'][0];
+        if ($sc === 'business_management') foreach ((array)($g['target_ids'] ?? []) as $b) $empresas[(string)$b] = true;
     }
+    $diag[] = 'permissões: ' . (implode(', ', (array)($dd['scopes'] ?? [])) ?: (isset($d['json']['error']) ? soc_ig_erro($d) : 'nenhuma'));
+    if (!empty($dd['type'])) $diag[] = 'tipo de token: ' . $dd['type'];
+    $achouPagina = function ($lista) use (&$igId, &$pagina, &$tokPagina) {
+        foreach ((array)$lista as $pg) {
+            $ib = (string)($pg['instagram_business_account']['id'] ?? '');
+            if ($ib !== '' && ($igId === '' || $ib === $igId)) { $igId = $ib; $pagina = (string)$pg['id']; $tokPagina = (string)($pg['access_token'] ?? ''); return true; }
+        }
+        return false;
+    };
     $pgs = soc_http('GET', $fb . '/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50', null, ['token' => $token]);
-    foreach ((array)($pgs['json']['data'] ?? []) as $pg) {
-        $ib = (string)($pg['instagram_business_account']['id'] ?? '');
-        if ($ib !== '' && ($igId === '' || $ib === $igId)) { $igId = $ib; $pagina = (string)$pg['id']; $tokPagina = (string)($pg['access_token'] ?? ''); break; }
+    $achouPagina($pgs['json']['data'] ?? []);
+    $diag[] = 'páginas: ' . count((array)($pgs['json']['data'] ?? []));
+    if ($igId === '' || $pagina === '') {
+        $bz = soc_http('GET', $fb . '/me/businesses?fields=id,name&limit=25', null, ['token' => $token]);
+        foreach ((array)($bz['json']['data'] ?? []) as $b) $empresas[(string)$b['id']] = true;
+        $diag[] = 'portfólios: ' . count($empresas);
+        foreach (array_keys($empresas) as $b) {
+            if ($igId === '') {
+                $ia = soc_http('GET', $fb . '/' . $b . '/instagram_business_accounts?fields=id,username&limit=25', null, ['token' => $token]);
+                if (!empty($ia['json']['data'][0]['id'])) $igId = (string)$ia['json']['data'][0]['id'];
+                elseif (isset($ia['json']['error'])) $diag[] = 'contas do portfólio: ' . soc_ig_erro($ia);
+            }
+            if ($pagina === '') {
+                foreach (['owned_pages', 'client_pages'] as $ed) {
+                    $op = soc_http('GET', $fb . '/' . $b . '/' . $ed . '?fields=id,name,access_token,instagram_business_account{id,username}&limit=25', null, ['token' => $token]);
+                    if ($achouPagina($op['json']['data'] ?? [])) break;
+                }
+            }
+            if ($igId !== '') break;
+        }
     }
-    if ($igId === '') return ['ok' => false, 'erro' => 'Entrou, mas nenhuma conta do Instagram foi liberada. Conecte de novo e marque a sua conta profissional na tela da Meta (e confira se ela está na configuração do login unificado).'];
+    // Reserva: o ID da conta que você colou (aparece em "2. Gerar tokens de acesso" no painel da Meta)
+    $manual = preg_replace('/\D/', '', get_config('ig_conta_id', ''));
+    if ($igId === '' && $manual !== '') {
+        $t = soc_http('GET', $fb . '/' . $manual . '?fields=id,username', null, ['token' => $token]);
+        if (!empty($t['json']['id'])) $igId = $manual; else $diag[] = 'ID colado: ' . soc_ig_erro($t);
+    }
+    if ($igId === '') {
+        set_config('ig_diag', mb_substr(implode(' · ', $diag), 0, 600));
+        return ['ok' => false, 'erro' => 'Entrou, mas a Meta não liberou nenhuma conta do Instagram. Adicione a conta do Instagram ao seu portfólio empresarial (business.facebook.com → Configurações → Contas → Contas do Instagram), confira se ela está marcada na configuração do login unificado e conecte de novo. Ou cole o ID da conta do Instagram (passo 2 "Gerar tokens de acesso" no painel da Meta) em "Como ligar" e conecte de novo. O que a Meta devolveu: ' . implode(' · ', $diag)];
+    }
     $me = soc_http('GET', $fb . '/' . $igId . '?fields=id,username,followers_count,media_count', null, ['token' => $token]);
     set_config('ig_token', $token);
     set_config('ig_user_id', $igId);

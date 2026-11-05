@@ -63,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
         // ----- Instagram e TikTok -----
         case 'redes_salvar':
             if (isset($_POST['ig_config_id'])) set_config('ig_config_id', mb_substr(preg_replace('/\D/', '', $_POST['ig_config_id']), 0, 30));
+            if (isset($_POST['ig_conta_id'])) set_config('ig_conta_id', mb_substr(preg_replace('/\D/', '', $_POST['ig_conta_id']), 0, 30));
             foreach (['ig_app_id' => 40, 'tt_client_key' => 60] as $k => $max) if (isset($_POST[$k])) set_config($k, mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $_POST[$k]), 0, $max));
             foreach (['ig_app_secret', 'tt_client_secret'] as $k) if (trim($_POST[$k] ?? '') !== '') set_config($k, mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $_POST[$k]), 0, 120));
             if (isset($_POST['tt_modo'])) set_config('tt_modo', $_POST['tt_modo'] === 'direto' ? 'direto' : 'rascunho');
@@ -450,6 +451,7 @@ details.ias-box > summary { list-style: none; cursor: pointer; } details.ias-box
                         <div class="form-row"><div><label for="igAppId">ID do app</label><input id="igAppId" name="ig_app_id" value="<?= e(get_config('ig_app_id', '')) ?>" inputmode="numeric" autocomplete="off"></div>
                         <div><label for="igSecret">Chave secreta do app</label><input id="igSecret" name="ig_app_secret" type="password" autocomplete="new-password" placeholder="<?= get_config('ig_app_secret', '') !== '' ? '•••••• salva (deixe vazio para manter)' : 'cole aqui' ?>"></div></div>
                         <div><label for="igConfig">Identificação da configuração <small class="muted">(login unificado)</small></label><input id="igConfig" name="ig_config_id" value="<?= e(get_config('ig_config_id', '')) ?>" inputmode="numeric" autocomplete="off" placeholder="ex.: 1790814925975205"></div>
+                        <div><label for="igConta">ID da conta do Instagram <small class="muted">(só se o GDS não achar sozinho: aparece em “2. Gerar tokens de acesso”)</small></label><input id="igConta" name="ig_conta_id" value="<?= e(get_config('ig_conta_id', '')) ?>" inputmode="numeric" autocomplete="off" placeholder="ex.: 17841400000000000"></div>
                         <button class="btn btn-sm">Salvar<?= soc_ig_conectado() ? '' : ' e conectar' ?></button>
                     </form>
                 </details>
