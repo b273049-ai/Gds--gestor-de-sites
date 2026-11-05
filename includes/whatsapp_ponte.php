@@ -178,6 +178,9 @@ function wa_ponte_sincronizar($dados) {
     $mktCarona = false;
     if (is_file(__DIR__ . '/marketing_ia.php') && time() - (int)get_config('mkt_carona', '0') >= 90) {
         try { $mktCarona = (bool)$pdo->query("SELECT 1 FROM marketing_itens WHERE status='pendente' LIMIT 1")->fetchColumn(); } catch (PDOException $e) { $mktCarona = false; }
+        if (!$mktCarona) {
+            try { require_once __DIR__ . '/marketing_ia.php'; $mktCarona = soc_tem_devido(); } catch (Throwable $e) { $mktCarona = false; }
+        }
         if ($mktCarona) set_config('mkt_carona', (string)time());
     }
     // A conferência dos sites candidatos e a leitura das respostas pela IA são lentas: rodam depois de responder ao conector
@@ -195,7 +198,7 @@ function wa_ponte_sincronizar($dados) {
                 try { prosp_analisar_resposta((int)$lid); } catch (Throwable $e) { error_log('GDS leitura da resposta: ' . $e->getMessage()); }
             }
             if ($mktCarona) {
-                try { require_once __DIR__ . '/marketing_ia.php'; mkt_plano_processar(); } catch (Throwable $e) { error_log('GDS marketing carona: ' . $e->getMessage()); }
+                try { require_once __DIR__ . '/marketing_ia.php'; mkt_plano_processar(); soc_rotina(); } catch (Throwable $e) { error_log('GDS marketing carona: ' . $e->getMessage()); }
             }
         });
     }
