@@ -17,8 +17,9 @@
 require_once __DIR__ . '/prospeccao.php';
 require_once __DIR__ . '/ia_helper.php';
 require_once __DIR__ . '/whatsapp.php';
+require_once __DIR__ . '/prospeccao_vendedor.php';
 
-const PROSP_INTENCOES = ['interessado' => 'Interessado', 'preco' => 'Perguntou o preço', 'link' => 'Pediu o link', 'duvida' => 'Tem dúvida', 'quem' => 'Quer saber quem é',
+const PROSP_INTENCOES = ['fechar' => 'Quer fechar 💰', 'interessado' => 'Interessado', 'preco' => 'Perguntou o preço', 'link' => 'Pediu o link', 'duvida' => 'Tem dúvida', 'quem' => 'Quer saber quem é',
     'sem_tempo' => 'Sem tempo agora', 'ja_tenho' => 'Já tem site', 'nao_preciso' => 'Acha que não precisa', 'nao_quer' => 'Não quer', 'parar' => 'Pediu para parar', 'outro' => 'Outro assunto'];
 
 // Perfis de risco: cada um liga horário, dias, ritmo, máximo por dia, aquecimento e freios de uma vez.
@@ -422,16 +423,7 @@ function prosp_analisar_resposta($id) {
     $historico = implode("\n", array_map(fn($m) => ($m['direcao'] === 'in' ? 'CLIENTE: ' : 'NÓS: ') . $m['texto'], $conv));
     $d = null;
     if (ia_configurada()) {
-        $preco = get_config('mkt_preco', '');
-        $vend = trim(get_config('prosp_vendedor', ''));
-        $prompt = "Você é um vendedor consultivo experiente de sites para pequenos negócios" . ($vend ? " e se chama $vend" : '') . ". Esta é a conversa no WhatsApp com o dono da empresa abaixo. "
-                . "Nunca afirme que ele não tem site; se ele disser que tem, elogie e ofereça comparar, sem insistir. Se ele não quiser, agradeça e encerre. "
-                . "Identifique a intenção da ÚLTIMA mensagem do cliente e sugira 2 respostas curtas (até 4 linhas cada), humanas, sem pressão, que avancem para uma conversa ou demonstração. "
-                . "Se ele pediu o link, mande o link da prévia. Se perguntou o preço" . ($preco ? ", use: $preco" : ', diga que depende do plano e ofereça explicar numa ligação rápida') . ". "
-                . "Nunca invente números, resultados, depoimentos ou funcionalidades. Português do Brasil, no máximo 1 emoji.\n\n"
-                . "Empresa: {$p['nome']} ({$p['categoria']}, " . ($p['bairro'] ?: $p['cidade']) . "), nota " . ($p['nota'] ?: '-') . " com {$p['avaliacoes']} avaliações. "
-                . "Prévia do site: " . prosp_link_previa($p) . ($p['previa_aberta_em'] ? ' (ele já abriu a prévia)' : '') . "\n\nCONVERSA:\n$historico\n\n"
-                . 'Responda APENAS JSON: {"intencao":"interessado|preco|link|duvida|quem|sem_tempo|ja_tenho|nao_preciso|nao_quer|outro","leitura":"1 frase sobre o que ele quis dizer","respostas":["...","..."],"proximo_passo":"o que fazer agora","seguro_responder_sozinho":true}';
+        $prompt = prosp_prompt_vendedor($p, $historico);
         $r = chamar_ia_json($prompt, 900, 45, 0.5, ['esforco' => 'low']);
         if ($r['ok']) $d = $r['dados'];
     }
@@ -444,16 +436,24 @@ function prosp_analisar_resposta($id) {
     if ($int === 'nao_quer') $pdo->prepare("UPDATE prospects SET proximo_contato=NULL, status='descartado' WHERE id=?")->execute([$id]);
     elseif ($int === 'ja_tenho') $pdo->prepare("UPDATE prospects SET proximo_contato=NULL WHERE id=?")->execute([$id]);
     elseif ($int === 'sem_tempo') $pdo->prepare("UPDATE prospects SET proximo_contato=CURRENT_DATE + 7 WHERE id=?")->execute([$id]);
-    elseif (in_array($int, ['interessado', 'preco', 'link'], true)) $pdo->prepare("UPDATE prospects SET status=CASE WHEN status IN ('novo','contatado','respondeu') THEN 'negociando' ELSE status END WHERE id=?")->execute([$id]);
-    // Responde sozinho (só nos casos simples e no máximo 2 vezes por lead; o resto fica com você)
-    $respondeu = false;
+    elseif (in_array($int, ['interessado', 'preco', 'link', 'fechar'], true)) $pdo->prepare("UPDATE prospects SET status=CASE WHEN status IN ('novo','contatado','respondeu') THEN 'negociando' ELSE status END WHERE id=?")->execute([$id]);
+    // Responde sozinho: no automático a IA conversa até fechar (com um teto por lead para nunca virar robô sem fim)
+    $respondeu = false; $fechou = false;
     $modo = get_config('prosp_ia_responde', 'sugerir');
-    if ($modo === 'auto' && $sug && (int)$p['auto_respostas'] < 2 && !empty($d['seguro_responder_sozinho']) && in_array($int, ['interessado', 'preco', 'link', 'duvida', 'quem', 'ja_tenho', 'nao_quer', 'sem_tempo'], true)) {
-        $r = prosp_enviar_plataforma($p, $sug[0], 'prosp_ia', random_int(60, 180)); // resposta humana não sai em 1 segundo
+    $max = max(2, min(30, (int)get_config('prosp_ia_max', '12')));
+    $jaCliente = !empty($p['empresa_id']) || $p['status'] === 'fechado';
+    $email = (string)($d['email'] ?? '');
+    if ($email === '' && preg_match('/[\w.+-]+@[\w-]+\.[\w.]+/u', $ultima, $mm)) $email = $mm[0];
+    if ($modo === 'auto' && !$jaCliente && $int === 'fechar' && get_config('prosp_ia_fecha', '1') === '1') {
+        $f = prosp_ia_fechar($p, $email);
+        $fechou = $respondeu = !empty($f['ok']);
+    } elseif ($modo === 'auto' && !$jaCliente && $sug && (int)$p['auto_respostas'] < $max && !empty($d['seguro_responder_sozinho']) && $int !== 'parar') {
+        $r = prosp_enviar_plataforma($p, $sug[0], 'prosp_ia', random_int(45, 150)); // resposta humana não sai em 1 segundo
         if ($r['ok']) { $respondeu = true; $pdo->prepare("UPDATE prospects SET auto_respostas=COALESCE(auto_respostas,0)+1 WHERE id=?")->execute([$id]); }
     }
-    if (get_config('prosp_alerta_respostas', '1') === '1') {
-        prosp_alertar("💬 {$p['nome']} respondeu: \"" . mb_strimwidth($ultima, 0, 160, '…') . "\"\nLeitura da IA: " . PROSP_INTENCOES[$int] . ($respondeu ? "\n🤖 A IA já respondeu por você." : "\nResponda em Admin → Prospecção → Conversas."));
+    if (get_config('prosp_alerta_respostas', '1') === '1' && !$fechou) {
+        prosp_alertar("💬 {$p['nome']} respondeu: \"" . mb_strimwidth($ultima, 0, 160, '…') . "\"\nLeitura da IA: " . PROSP_INTENCOES[$int]
+            . ($respondeu ? "\n🤖 A IA já respondeu por você." : ($int === 'fechar' ? "\n💰 Quer fechar! Prospecção → 🎉 Fechou! Virar cliente." : "\nResponda em Admin → Prospecção → Conversas.")));
     }
     return $int;
 }
@@ -464,6 +464,7 @@ function prosp_ler_sem_ia($texto, $p) {
     $link = prosp_link_previa($p);
     $int = match (true) {
         (bool)preg_match('/quanto|pre[cç]o|valor|custa|mensal/u', $t) => 'preco',
+        (bool)preg_match('/fechado|pode fazer|pode criar|vamos fazer|bora fazer|quero o site|quero fechar|aceito|manda o pix|como pago/u', $t) => 'fechar',
         (bool)preg_match('/manda|envia|pode mandar|link|quero ver|mostra/u', $t) => 'link',
         (bool)preg_match('/quem [eé]|quem fala|de onde|qual empresa/u', $t) => 'quem',
         (bool)preg_match('/j[aá] tenho|temos site|tenho site/u', $t) => 'ja_tenho',
@@ -475,7 +476,7 @@ function prosp_ler_sem_ia($texto, $p) {
     $resp = ['link' => ["Claro! Aqui está: $link\nMontei com o nome e as fotos de vocês. Me conta o que achou?"],
              'interessado' => ["Que bom! Aqui está a demonstração: $link\nSe gostar, deixo do jeito de vocês e no ar ainda essa semana."],
              'quem' => ['Sou ' . (get_config('prosp_vendedor', '') ?: 'da equipe') . ' da ' . (get_config('mkt_marca', '') ?: 'GDS Sites') . ". A gente monta sites para negócios da região. Fiz uma demonstração com o nome de vocês: $link"],
-             'preco' => ['Depende do plano' . (($pr = get_config('mkt_preco', '')) ? " — $pr" : '') . ". Quer que eu te mostre o que vem incluso? Aqui está a demonstração: $link"],
+             'preco' => [(($pr = prosp_oferta_txt()) ? "Para começar: $pr, sem fidelidade." : 'Depende do plano, e é sem fidelidade.') . " Já vem com agendamento online, confirmação no WhatsApp e o seu domínio. Olha como fica o de vocês: $link\nPosso deixar o seu no ar hoje?"],
              'ja_tenho' => ['Ah, que ótimo! Se um dia quiser comparar, a demonstração fica aqui: ' . $link . ' Sucesso aí!'],
              'sem_tempo' => ['Tranquilo! Te chamo semana que vem, pode ser?'],
              'nao_quer' => ['Sem problema, obrigado pela resposta! Sucesso por aí 🙏']][$int] ?? [];

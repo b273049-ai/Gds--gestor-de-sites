@@ -51,6 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
             set_config('prosp_ouvir', ($_POST['ouvir'] ?? '1') === '1' ? '1' : '0');
             set_config('prosp_alerta_respostas', ($_POST['alertas'] ?? '1') === '1' ? '1' : '0');
             set_config('prosp_optout_responder', ($_POST['optout_resp'] ?? '1') === '1' ? '1' : '0');
+            if (isset($_POST['ia_fecha'])) set_config('prosp_ia_fecha', $_POST['ia_fecha'] === '1' ? '1' : '0');
+            if (isset($_POST['oferta'])) set_config('prosp_oferta', mb_substr(trim((string)$_POST['oferta']), 0, 160));
+            if (isset($_POST['pagamento'])) set_config('prosp_pagamento', mb_substr(trim((string)$_POST['pagamento']), 0, 200));
+            if (isset($_POST['ia_max'])) set_config('prosp_ia_max', (string)max(2, min(30, (int)$_POST['ia_max'])));
             responder_json(['ok' => true, 'piloto' => prosp_piloto_status()]);
         case 'piloto_ligar':
             $ligar = ($_POST['ligar'] ?? '') === '1';
@@ -436,6 +440,11 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 .dlg-cliente h3 { margin: 0 0 6px; } .dlg-cliente form { display: grid; gap: 8px; } .dlg-cliente input, .dlg-cliente select { width: 100%; }
 .dc-res { background: var(--surface-2, rgba(255,255,255,.04)); border: 1px solid rgba(34,197,94,.45); border-radius: 12px; padding: 12px; display: grid; gap: 6px; font-size: 14px; word-break: break-word; }
 .dc-res p { margin: 0 0 4px; font-weight: 700; } .dc-res .btn { justify-self: start; margin-top: 4px; }
+.vendedor-ia { margin-top: 16px; padding: 14px; border: 1px solid rgba(34,197,94,.35); border-radius: 14px; background: rgba(34,197,94,.05); }
+.vendedor-ia h4 { margin: 0 0 8px; }
+.tons-placar { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.tons-placar div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2, rgba(255,255,255,.04)); font-size: 13px; }
+.tons-placar span { color: var(--text-dim); font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -536,13 +545,26 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
             <label>Quem escreve as mensagens</label>
             <div class="chips-p" data-grupo="ia"><button type="button" class="btn btn-ghost btn-sm" data-v="1" aria-pressed="<?= $pc['ia_escreve'] ? 'true' : 'false' ?>">🧠 A IA escreve uma diferente para cada empresa</button><button type="button" class="btn btn-ghost btn-sm" data-v="0" aria-pressed="<?= $pc['ia_escreve'] ? 'false' : 'true' ?>">📝 Usar os meus modelos (aba Mensagens)</button></div>
             <label>Quando alguém responder</label>
-            <div class="chips-p" data-grupo="responde"><?php foreach (['sugerir' => '💡 A IA lê e sugere — eu respondo', 'auto' => '🤖 A IA responde sozinha os casos simples (até 2 vezes) e me passa o resto', 'nao' => 'Não usar IA'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $pc['responde'] === $k ? 'true' : 'false' ?>"><?= e($v) ?></button><?php endforeach; ?></div>
+            <div class="chips-p" data-grupo="responde"><?php foreach (['sugerir' => '💡 A IA lê e sugere — eu respondo', 'auto' => '🤖 A IA vende sozinha: conversa, faz a oferta e fecha', 'nao' => 'Não usar IA'] as $k => $v): ?><button type="button" class="btn btn-ghost btn-sm" data-v="<?= $k ?>" aria-pressed="<?= $pc['responde'] === $k ? 'true' : 'false' ?>"><?= e($v) ?></button><?php endforeach; ?></div>
             <div class="chaves-p">
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="aquecido" aria-pressed="<?= $pc['aquecido'] ? 'true' : 'false' ?>">🔥 O número já é antigo e aquecido (pular o aquecimento)</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="alertas" aria-pressed="<?= get_config('prosp_alerta_respostas', '1') === '1' ? 'true' : 'false' ?>">🔔 Me avisar no WhatsApp a cada resposta</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="optout_resp" aria-pressed="<?= get_config('prosp_optout_responder', '1') === '1' ? 'true' : 'false' ?>">🙏 Responder "combinado" a quem pedir para parar</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="freio_recusa" aria-pressed="<?= $pc['freio_recusa'] ? 'true' : 'false' ?>">🛑 Pausar sozinho se muita gente pedir para parar ou recusar</button>
                 <button type="button" class="btn btn-ghost btn-sm" data-chave="ouvir" aria-pressed="<?= $pc['ouvir'] ? 'true' : 'false' ?>">👂 Ler as respostas que chegam no número</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-chave="ia_fecha" aria-pressed="<?= get_config('prosp_ia_fecha', '1') === '1' ? 'true' : 'false' ?>">💰 Quando ele aceitar, a IA cria o site e manda o acesso sozinha</button>
+            </div>
+            <div class="vendedor-ia">
+                <h4>🤖 Vendedora IA</h4>
+                <div class="form-row">
+                    <div><label for="ptOferta">Oferta de entrada <small class="muted">(a IA usa quando perguntam o preço)</small></label><input id="ptOferta" maxlength="160" value="<?= e(get_config('prosp_oferta', '')) ?>" placeholder="Ex.: 1º mês por R$ 49, depois R$ 97/mês, sem fidelidade"></div>
+                    <div><label for="ptPagamento">Como o cliente paga <small class="muted">(vai na mensagem de fechamento)</small></label><input id="ptPagamento" maxlength="200" value="<?= e(get_config('prosp_pagamento', '')) ?>" placeholder="Ex.: Pix na chave 61999999999 (nome Fulano) e me manda o comprovante"></div>
+                </div>
+                <label for="ptIaMax">Até quantas respostas a IA manda sozinha por lead</label>
+                <input id="ptIaMax" type="number" min="2" max="30" value="<?= (int)get_config('prosp_ia_max', '12') ?>" style="max-width:120px">
+                <?php $placar = prosp_tons_placar(); ?>
+                <p class="dica" style="margin-top:10px">🧪 <b>Tom testado:</b> cada lead recebe um tom; depois de 8 leads por tom, a IA passa a usar mais o que mais fecha (e segue testando 20% das vezes).</p>
+                <div class="tons-placar"><?php foreach (PROSP_TONS as $k => [$nome]): $x = $placar[$k]; ?><div><strong><?= e($nome) ?></strong><span><?= $x['n'] ?> leads · <?= $x['avancou'] ?> avançaram · <?= $x['fechou'] ?> fecharam</span></div><?php endforeach; ?></div>
             </div>
             <div class="sprint-acoes" style="margin-top:14px"><button type="button" class="btn" onclick="PR.pilotoSalvar(this)">Salvar</button></div>
             <?php if ($webhookUrl): ?>
@@ -721,6 +743,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                         <?php if ($p['site']): ?><span>🔗 <a class="link" href="<?= e(preg_match('#^https?://#', $p['site']) ? $p['site'] : 'https://' . $p['site']) ?>" target="_blank" rel="noopener"><?= e(mb_strimwidth(preg_replace('#^https?://(www\.)?#', '', $p['site']), 0, 34, '…')) ?></a></span><?php endif; ?>
                     </div>
                     <div class="chips-m">
+                        <?php if (($p['fonte'] ?? '') === 'indicacao'): ?><span class="hot">🎁 Indicação<?= !empty($p['observacoes']) && preg_match('/Indicado por ([^·]+)/u', $p['observacoes'], $mi) ? ' de ' . e(trim($mi[1])) : '' ?></span><?php endif; ?>
                         <?php if ($p['previa_aberta_em']): ?><span class="hot">👀 Abriu a prévia <?= (int)$p['previa_visitas'] ?>x · <?= date('d/m H:i', strtotime($p['previa_aberta_em'])) ?></span><?php endif; ?>
                         <?php if ($p['quer_site_em']): ?><span class="hot">🙋 Clicou "Quero este site"</span><?php endif; ?>
                         <?php if ($p['respondeu_em']): ?><span class="hot">💬 Respondeu</span><?php endif; ?>
@@ -1132,7 +1155,8 @@ const PR = (() => {
     async function pilotoSalvar(btn) {
         btn.disabled = true;
         const r = await api({ acao: 'piloto_salvar', perfil: ptEscolha('perfil')[0] || 'auto', freio_recusa: ptChave('freio_recusa'), max: ptMax, rampa: ptRampa(), hoje: ptHojeMexeu ? $('ptHojeN').textContent : '', dias: ptEscolha('dias').join(','), horario: ptEscolha('horario')[0] || 'comercial', ritmo: ptEscolha('ritmo')[0] || 'normal',
-            ia: ptEscolha('ia')[0] || '1', responde: ptEscolha('responde')[0] || 'sugerir', aquecido: ptChave('aquecido'), alertas: ptChave('alertas'), optout_resp: ptChave('optout_resp'), ouvir: ptChave('ouvir') });
+            ia: ptEscolha('ia')[0] || '1', responde: ptEscolha('responde')[0] || 'sugerir', aquecido: ptChave('aquecido'), alertas: ptChave('alertas'), optout_resp: ptChave('optout_resp'), ouvir: ptChave('ouvir'),
+            ia_fecha: ptChave('ia_fecha'), oferta: $('ptOferta').value, pagamento: $('ptPagamento').value, ia_max: $('ptIaMax').value });
         btn.disabled = false;
         if (r.ok) { ptMostrar(r.piloto); toast('Salvo!', 'sucesso'); } else toast(r.erro, 'erro');
     }

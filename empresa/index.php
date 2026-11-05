@@ -93,6 +93,20 @@ $percentual = round($feitos / count($checklist) * 100);
     <?= flash_render() ?>
     <?php if (in_array($empresa['status'], ['pendente'], true)): ?><?= alerta('aviso', 'Sua assinatura está pendente de pagamento. Veja em Minha Assinatura.') ?><?php endif; ?>
     <?php if ($avalPendentes > 0): ?><?= alerta('info', "Você tem $avalPendentes avaliação(ões) de clientes esperando aprovação.") ?><?php endif; ?>
+    <?php // Indique e ganhe: 1 mês grátis por indicação que fechar
+    $indicaLink = ''; $indicaRes = ['total' => 0, 'fechados' => 0];
+    try { require_once __DIR__ . '/../includes/prospeccao_vendedor.php'; $indicaLink = prosp_indica_link($empresaId); $indicaRes = prosp_indica_resumo($empresaId); } catch (Throwable $e) {}
+    if ($indicaLink): $txtIndica = "Oi! Uso um site com agendamento e WhatsApp automático e tá me ajudando muito. Eles montam uma prévia grátis com o nome do seu negócio, olha: $indicaLink"; ?>
+    <section class="indica-card" aria-labelledby="tIndica">
+        <div><h3 id="tIndica">🎁 Indique e ganhe 1 mês grátis</h3>
+        <p>Mande seu link para outro dono de negócio. Se ele fechar, seu próximo mês sai de graça. <?= (int)$indicaRes['total'] ? '<b>' . (int)$indicaRes['total'] . ' indicação(ões), ' . (int)$indicaRes['fechados'] . ' fechada(s).</b>' : '' ?></p></div>
+        <div class="indica-acoes">
+            <a class="btn btn-wa btn-sm" href="https://wa.me/?text=<?= rawurlencode($txtIndica) ?>" target="_blank" rel="noopener">Mandar no WhatsApp</a>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="navigator.clipboard && navigator.clipboard.writeText(<?= e(json_encode($indicaLink)) ?>).then(() => { this.textContent = 'Link copiado ✔'; })">Copiar meu link</button>
+        </div>
+    </section>
+    <style>.indica-card{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin:0 0 16px;padding:14px 16px;border-radius:14px;border:1px solid rgba(34,197,94,.4);background:linear-gradient(135deg,rgba(34,197,94,.10),transparent 70%)}.indica-card h3{margin:0 0 4px;font-size:16px}.indica-card p{margin:0;color:var(--text-dim);font-size:14px}.indica-acoes{display:flex;gap:8px;flex-wrap:wrap}.indica-acoes .btn{margin:0}</style>
+    <?php endif; ?>
 
     <?php if ($percentual < 100): ?>
     <div class="form-box">

@@ -8,6 +8,8 @@ RewriteRule \.(md|sql|log|bak)$ - [F,L,NC]
 
 # Prévia de site para prospect: /previa/CODIGO
 RewriteRule ^previa/([a-f0-9]+)/?$ site/previa.php?t=$1 [L,QSA]
+# Indique e ganhe: /indica/CODIGO
+RewriteRule ^indica/([a-f0-9]+)/?$ site/indica.php?c=$1 [L,QSA]
 
 # URL bonita: sitegestor.com/barbearia-do-ze -> site/index.php?slug=barbearia-do-ze
 # Só entra aqui se NÃO for um arquivo/pasta real (admin, empresa, assets, login.php etc continuam normais)
