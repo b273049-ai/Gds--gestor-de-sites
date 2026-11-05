@@ -219,6 +219,10 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   - **Instagram**: "Instagram API com login do Instagram" da Meta. Precisa de conta **profissional**; não precisa de
     Página do Facebook. Cadastre a sua conta como **Testadora do Instagram** no seu app: assim ela publica sem a
     análise da Meta. A tela mostra o endereço de retorno, o webhook e o token para copiar.
+    **Apps novos da Meta (2026)** não têm mais o "login do Instagram" (dá "Invalid platform app"): use o
+    **API setup with Unified login** (pede um portfólio empresarial grátis) e cole o ID do app, a chave secreta
+    (Configurações → Básico) e a **Identificação da configuração**. Aí o login passa pelo facebook.com e tudo usa o
+    graph.facebook.com; se a conta tiver Página ligada, o direct sai pela Página.
   - **TikTok**: "Content Posting API". Sem a auditoria do TikTok, post direto sai **privado**; por isso o padrão é
     **rascunho no app** (chega com a legenda; você põe uma música em alta e publica com 1 toque). Depois de auditado,
     troque para "Postar direto".
