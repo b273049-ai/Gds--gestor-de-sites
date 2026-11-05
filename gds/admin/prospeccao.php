@@ -133,6 +133,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao'])) {
         case 'enviado':
             prosp_registrar_envio($id);
             responder_json(['ok' => true, 'lead' => $lead($id)]);
+        case 'virar_cliente':
+            require_once __DIR__ . '/../includes/prospeccao_cliente.php';
+            session_write_close();
+            @set_time_limit(120);
+            responder_json(prosp_virar_cliente($id, ['email' => (string)($_POST['email'] ?? ''), 'plano_id' => (int)($_POST['plano_id'] ?? 0), 'publicar' => ($_POST['publicar'] ?? '1') === '1']));
         case 'status':
             $st = array_key_exists($_POST['status'] ?? '', $statusNomes) ? $_POST['status'] : 'novo';
             $pdo->prepare("UPDATE prospects SET status=?, proximo_contato = CASE WHEN ? IN ('fechado','descartado','negociando') THEN NULL ELSE proximo_contato END, atualizado_em=NOW() WHERE id=?")->execute([$st, $st, $id]);
@@ -424,6 +429,13 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 .pt-sit { display: flex; align-items: center; }
 @media (max-width: 760px) { .cedula { padding: 20px 18px 16px; } .fita { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fita li:nth-child(4) { border-left: 0; } }
 @media (max-width: 760px) { .prosp-card { grid-template-columns: 1fr; } .prosp-nota { text-align: left; } #mapa { height: 420px; } }
+.btn-cliente { background: linear-gradient(135deg, #22c55e, #16a34a); color: #04210f; border: 0; font-weight: 800; }
+.btn-cliente:hover { filter: brightness(1.08); color: #04210f; }
+.dlg-cliente { max-width: 520px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); padding: 22px; }
+.dlg-cliente::backdrop { background: rgba(5, 7, 15, .7); backdrop-filter: blur(3px); }
+.dlg-cliente h3 { margin: 0 0 6px; } .dlg-cliente form { display: grid; gap: 8px; } .dlg-cliente input, .dlg-cliente select { width: 100%; }
+.dc-res { background: var(--surface-2, rgba(255,255,255,.04)); border: 1px solid rgba(34,197,94,.45); border-radius: 12px; padding: 12px; display: grid; gap: 6px; font-size: 14px; word-break: break-word; }
+.dc-res p { margin: 0 0 4px; font-weight: 700; } .dc-res .btn { justify-self: start; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -586,7 +598,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                     <div class="sprint-acoes">
                         <span class="muted">Marcar:</span>
                         <button type="button" class="btn btn-ghost btn-sm" onclick="PR.cvStatus('negociando')">Negociando</button>
-                        <button type="button" class="btn btn-ghost btn-sm" onclick="PR.cvStatus('fechado')">Fechado ✅</button>
+                        <button type="button" class="btn btn-sm btn-cliente" onclick="PR.cvCliente()">🎉 Fechou! Virar cliente</button>
                         <button type="button" class="btn btn-ghost btn-sm" onclick="PR.cvStatus('descartado')">Descartar</button>
                     </div>
                 </div>
@@ -743,6 +755,8 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                     <?php if ($p['maps_url']): ?><a class="btn btn-sm btn-ghost" href="<?= e($p['maps_url']) ?>" target="_blank" rel="noopener">Ver no Maps</a><?php endif; ?>
                     <a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="https://www.google.com/search?q=<?= rawurlencode('"' . $p['nome'] . '" ' . ($p['cidade'] ?? '')) ?>" title="Conferir se já tem site">🔎 Google</a>
                     <a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="<?= $p['instagram'] ? 'https://www.instagram.com/' . e($p['instagram']) . '/' : 'https://www.google.com/search?q=' . rawurlencode($p['nome'] . ' ' . ($p['cidade'] ?? '') . ' instagram') ?>">📸 Instagram</a>
+                    <?php if (!empty($p['empresa_id'])): ?><a class="btn btn-sm btn-cliente" href="empresa_editar.php?id=<?= (int)$p['empresa_id'] ?>">✅ Já é cliente · ver empresa</a>
+                    <?php else: ?><button type="button" class="btn btn-sm btn-cliente" onclick="PR.virarCliente(<?= (int)$p['id'] ?>, <?= e(json_encode($p['nome'], JSON_UNESCAPED_UNICODE)) ?>)">🎉 Fechou! Virar cliente</button><?php endif; ?>
                     <select onchange="PR.status(this)" aria-label="Situação"><?php foreach ($statusNomes as $k => $v): ?><option value="<?= $k ?>" <?= $p['status'] === $k ? 'selected' : '' ?>><?= e($v) ?></option><?php endforeach; ?></select>
                     <button type="button" class="btn btn-sm btn-ghost" title="Excluir" onclick="PR.excluir(this)"><?= icone('lixeira', 14) ?></button>
                 </div>
@@ -833,6 +847,20 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
         </form>
         <p class="dica">⚠ Boas práticas: mande uma por vez, personalize, respeite o limite diário e marque como "Descartado" quem pedir para não receber. Disparo em massa automático viola as regras do WhatsApp e derruba o número.</p>
     </section>
+<?php $planosLista = $pdo->query("SELECT id, nome, valor FROM planos WHERE ativo ORDER BY valor")->fetchAll(); ?>
+<dialog id="dlgCliente" class="dlg-cliente" aria-labelledby="dlgClienteT">
+    <form method="dialog" id="dlgClienteForm" onsubmit="return PR.clienteCriar(event)">
+        <h3 id="dlgClienteT">🎉 Fechou! <span id="dcNome"></span> vira cliente</h3>
+        <p class="dica">Em 1 clique a plataforma cria a empresa com o que o Google já trouxe (nome, WhatsApp, endereço, horário, logo, fotos e avaliações), o acesso do dono, os serviços do ramo e o site com a mesma cara da prévia.</p>
+        <label for="dcEmail">E-mail do dono para entrar no painel <small class="muted">(opcional: dá para trocar depois)</small></label>
+        <input type="email" id="dcEmail" placeholder="dono@email.com" autocomplete="off">
+        <label for="dcPlano">Plano</label>
+        <select id="dcPlano"><option value="0">Definir depois (30 dias para pagar)</option><?php foreach ($planosLista as $pl): ?><option value="<?= (int)$pl['id'] ?>"><?= e($pl['nome']) ?> · R$ <?= number_format((float)$pl['valor'], 2, ',', '.') ?></option><?php endforeach; ?></select>
+        <label class="check"><input type="checkbox" id="dcPublicar" checked> Publicar o site agora (o cliente já pode ver e usar)</label>
+        <div class="dc-res" id="dcRes" hidden></div>
+        <div class="sprint-acoes"><button type="submit" class="btn" id="dcBtn">Criar empresa e site</button><button type="button" class="btn btn-ghost" onclick="document.getElementById('dlgCliente').close()">Fechar</button></div>
+    </form>
+</dialog>
 </main>
 </div>
 <div id="toasts"></div>
@@ -1171,7 +1199,39 @@ const PR = (() => {
         feitos++; $('feitosHoje').textContent = feitos; $('barraMeta').style.width = Math.min(100, feitos / limite * 100) + '%';
         idx++; mostrarFila();
     }
-    return { ptHoje, pilotoSalvar, pilotoLigar, pilotoRetomar, pilotoAgora, ptNum, abrirConversa, cvEnviar, cvAbrirWa, cvReler, cvStatus, spPlataforma, responder, aba, spEnviar, spPular, spDescartar, spIa, marcar, marcarGrupo, estimar, cacar, alternar, excluirCacada, carregarMsg, whats, ia, copiarPrevia, copiloto, status, obs, excluir, salvarConfig, testarAlerta };
+    // ---------- fechou: lead vira cliente ----------
+    let dcId = 0;
+    function virarCliente(id, nome) {
+        dcId = id; $('dcNome').textContent = nome; $('dcRes').hidden = true; $('dcRes').innerHTML = ''; $('dcBtn').hidden = false; $('dcBtn').disabled = false;
+        $('dlgCliente').showModal();
+    }
+    function cvCliente() { if (cv) virarCliente(cv.id, $('cvNome').textContent); }
+    async function clienteCriar(ev) {
+        ev.preventDefault();
+        const b = $('dcBtn'); b.disabled = true; b.textContent = 'Criando a empresa e o site…';
+        const r = await api({ acao: 'virar_cliente', id: dcId, email: $('dcEmail').value, plano_id: $('dcPlano').value, publicar: $('dcPublicar').checked ? '1' : '0' });
+        b.disabled = false; b.textContent = 'Criar empresa e site';
+        const box = $('dcRes'); box.hidden = false; box.innerHTML = '';
+        if (!r.ok) { box.textContent = '⚠ ' + (r.erro || 'Erro'); return false; }
+        b.hidden = true;
+        const linha = (rot, val, link) => { const d = document.createElement('div'); const s = document.createElement('strong'); s.textContent = rot + ' '; d.appendChild(s);
+            if (link) { const a = document.createElement('a'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; a.className = 'link'; a.textContent = val; d.appendChild(a); } else d.appendChild(document.createTextNode(val)); box.appendChild(d); };
+        box.appendChild(Object.assign(document.createElement('p'), { textContent: r.ja_existia ? '✅ Este lead já era cliente.' : '✅ Pronto! Empresa e site criados' + (r.publicado ? ' e publicados' : '') + ' (' + (r.servicos || 0) + ' serviços, ' + (r.avaliacoes || 0) + ' avaliações do Google, ' + (r.fotos || 0) + ' fotos).' }));
+        linha('Site:', r.url, r.url);
+        if (r.senha) { linha('Login do dono:', r.email); linha('Senha provisória:', r.senha); }
+        linha('Painel da empresa:', 'Editar empresa, preços e horários', 'empresa_editar.php?id=' + r.empresa_id);
+        if (r.senha) {
+            const msg = 'Prontinho! 🎉 O site da ' + $('dcNome').textContent + ' já está no ar: ' + r.url + '\n\nPara entrar no seu painel (agenda, serviços e preços): ' + location.origin + '/login.php\nLogin: ' + r.email + '\nSenha: ' + r.senha + '\n\nQualquer ajuste é só me falar!';
+            const w = document.createElement('button'); w.type = 'button'; w.className = 'btn btn-wa btn-sm'; w.textContent = 'Mandar o acesso para o cliente no WhatsApp';
+            const card = document.querySelector('.prosp-card[data-id="' + dcId + '"]'); const num = card ? card.dataset.wa : (cv && cv.whatsapp) || '';
+            w.onclick = () => num ? abrirWa(num, msg) : navigator.clipboard.writeText(msg).then(() => toast('Mensagem copiada.', 'sucesso'));
+            box.appendChild(w);
+        }
+        toast('🎉 Cliente criado!', 'sucesso');
+        return false;
+    }
+
+    return { virarCliente, cvCliente, clienteCriar, ptHoje, pilotoSalvar, pilotoLigar, pilotoRetomar, pilotoAgora, ptNum, abrirConversa, cvEnviar, cvAbrirWa, cvReler, cvStatus, spPlataforma, responder, aba, spEnviar, spPular, spDescartar, spIa, marcar, marcarGrupo, estimar, cacar, alternar, excluirCacada, carregarMsg, whats, ia, copiarPrevia, copiloto, status, obs, excluir, salvarConfig, testarAlerta };
 })();
 </script>
 </body>
