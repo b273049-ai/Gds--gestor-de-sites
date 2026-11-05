@@ -1,0 +1,5 @@
+# Configuração das Edge Functions do Mercado Pago.
+# O Mercado Pago chama o webhook sem JWT do Supabase; a autenticidade é
+# validada pela assinatura x-signature (MP_WEBHOOK_SECRET).
+[functions.mp-webhook]
+verify_jwt = false

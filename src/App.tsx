@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import VendedoraIA, { type RetornoPagamento } from './VendedoraIA';
 
 // --- IA GENERATOR (Módulo de Inteligência Artificial para Copywriting) ---
 function gerarConteudoIA(segmento: string, nomeEmpresa: string) {
@@ -69,6 +70,7 @@ function gerarConteudoIA(segmento: string, nomeEmpresa: string) {
 export default function App() {
   // Rota Dinâmica via URL (Ex: ?site=12)
   const [publicSiteId, setPublicSiteId] = useState<string | null>(null);
+  const [retornoPagamento, setRetornoPagamento] = useState<RetornoPagamento | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -76,10 +78,16 @@ export default function App() {
     if (siteParam) {
       setPublicSiteId(siteParam);
     }
+    // Retorno do Checkout Pro do Mercado Pago (?pagamento=sucesso|pendente|falha)
+    const pagamento = params.get('pagamento');
+    if (pagamento === 'sucesso' || pagamento === 'pendente' || pagamento === 'falha') {
+      setRetornoPagamento(pagamento);
+      window.history.replaceState({}, '', siteParam ? `?site=${siteParam}` : window.location.pathname);
+    }
   }, []);
 
   if (publicSiteId) {
-    return <PaginaPublicaSite siteId={publicSiteId} voltarAoPainel={() => { setPublicSiteId(null); window.history.pushState({}, '', window.location.pathname); }} />;
+    return <PaginaPublicaSite siteId={publicSiteId} retornoPagamento={retornoPagamento} voltarAoPainel={() => { setPublicSiteId(null); window.history.pushState({}, '', window.location.pathname); }} />;
   }
 
   return <AdminDashboard verSitePublico={(id: string) => { setPublicSiteId(id); window.history.pushState({}, '', `?site=${id}`); }} />;
@@ -88,7 +96,7 @@ export default function App() {
 // ==========================================
 // 1. PÁGINA PÚBLICA DO CLIENTE (LANDING PAGE REAL)
 // ==========================================
-function PaginaPublicaSite({ siteId, voltarAoPainel }: { siteId: string; voltarAoPainel: () => void }) {
+function PaginaPublicaSite({ siteId, voltarAoPainel, retornoPagamento }: { siteId: string; voltarAoPainel: () => void; retornoPagamento?: RetornoPagamento | null }) {
   const [site, setSite] = useState<any>(null);
   const [carregando, setCarregando] = useState(true);
 
@@ -191,6 +199,20 @@ function PaginaPublicaSite({ siteId, voltarAoPainel }: { siteId: string; voltarA
         <p style={{ margin: 0 }}>© {new Date().getFullYear()} {site.empresas?.nome_negocio}. Desenvolvido via GDS Platform.</p>
       </footer>
 
+      {/* Vendedora IA com pagamento via Mercado Pago */}
+      {configs.vendedora_ia?.ativa !== false && site.status_publicacao === 'Publicado' && (configs.servicos?.length ?? 0) > 0 && (
+        <VendedoraIA
+          siteId={site.id.toString()}
+          nomeNegocio={site.empresas?.nome_negocio || 'Nosso Negócio'}
+          servicos={configs.servicos}
+          horario={configs.horario}
+          linkWhatsApp={linkWhatsApp}
+          cor={cor}
+          nomeVendedora={configs.vendedora_ia?.nome || 'Lia'}
+          retornoPagamento={retornoPagamento}
+        />
+      )}
+
     </div>
   );
 }
@@ -228,6 +250,11 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
   const [editHorario, setEditHorario] = useState('08:00 às 18:00');
   const [editTitulo, setEditTitulo] = useState('');
   const [editSubtitulo, setEditSubtitulo] = useState('');
+  const [editVendedoraAtiva, setEditVendedoraAtiva] = useState(true);
+  const [editVendedoraNome, setEditVendedoraNome] = useState('Lia');
+
+  // Vendas da Vendedora IA (Mercado Pago)
+  const [pedidos, setPedidos] = useState<any[]>([]);
 
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('Todos');
@@ -241,6 +268,8 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
     const { data: dSites } = await supabase.from('sites').select('*, empresas(*)').order('id', { ascending: false });
     if (dEmpresas) setEmpresas(dEmpresas);
     if (dSites) setSites(dSites);
+    const { data: dPedidos } = await supabase.from('pedidos').select('*').order('criado_em', { ascending: false }).limit(50);
+    if (dPedidos) setPedidos(dPedidos);
   }
 
   function loginAdmin(e: React.FormEvent) {
@@ -260,7 +289,8 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
       ...copyIA,
       whatsapp: empresaSel?.whatsapp || '',
       cor_principal: segmento === 'Barbearia' ? '#e5c158' : segmento === 'Clínica' ? '#38edf8' : segmento === 'Restaurante' ? '#f97316' : '#22c55e',
-      horario: 'Seg a Sex das 08:00 às 18:00'
+      horario: 'Seg a Sex das 08:00 às 18:00',
+      vendedora_ia: { ativa: true, nome: 'Lia' }
     };
 
     const { error } = await supabase.from('sites').insert([{
@@ -331,6 +361,8 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
     setEditHorario(configs.horario || '08:00 às 18:00');
     setEditTitulo(configs.titulo_hero || '');
     setEditSubtitulo(configs.subtitulo_hero || '');
+    setEditVendedoraAtiva(configs.vendedora_ia?.ativa !== false);
+    setEditVendedoraNome(configs.vendedora_ia?.nome || 'Lia');
     setModalEditarSite(true);
   }
 
@@ -343,7 +375,8 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
       cor_principal: editCor,
       horario: editHorario,
       titulo_hero: editTitulo,
-      subtitulo_hero: editSubtitulo
+      subtitulo_hero: editSubtitulo,
+      vendedora_ia: { ativa: editVendedoraAtiva, nome: editVendedoraNome.trim() || 'Lia' }
     };
     await supabase.from('sites').update({ funcionalidades: configsAtualizadas }).eq('id', siteEmEdicao.id);
     setModalEditarSite(false);
@@ -353,6 +386,8 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
   const empresasEmDia = empresas.filter(e => e.status_pagamento === 'Em dia' || !e.status_pagamento);
   const receitaAtiva = empresasEmDia.length * 99;
   const inadimplentes = empresas.filter(e => e.status_pagamento === 'Pendente' || e.status_pagamento === 'Atrasado').length;
+  const vendasPagas = pedidos.filter(p => p.status === 'pago');
+  const totalVendasIA = vendasPagas.reduce((acc, p) => acc + Number(p.valor || 0), 0);
 
   const empresasFiltradas = empresas.filter(e => e.nome_negocio?.toLowerCase().includes(busca.toLowerCase()));
   const sitesFiltrados = sites.filter(s => {
@@ -497,6 +532,14 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
             <label style={{ fontSize: '12px', color: '#8b949e' }}>Cor Principal:</label>
             <input type="color" value={editCor} onChange={e => setEditCor(e.target.value)} style={{ width: '100%', height: '40px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '4px' }} />
 
+            <label style={{ fontSize: '12px', color: '#8b949e', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px' }}>
+              <input type="checkbox" checked={editVendedoraAtiva} onChange={e => setEditVendedoraAtiva(e.target.checked)} />
+              🤖 Vendedora IA ativa (vende os serviços com pagamento via Mercado Pago)
+            </label>
+            {editVendedoraAtiva && (
+              <input placeholder="Nome da vendedora" value={editVendedoraNome} onChange={e => setEditVendedoraNome(e.target.value)} maxLength={30} style={{ padding: '10px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+            )}
+
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <button type="submit" style={{ flex: 1, padding: '10px', background: '#38edf8', color: '#0d1117', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>Salvar Alterações</button>
               <button type="button" onClick={() => setModalEditarSite(false)} style={{ padding: '10px', background: '#21262d', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>Cancelar</button>
@@ -504,6 +547,35 @@ function AdminDashboard({ verSitePublico }: { verSitePublico: (id: string) => vo
           </form>
         </div>
       )}
+
+      {/* Vendas da Vendedora IA (Mercado Pago) */}
+      <div style={{ background: '#161b22', padding: '15px', borderRadius: '8px', border: '1px solid #009ee3', marginBottom: '15px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h4 style={{ margin: 0, fontSize: '14px' }}>🤖 Vendas da Vendedora IA ({pedidos.length})</h4>
+          <span style={{ fontSize: '12px', color: '#2ea043', fontWeight: 'bold' }}>
+            {totalVendasIA.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} pagos
+          </span>
+        </div>
+        {pedidos.length === 0 && <p style={{ fontSize: '12px', color: '#8b949e', margin: 0 }}>Nenhuma venda ainda. Os pedidos pagos via Mercado Pago aparecem aqui.</p>}
+        {pedidos.map(p => {
+          const site = sites.find(s => s.id === p.site_id);
+          const corPedido = p.status === 'pago' ? '#238636' : p.status === 'pendente' ? '#d29922' : '#da3633';
+          return (
+            <div key={p.id} style={{ borderBottom: '1px solid #30363d', padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+              <div style={{ minWidth: 0 }}>
+                <strong style={{ fontSize: '13px' }}>{p.servico_nome}</strong>
+                <div style={{ fontSize: '11px', color: '#8b949e' }}>
+                  {site?.empresas?.nome_negocio || `Site #${p.site_id}`} · {p.nome_cliente || 'Cliente'} · {new Date(p.criado_em).toLocaleDateString('pt-BR')}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                <span style={{ fontSize: '10px', background: corPedido, padding: '2px 6px', borderRadius: '10px' }}>{p.status}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {/* Lista Empresas */}
       <div style={{ background: '#161b22', padding: '15px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '15px' }}>
