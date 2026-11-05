@@ -47,6 +47,28 @@ function carregarChave() {
 const CHAVE = carregarChave();
 const silencioso = pino({ level: 'silent' });
 let versaoWa = null;
+let versaoEm = 0;
+// Versão do WhatsApp Web: busca de novo a cada 12 h (e quando o WhatsApp recusa a antiga)
+async function versaoAtual(forcar = false) {
+    if (!forcar && versaoWa && Date.now() - versaoEm < 12 * 3600e3) return versaoWa;
+    try { versaoWa = (await fetchLatestBaileysVersion()).version; versaoEm = Date.now(); } catch { /* fica com a que tinha */ }
+    return versaoWa || undefined;
+}
+
+// Um conector só por pasta: dois rodando com o mesmo login ficam se derrubando (erro 440)
+function travarProcesso() {
+    const arq = path.join(DADOS, 'conector.pid');
+    try {
+        const pid = Number(fs.readFileSync(arq, 'utf8'));
+        if (pid && pid !== process.pid) { try { process.kill(pid, 0); console.log(`\n⚠ Já tem um conector rodando (processo ${pid}). Feche o outro Termux/janela: dois ao mesmo tempo ficam derrubando a conexão.\n`); process.exit(1); } catch { /* processo antigo já morreu */ } }
+    } catch { /* sem trava */ }
+    fs.writeFileSync(arq, String(process.pid));
+    process.on('exit', () => { try { if (Number(fs.readFileSync(arq, 'utf8')) === process.pid) fs.unlinkSync(arq); } catch { /* ignore */ } });
+}
+travarProcesso();
+// Um erro solto não pode derrubar o conector inteiro
+process.on('unhandledRejection', (e) => console.log(new Date().toISOString().slice(0, 19), 'erro ignorado:', e?.message || e));
+process.on('uncaughtException', (e) => console.log(new Date().toISOString().slice(0, 19), 'erro ignorado:', e?.message || e));
 
 const log = (...a) => console.log(new Date().toISOString().slice(0, 19), ...a);
 const nomeValido = (n) => typeof n === 'string' && /^[a-zA-Z0-9_-]{1,60}$/.test(n);
@@ -58,25 +80,36 @@ const instancias = new Map();
 
 async function iniciar(nome, numeroPareamento = '') {
     let inst = instancias.get(nome);
-    if (inst && inst.sock && inst.estado !== 'close') return inst;
+    // Já ligado, ligando ou com religação marcada: não abre uma 2ª conexão (uma derrubaria a outra)
+    if (inst && (inst.iniciando || (inst.sock && inst.estado !== 'close') || (inst.religar && !numeroPareamento))) return inst;
     if (!inst) {
-        inst = { nome, estado: 'close', qr: null, qrBase64: null, pareamento: null, numeroPareamento: null, dono: null, fila: Promise.resolve(), ultimoEnvio: 0, tentativas: 0, parado: false, ouvir: !!process.env.WEBHOOK_URL };
+        inst = { nome, estado: 'close', qr: null, qrBase64: null, pareamento: null, numeroPareamento: null, dono: null, fila: Promise.resolve(), ultimoEnvio: 0, tentativas: 0, parado: false, ouvir: !!process.env.WEBHOOK_URL, iniciando: false, religar: null, ultimoEvento: Date.now() };
         instancias.set(nome, inst);
     }
+    if (inst.religar) { clearTimeout(inst.religar); inst.religar = null; }
+    inst.iniciando = true;
     inst.parado = false;
     inst.estado = 'connecting';
     inst.pareamento = null;
     inst.numeroPareamento = numeroPareamento || null;
-    const { state, saveCreds } = await useMultiFileAuthState(pastaDe(nome));
-    if (!versaoWa) {
-        try { versaoWa = (await fetchLatestBaileysVersion()).version; } catch { versaoWa = undefined; }
+    let sock;
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState(pastaDe(nome));
+        sock = makeWASocket({
+            auth: state, version: await versaoAtual(), logger: silencioso, browser: Browsers.ubuntu('GDS'),
+            printQRInTerminal: false, markOnlineOnConnect: false, syncFullHistory: false,
+            connectTimeoutMs: 60000, keepAliveIntervalMs: 25000, defaultQueryTimeoutMs: 60000, retryRequestDelayMs: 500,
+            getMessage: async () => undefined,
+        });
+        sock.ev.on('creds.update', saveCreds);
+    } catch (e) {
+        inst.iniciando = false; inst.estado = 'close';
+        agendarReligar(inst, null);
+        throw e;
     }
-    const sock = makeWASocket({
-        auth: state, version: versaoWa, logger: silencioso, browser: Browsers.ubuntu('GDS'),
-        printQRInTerminal: false, markOnlineOnConnect: false, syncFullHistory: false,
-    });
     inst.sock = sock;
-    sock.ev.on('creds.update', saveCreds);
+    inst.iniciando = false;
+    inst.ultimoEvento = Date.now();
     // Respostas que chegam (só nos números que o site pediu para ouvir — o da prospecção)
     sock.ev.on('messages.upsert', ({ messages, type }) => {
         if (inst.sock !== sock || !inst.ouvir || type !== 'notify') return;
@@ -87,6 +120,7 @@ async function iniciar(nome, numeroPareamento = '') {
     });
     sock.ev.on('connection.update', async (u) => {
         if (inst.sock !== sock) return; // evento de um socket antigo
+        inst.ultimoEvento = Date.now();
         if (u.qr) {
             inst.qr = u.qr;
             inst.qrBase64 = await QRCode.toDataURL(u.qr, { margin: 1, width: 360 });
@@ -111,13 +145,43 @@ async function iniciar(nome, numeroPareamento = '') {
                 inst.dono = null;
                 return;
             }
-            const atraso = codigo === DisconnectReason.restartRequired ? 0 : Math.min(60000, 2000 * 2 ** inst.tentativas++);
-            log(nome, `conexão caiu (código ${codigo ?? '?'}), tentando de novo em ${atraso / 1000}s`);
-            setTimeout(() => { if (!inst.parado) iniciar(nome).catch((e) => log(nome, 'erro ao reconectar:', e.message)); }, atraso);
+            if (codigo === 405) await versaoAtual(true); // versão do WhatsApp Web velha: pega a nova
+            if (codigo === DisconnectReason.connectionReplaced) log(nome, '⚠ Outro aparelho/conector abriu este mesmo número. Feche o outro (só um conector por número).');
+            agendarReligar(inst, codigo);
         }
     });
     return inst;
 }
+
+// Religa sozinho, cada vez esperando um pouco mais (2 s, 4 s, 8 s… até 1 min); nunca desiste
+function agendarReligar(inst, codigo) {
+    if (inst.parado || inst.religar) return;
+    let atraso = codigo === DisconnectReason.restartRequired ? 500 : Math.min(60000, 2000 * 2 ** Math.min(inst.tentativas++, 5));
+    if (codigo === DisconnectReason.connectionReplaced) atraso = Math.max(atraso, 30000);
+    log(inst.nome, `conexão caiu (código ${codigo ?? '?'}), religando em ${Math.round(atraso / 1000)}s`);
+    inst.religar = setTimeout(() => {
+        inst.religar = null;
+        if (!inst.parado) iniciar(inst.nome).catch((e) => log(inst.nome, 'erro ao religar:', e.message));
+    }, atraso);
+}
+
+// Vigia: conexão "aberta" mas com o socket morto (comum depois do celular dormir) → religa
+setInterval(() => {
+    for (const inst of instancias.values()) {
+        if (inst.parado || inst.iniciando) continue;
+        const ws = inst.sock?.ws;
+        const morto = inst.estado === 'open' && ws && (ws.isClosed || ws.isClosing || (typeof ws.readyState === 'number' && ws.readyState > 1));
+        const travado = inst.estado === 'connecting' && inst.sock && Date.now() - inst.ultimoEvento > 120000 && jaLogado(inst.nome);
+        if (morto || travado) {
+            log(inst.nome, morto ? 'a conexão morreu sem avisar; religando' : 'ficou travado conectando; religando');
+            const s = inst.sock; inst.sock = null; inst.estado = 'close';
+            try { s.end(undefined); } catch { /* ignore */ }
+            agendarReligar(inst, null);
+        }
+        // Celular voltou da soneca: se ficou fechado e tem login, religa já
+        if (inst.estado === 'close' && !inst.sock && !inst.religar && jaLogado(inst.nome)) agendarReligar(inst, null);
+    }
+}, 30000).unref();
 
 // ---------- Mensagens recebidas ----------
 const recebidas = [];   // vão para o site na próxima volta da ponte (ou para o WEBHOOK_URL)
@@ -166,6 +230,7 @@ async function encerrar(nome, apagar) {
     const inst = instancias.get(nome);
     if (inst) {
         inst.parado = true;
+        if (inst.religar) { clearTimeout(inst.religar); inst.religar = null; }
         if (inst.sock) {
             try { if (apagar) await inst.sock.logout(); } catch { /* já estava fora */ }
             try { inst.sock.end(undefined); } catch { /* ignore */ }
@@ -180,7 +245,9 @@ function enviarTexto(inst, numero, texto) {
     const tarefa = inst.fila.then(async () => {
         const espera = inst.ultimoEnvio + INTERVALO + Math.floor(Math.random() * 700) - Date.now();
         if (espera > 0) await esperar(espera);
-        if (inst.estado !== 'open' || !inst.sock) throw Object.assign(new Error('O WhatsApp deste número não está conectado.'), { status: 409 });
+        // Religando? espera até 45 s antes de desistir (a mensagem não se perde: volta para a fila do site)
+        for (let i = 0; i < 45 && (inst.estado !== 'open' || !inst.sock) && !inst.parado; i++) await esperar(1000);
+        if (inst.estado !== 'open' || !inst.sock) throw Object.assign(new Error('O WhatsApp deste número não está conectado (religando).'), { status: 409, religando: true });
         // Confere o número no WhatsApp (resolve o 9º dígito dos celulares brasileiros)
         const [achado] = (await inst.sock.onWhatsApp(numero)) || [];
         if (!achado?.exists) throw Object.assign(new Error(`O número ${numero} não tem WhatsApp.`), { status: 400 });
@@ -346,7 +413,7 @@ const avisar = (msg) => { if (msg !== ultimoAviso) { log(msg); ultimoAviso = msg
 
 async function voltaPonte(p) {
     const estados = [...instancias.values()].map((i) => ({
-        instancia: i.nome, estado: i.estado, qr: i.estado !== 'open' ? i.qrBase64 : null, pareamento: i.pareamento,
+        instancia: i.nome, estado: i.estado, logado: jaLogado(i.nome), qr: i.estado !== 'open' ? i.qrBase64 : null, pareamento: i.pareamento,
         numero: i.dono ? i.dono.split(':')[0].split('@')[0] : '',
     }));
     for (const n of removidas) if (!instancias.has(n)) estados.push({ instancia: n, estado: 'close' });
@@ -385,7 +452,9 @@ async function voltaPonte(p) {
         } else if (it.acao === 'manter') {
             if ((!inst || inst.estado === 'close') && jaLogado(it.nome)) iniciar(it.nome).catch((e) => log(it.nome, 'erro:', e.message));
         } else if (it.acao === 'parar') {
-            if (inst && inst.estado !== 'open' && !inst.parado) await encerrar(it.nome, false);
+            // Só para quem nunca terminou de ler o QR; número já logado que caiu continua religando
+            if (inst && inst.estado !== 'open' && !inst.parado && !jaLogado(it.nome)) await encerrar(it.nome, false);
+            else if ((!inst || inst.estado === 'close') && jaLogado(it.nome)) iniciar(it.nome).catch((e) => log(it.nome, 'erro:', e.message));
         } else if (it.acao === 'desconectar') {
             if (inst || fs.existsSync(pastaDe(it.nome))) { await encerrar(it.nome, true); removidas.add(it.nome); log(it.nome, 'desconectado pelo painel'); }
         }
@@ -395,7 +464,7 @@ async function voltaPonte(p) {
         if (!inst) { resultados.push({ id: m.id, ok: false, erro: 'Este número não está ligado no conector.' }); continue; }
         enviarTexto(inst, String(m.numero || '').replace(/\D/g, ''), String(m.texto || ''))
             .then(() => resultados.push({ id: m.id, ok: true }))
-            .catch((e) => resultados.push({ id: m.id, ok: false, erro: e.message }));
+            .catch((e) => resultados.push({ id: m.id, ok: false, erro: e.message, religando: !!e.religando }));
     }
     // Prospecção: confere os leads um por vez, com pausa entre um e outro
     for (const v of r.verificar || []) {

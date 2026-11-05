@@ -28,7 +28,15 @@ Deixe-o no carregador e no Wi-Fi. Pode ser outro celular, não precisa ser o do 
 4. `cd ~/whatsapp-conector`, edite o `ponte.txt` com `nano ponte.txt` (SITE e CHAVE) e rode
    `bash ligar-android.sh`.
 5. Nas configurações do Android, tire o Termux da **economia de bateria** ("Sem restrições"),
-   senão o sistema desliga o conector.
+   senão o sistema desliga o conector. Na notificação do Termux, toque em **"Acquire wakelock"**.
+6. (Recomendado) Instale o app **Termux:Boot** (F-Droid) e abra-o uma vez: o `ligar-android.sh`
+   cria o atalho e o conector **liga sozinho quando o celular reinicia**.
+7. Rode **só um** conector por número (um Termux só). Dois ao mesmo tempo ficam se derrubando —
+   a versão 1.2 avisa e não deixa abrir o segundo.
+
+**Versão 1.2 (não cai mais à toa):** religa sozinho para sempre quando a internet oscila ou o celular
+dorme (antes o site mandava "parar" e ele desistia), vigia conexões que morrem sem avisar, atualiza a
+versão do WhatsApp Web sozinho e segura a mensagem até 45 s enquanto religa (nada se perde).
 
 ### Computador (Windows)
 1. Instale o Node.js (https://nodejs.org, versão LTS).

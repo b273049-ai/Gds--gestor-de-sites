@@ -69,11 +69,15 @@ function wa_ponte_sincronizar($dados) {
 
     // 1) Estado de cada número no conector
     $forcarSaida = [];
+    $logados = [];   // números com login salvo no conector: se caírem, religam sozinhos (não manda "parar")
     foreach (array_slice((array)($dados['estados'] ?? []), 0, 200) as $e) {
         $inst = (string)($e['instancia'] ?? '');
         if (!preg_match('/^[a-zA-Z0-9_-]{1,60}$/', $inst)) continue;
         $estado = in_array($e['estado'] ?? '', ['open', 'connecting', 'close'], true) ? $e['estado'] : 'close';
         $numero = preg_replace('/\D/', '', (string)($e['numero'] ?? ''));
+        $logado = !empty($e['logado']);
+        if ($logado) $logados[$inst] = true;
+        if ($logado && $estado === 'close') $estado = 'connecting'; // caiu e está religando
         $linha = wa_ponte_ler($inst);
         if (!$linha) { if ($estado !== 'close') $forcarSaida[] = $inst; continue; }  // número que ninguém pediu
         if ($linha['pedido'] === 'desconectar' && $estado === 'close') {
@@ -85,7 +89,8 @@ function wa_ponte_sincronizar($dados) {
                 pedido = CASE WHEN ? = 'open' AND pedido = 'conectar' THEN NULL ELSE pedido END WHERE instancia=?")
             ->execute([$estado, $estado === 'open' ? null : $qr, mb_substr((string)($e['pareamento'] ?? ''), 0, 20) ?: null, $numero, $estado, $inst]);
         // Reflete no cadastro da empresa (painel "Meu próprio WhatsApp")
-        if ($estado === 'open' || $linha['estado'] === 'open') {
+        // (queda rápida de quem tem login não muda o status da empresa: ele religa sozinho)
+        if ($estado === 'open' || ($linha['estado'] === 'open' && !$logado)) {
             $pdo->prepare("UPDATE empresas SET wa_status=?, wa_numero_conectado=COALESCE(NULLIF(?, ''), wa_numero_conectado) WHERE wa_instancia=?")
                 ->execute([$estado === 'open' ? 'conectado' : 'aguardando', $numero, $inst]);
         }
@@ -97,6 +102,11 @@ function wa_ponte_sincronizar($dados) {
         if ($id <= 0) continue;
         if (!empty($r['ok'])) {
             $pdo->prepare("UPDATE whatsapp_mensagens SET status='enviado', enviado_em=NOW(), tentativas=tentativas+1, erro=NULL WHERE id=? AND status='enviando'")->execute([$id]);
+        } elseif (!empty($r['religando'])) {
+            // O celular estava religando: volta para a fila sem gastar tentativa (sai assim que conectar)
+            $pdo->prepare("UPDATE whatsapp_mensagens SET erro=?, ponte_em=NULL, status='pendente' WHERE id=? AND status='enviando'")
+                ->execute(['Aguardando o WhatsApp religar', $id]);
+            continue;
         } else {
             $pdo->prepare("UPDATE whatsapp_mensagens SET tentativas=tentativas+1, erro=?, ponte_em=NULL, status=CASE WHEN tentativas+1 >= 3 THEN 'erro' ELSE 'pendente' END WHERE id=? AND status='enviando'")
                 ->execute([mb_substr((string)($r['erro'] ?? 'Falha no conector'), 0, 250), $id]);
@@ -114,7 +124,7 @@ function wa_ponte_sincronizar($dados) {
     $instancias = [];
     $abertas = [];
     foreach ($pdo->query("SELECT * FROM wa_ponte")->fetchAll() as $l) {
-        $acao = $l['pedido'] === 'desconectar' ? 'desconectar' : ($l['pedido'] === 'conectar' ? 'conectar' : ($l['estado'] === 'open' ? 'manter' : 'parar'));
+        $acao = $l['pedido'] === 'desconectar' ? 'desconectar' : ($l['pedido'] === 'conectar' ? 'conectar' : ($l['estado'] === 'open' || !empty($logados[$l['instancia']]) ? 'manter' : 'parar'));
         $instancias[] = ['nome' => $l['instancia'], 'acao' => $acao, 'numero_pareamento' => $l['numero_pareamento']];
         if ($l['estado'] === 'open' && $acao !== 'desconectar') $abertas[$l['instancia']] = true;
     }
