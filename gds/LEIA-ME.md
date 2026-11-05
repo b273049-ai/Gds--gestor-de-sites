@@ -256,6 +256,18 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
   tem chave do Pexels continua usando. O botão "Testar" em Configurações mostra quem respondeu.
 - Reserva no navegador: **Gerar no navegador (Puter)** no Marketing (pede um login grátis do Puter na 1ª vez).
 
+## Mercado Pago: cobrança das assinaturas sem baixa manual
+- **Configurar (uma vez):** Admin → Configurações → Pagamentos tem o passo a passo: criar a aplicação (Checkout Pro) em
+  mercadopago.com.br/developers, ativar as credenciais de produção, colar o **Access Token** (`APP_USR-…`), cadastrar o
+  webhook `https://SEU-DOMINIO/api/mercadopago_webhook.php` (evento Pagamentos) e colar a **Assinatura secreta**.
+  O botão **Testar Mercado Pago** confere a conta.
+- **Link de pagamento** (Pix, cartão ou boleto) em cada cobrança do Financeiro, com "Mandar link" no WhatsApp.
+- **Vendedora IA:** com o "Valor da 1ª cobrança" preenchido no Piloto, a mensagem de fechamento já leva o link. O botão
+  "Fechou! Virar cliente" também gera o link (valor do plano escolhido ou da oferta).
+- **Pagou → ativa sozinho:** o webhook (assinatura HMAC conferida) avisa, a plataforma confere o pagamento na API, dá
+  baixa, ativa a empresa, avança o vencimento e avisa você e o cliente no WhatsApp. Se o webhook falhar, a rotina
+  (cron ou carona do conector, a cada 10 min) procura os pagamentos aprovados. Baixa nunca acontece 2 vezes.
+
 ## Central de prospecção (Admin → Prospecção de clientes)
 - **🤖 Vendedora IA** (Piloto → "A IA vende sozinha"): conversa no WhatsApp até fechar — garante que o dono viu a
   prévia, pergunta o que achou, mostra 1 benefício do ramo, usa a **oferta de entrada** (campo no Piloto), trata as

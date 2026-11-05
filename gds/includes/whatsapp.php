@@ -445,6 +445,8 @@ function wa_rotina($forcar = false) {
             $res['mkt_lembretes'] = mkt_lembretes();
             // Instagram/TikTok: publica o que chegou a hora (no máximo a cada minuto)
             if (time() - (int)get_config('soc_rotina_em', '0') >= 60 && soc_tem_devido()) { set_config('soc_rotina_em', (string)time()); $res += soc_rotina(); }
+            // Mercado Pago: confere os pagamentos em aberto a cada 10 min (sem precisar de Cron Job)
+            if (time() - (int)get_config('mp_rotina_em', '0') >= 600 && is_file(__DIR__ . '/mp_assinaturas.php')) { set_config('mp_rotina_em', (string)time()); require_once __DIR__ . '/mp_assinaturas.php'; $res += mp_rotina(); }
         } catch (Throwable $e) { error_log('GDS marketing lembrete: ' . $e->getMessage()); }
     }
     // Prospecção no piloto automático (respostas agendadas + próxima mensagem da cadência)

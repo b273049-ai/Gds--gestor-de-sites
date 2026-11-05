@@ -89,13 +89,20 @@ function prosp_ia_fechar($p, $email = '') {
     try { $pdo->prepare("UPDATE prospects SET ia_fechou_em=NOW() WHERE id=?")->execute([$p['id']]); } catch (PDOException $e) {}
     $pag = trim(get_config('prosp_pagamento', ''));
     $oferta = prosp_oferta_txt();
+    // Link de pagamento do Mercado Pago (Pix, cartão ou boleto) que ativa o site sozinho quando pago
+    $valor = (float)str_replace(',', '.', get_config('prosp_oferta_valor', ''));
+    if ($valor > 0) {
+        require_once __DIR__ . '/mp_assinaturas.php';
+        $mp = mp_cobranca_nova((int)$r['empresa_id'], $valor);
+        if (!empty($mp['ok'])) $pag = "pague por aqui (Pix, cartão ou boleto), que o site fica ativo na hora: {$mp['link']}";
+    }
     $indica = prosp_indica_link((int)$r['empresa_id']);
     $txt = "Fechado! 🎉 Já deixei o site da {$p['nome']} no ar: {$r['url']}\n\n"
         . (!empty($r['senha']) ? "Para entrar no seu painel (agenda, serviços e preços): " . prosp_url_base() . "/login.php\nLogin: {$r['email']}\nSenha: {$r['senha']}\n\n" : '')
         . ($pag !== '' ? "Para ativar" . ($oferta ? " ($oferta)" : '') . ": $pag\n\n" : "Já te mando os dados do pagamento.\n\n")
         . "Qualquer ajuste é só me falar aqui." . ($indica ? "\n\n🎁 Indicou outro dono de negócio que fechou, você ganha 1 mês grátis: $indica" : '');
     $env = prosp_enviar_plataforma($p, $txt, 'prosp_ia', random_int(40, 90));
-    prosp_alertar("🤖💰 A IA FECHOU com {$p['nome']}!\nSite: {$r['url']}\n" . ($pag === '' ? "⚠ Mande você os dados do pagamento (ou preencha \"Como o cliente paga\" no Piloto)." : 'Ela já mandou o acesso e como pagar.'));
+    prosp_alertar("🤖💰 A IA FECHOU com {$p['nome']}!\nSite: {$r['url']}\n" . (!empty($mp['ok']) ? "Mandei o link do Mercado Pago: quando ele pagar, a empresa ativa sozinha e eu te aviso.\n" : '') . ($pag === '' ? "⚠ Mande você os dados do pagamento (ou preencha \"Como o cliente paga\" no Piloto)." : 'Ela já mandou o acesso e como pagar.'));
     return ['ok' => true, 'enviado' => $env['ok'] ?? false] + $r;
 }
 
