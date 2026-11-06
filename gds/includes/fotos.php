@@ -106,10 +106,25 @@ function fotos_buscar_em($fonte, $termo, $qtd, $orientacao) {
             'aspect_ratio' => $orientacao === 'portrait' ? 'tall' : 'wide', 'mature' => 'false']), ['Accept: application/json'], 8);
         foreach ((array)($d['results'] ?? []) as $f) {
             if (empty($f['url']) || (int)($f['width'] ?? 0) && (int)$f['width'] < 900) continue; // descarta foto pequena
-            $fotos[] = ['url' => $f['url'], 'medio' => $f['url'], 'autor' => $f['creator'] ?? '', 'link' => $f['foreign_landing_url'] ?? '', 'alt' => $f['title'] ?? '', 'fonte' => 'openverse'];
+            // O Openverse não é selecionado (ex.: "spa" trazia festa em asilo): só fica a foto cujo título/etiquetas
+            // têm as palavras da busca — sem foto o site usa o topo "Só o nome", melhor que foto errada
+            if (!fotos_combina($termo, ($f['title'] ?? '') . ' ' . implode(' ', array_map(fn($t) => $t['name'] ?? '', (array)($f['tags'] ?? []))))) continue;
+            $fotos[] = ['url' => $f['url'], 'medio' => $f['url'], 'autor' => $f['creator'] ?? '', 'link' => $f['foreign_landing_url'] ?? '', 'alt' => $f['title'] ?? '', 'fonte' => 'openverse', 'conferida' => 1];
         }
     }
     return $fotos;
+}
+
+// A foto fala do mesmo assunto da busca? Busca de 1 palavra: ela precisa aparecer; de 2 ou mais: pelo menos 2
+// (compara o começo da palavra: "groom" vale para grooming/groomer)
+function fotos_combina($termo, $texto) {
+    $raiz = fn($w) => mb_substr($w, 0, 5);
+    $ignorar = ['the', 'and', 'with', 'modern', 'small', 'business', 'session', 'calm', 'class', 'store', 'shop', 'office', 'room', 'para', 'com'];
+    $palavras = array_values(array_unique(array_filter(preg_split('/[^a-z]+/', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $termo) ?: $termo)), fn($w) => strlen($w) >= 3 && !in_array($w, $ignorar, true))));
+    if (!$palavras) return true;
+    $tem = array_flip(array_map($raiz, array_filter(preg_split('/[^a-z]+/', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $texto) ?: $texto)), fn($w) => strlen($w) >= 3)));
+    $achou = count(array_filter($palavras, fn($w) => isset($tem[$raiz($w)])));
+    return $achou >= min(2, count($palavras));
 }
 
 // Unsplash pede que cada foto usada seja "registrada" (conta para o fotógrafo)
@@ -169,12 +184,24 @@ function fotos_do_site($empresa, $forcar = false) {
 function fotos_banco_pexels($empresa, $forcar = false) {
     global $pdo;
     $salvo = json_decode((string)($empresa['fotos_banco'] ?? ''), true);
-    if (!$forcar && is_array($salvo) && isset($salvo['fotos'])) return $salvo['fotos'];
+    // Fotos do Openverse guardadas antes do filtro de assunto são buscadas de novo (uma vez)
+    $antigas = is_array($salvo) && array_filter((array)($salvo['fotos'] ?? []), fn($x) => ($x['fonte'] ?? '') === 'openverse' && empty($x['conferida']));
+    if (!$forcar && !$antigas && is_array($salvo) && isset($salvo['fotos'])) return $salvo['fotos'];
+    if ($antigas) $forcar = true;
     if (!fotos_configurado()) return [];
     // Não tenta de novo antes de 1 dia se a última busca não trouxe nada
     if (!$forcar && is_array($salvo) && empty($salvo['fotos']) && time() - (int)($salvo['em'] ?? 0) < 86400) return [];
     $termo = fotos_termo_segmento($empresa['segmento_slug'] ?? '', $empresa['segmento_nome'] ?? '', $empresa['segmento_descricao'] ?? '');
-    $fotos = fotos_localizar(fotos_buscar($termo, 8), 'fotos-banco', 6);
+    // Prévia (empresa ainda não existe): guarda por termo por 7 dias, para não buscar a cada visita
+    if (empty($empresa['id'])) {
+        $chave = 'fotos_cache_' . substr(md5($termo), 0, 12);
+        $c = json_decode((string)get_config($chave, ''), true);
+        if (!$forcar && is_array($c) && time() - (int)($c['em'] ?? 0) < 7 * 86400) return (array)($c['fotos'] ?? []);
+        $fotos = fotos_localizar(fotos_buscar($termo, 12), 'fotos-banco', 6);
+        set_config($chave, json_encode(['em' => time(), 'fotos' => $fotos], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        return $fotos;
+    }
+    $fotos = fotos_localizar(fotos_buscar($termo, 12), 'fotos-banco', 6);
     try {
         $novo = ['termo' => $termo, 'em' => time(), 'fotos' => $fotos] + (is_array($salvo) && isset($salvo['ia']) ? ['ia' => $salvo['ia']] : []);
         $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($novo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresa['id']]);
