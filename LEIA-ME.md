@@ -495,6 +495,25 @@ ocorrências para **0**. Na raiz:
 - Caixa da agenda: **recibo impresso** de cada comanda (`comanda_imprimir.php`), como a comanda do delivery.
 - Imóveis: **simulador de financiamento** (entrada, prazo e juros → parcela) e **compartilhar** o imóvel.
 
+### Site limpo e com a cara de cada empresa (v18, migração 34)
+**Padrão novo de todo site e da prévia** (`includes/site_limpo.php` + `assets/css/site-limpo.css`), aplicando as
+skills `frontend-design` e `web-design-guidelines`:
+- **Menos informação de cara:** topo com nome, uma frase e um botão; sem selos, setas, "01/02/03", contadores e
+  efeitos em toda seção. Uma linha de confiança só (nota do Google, avaliações ou anos de casa). A página caiu de
+  ~10 mil px para ~4 mil px.
+- **Ordem:** serviços/cardápio → agendar/pedir → sobre → equipe (se houver mais de 1) → fotos (se houver 3+) →
+  clube/cupons → avaliações → "Onde estamos" (endereço, horário, botões WhatsApp/Como chegar e mapa). O formulário
+  de contato só aparece se a empresa não tem WhatsApp ou é do modo contato.
+- **Cada empresa fica diferente:** 8 personalidades (Acolhedor, Elegante, Firme, Claro, Editorial, Noturno, Sabor,
+  Loja), cada uma com 2 pares de fontes; 4 jeitos de topo (Foto inteira, Foto ao lado, Moldura, Só o nome). A escolha
+  vem do nicho (barbearia → Firme; pet → Acolhedor; restaurante → Sabor…) e do nome da empresa, e a cor é a da marca.
+  Sem foto, o topo vira "Só o nome" com a cor da marca.
+- **No painel** (Configurações → Visual do meu site): "Jeito do site" (Limpo recomendado / Completo = modelo antigo),
+  "Topo do site" e "Personalidade" (Automático por padrão). Colunas `sites.visual`, `sites.composicao`, `sites.tom`.
+- No celular aparece uma barra fixa com o botão principal depois do topo (o botão flutuante do WhatsApp some).
+- Sites feitos 100% pela IA (`ia_modo_total`) e o layout "legado" continuam como estão.
+- Auditoria axe-core (WCAG AA) do modelo novo: **0 problemas**.
+
 ### Tudo com botões no painel (v16)
 **Regra do projeto:** nenhuma configuração do painel exige digitar "fórmula" ou lista separada por vírgula.
 Use os editores de `assets/js/gds-painel-editores.js` (carregado em todo o painel por `painel_head()`), que gravam

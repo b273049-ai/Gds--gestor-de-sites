@@ -94,6 +94,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cor'])) {
     require_once __DIR__ . '/../includes/site_template.php';
     $est = $_POST['estilo'] ?? '';
     $pdo->prepare("UPDATE sites SET estilo=? WHERE empresa_id=?")->execute([isset(site_estilos()[$est]) ? $est : null, $empresaId]);
+    // Visual Limpo (padrão) ou Completo, composição do topo e personalidade
+    require_once __DIR__ . '/../includes/site_limpo.php';
+    $vis = ($_POST['visual'] ?? '') === 'completo' ? 'completo' : null;
+    $comp = isset(site_limpo_composicoes()[$_POST['composicao'] ?? '']) ? $_POST['composicao'] : null;
+    $tom = isset(site_limpo_tons()[$_POST['tom'] ?? '']) ? $_POST['tom'] : null;
+    try { $pdo->prepare("UPDATE sites SET visual=?, composicao=?, tom=? WHERE empresa_id=?")->execute([$vis, $comp, $tom, $empresaId]); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
     $anim = $_POST['animacoes'] ?? '';
     try { $pdo->prepare("UPDATE sites SET animacoes=? WHERE empresa_id=?")->execute([in_array($anim, ['cinema', 'suave', 'leve'], true) ? $anim : null, $empresaId]); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
     flash('sucesso', 'Visual salvo!'); $voltar('cor'); exit;
@@ -282,12 +288,24 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
     <form method="post" class="form-box largo" id="cor">
         <?= csrf_campo() ?>
         <?php require_once __DIR__ . '/../includes/site_template.php'; ?>
+        <?php require_once __DIR__ . '/../includes/site_limpo.php'; $visualAtual = ($site['visual'] ?? '') === 'completo' ? 'completo' : 'limpo'; ?>
         <h3>Visual do meu site</h3>
         <p class="dica">Vale para o site padrão. Se o site foi desenhado pela IA (Estúdio IA), o visual vem do design dela.</p>
-        <label>Estilo</label>
+        <label for="visualSite">Jeito do site</label>
+        <select name="visual" id="visualSite">
+            <option value="limpo" <?= $visualAtual === 'limpo' ? 'selected' : '' ?>>Limpo (recomendado): o essencial logo de cara, nome, frase e um botão</option>
+            <option value="completo" <?= $visualAtual === 'completo' ? 'selected' : '' ?>>Completo: mais seções, selos, faixa e animações</option>
+        </select>
+        <div class="form-row">
+            <div><label for="compSite">Topo do site <small class="muted">(visual Limpo)</small></label>
+                <select name="composicao" id="compSite"><option value="">Automático: combina com o meu ramo</option><?php foreach (site_limpo_composicoes() as $k => $v): ?><option value="<?= $k ?>" <?= ($site['composicao'] ?? '') === $k ? 'selected' : '' ?>><?= e($v) ?></option><?php endforeach; ?></select></div>
+            <div><label for="tomSite">Personalidade <small class="muted">(fontes e fundo)</small></label>
+                <select name="tom" id="tomSite"><option value="">Automática: a do meu ramo</option><?php foreach (site_limpo_tons() as $k => $t): ?><option value="<?= $k ?>" <?= ($site['tom'] ?? '') === $k ? 'selected' : '' ?>><?= e($t['nome']) ?><?= $t['escuro'] ? ' (fundo escuro)' : '' ?></option><?php endforeach; ?></select></div>
+        </div>
+        <label>Estilo <small class="muted">(visual Completo)</small></label>
         <select name="estilo"><option value="">Identidade do meu tipo de negócio (recomendado) — cores, fontes e textura feitas para o seu ramo</option>
             <?php foreach (site_estilos() as $k => $est): ?><option value="<?= $k ?>" <?= ($site['estilo'] ?? '') === $k ? 'selected' : '' ?>><?= e($est['nome']) ?> — <?= e($est['desc']) ?></option><?php endforeach; ?></select>
-        <label>Animações</label>
+        <label>Animações <small class="muted">(visual Completo)</small></label>
         <select name="animacoes">
             <option value="cinema" <?= in_array($site['animacoes'] ?? '', ['', null, 'cinema'], true) ? 'selected' : '' ?>>Cinema (recomendado) — rolagem suave, cenas e efeitos que prendem a atenção</option>
             <option value="suave" <?= ($site['animacoes'] ?? '') === 'suave' ? 'selected' : '' ?>>Suave — elementos entrando com delicadeza</option>
