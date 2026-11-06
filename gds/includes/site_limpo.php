@@ -75,6 +75,65 @@ function site_limpo_escolhas($empresa, $temFoto) {
     return ['nicho' => $nk, 'tom' => $tom, 'T' => $tons[$tom], 'comp' => $comp, 'fonte' => $par, 'h' => $h];
 }
 
+// Próximos horários livres de verdade (hoje ou no próximo dia de atendimento), até 4
+function site_limpo_livres($empresa) {
+    if (!function_exists('agenda_horarios_do_dia')) return null;
+    try {
+        $cfg = agenda_config($empresa);
+        $dias = array_map('intval', explode(',', $cfg['dias']));
+        $semana = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+        for ($i = 0; $i <= 6; $i++) {
+            $ts = strtotime("+$i day");
+            if (!in_array((int)date('w', $ts), $dias, true)) continue;
+            $data = date('Y-m-d', $ts);
+            $h = agenda_horarios_do_dia($empresa, $data, $cfg['intervalo']);
+            $livres = array_values(array_filter((array)($h['livres'] ?? []), fn($hora) => $i > 0 || strtotime("$data $hora") >= time() + 30 * 60));
+            if ($livres) return ['quando' => $i === 0 ? 'hoje' : ($i === 1 ? 'amanhã' : $semana[(int)date('w', $ts)]), 'horas' => array_slice($livres, 0, 4)];
+        }
+    } catch (Throwable $e) {}
+    return null;
+}
+
+// Painel ao vivo do topo: o estado real da empresa agora (aberto, horários livres / entrega, nota).
+// É a "tecnologia à mostra" do site — um só elemento, no lugar de selos e cartões espalhados.
+function site_limpo_painel_vivo($empresa, $dados, $modo, $ctaHref) {
+    $status = $dados['status'] ?? [];
+    $nota = $dados['avaliacoes_resumo'];
+    $lig = fn($c) => !isset($empresa[$c]) || $empresa[$c] === null || pg_bool($empresa[$c]);
+    $rot = ''; $chips = [];
+    if ($modo === 'agendamento') {
+        $l = site_limpo_livres($empresa);
+        if ($l) { $rot = 'Horários livres ' . $l['quando']; $chips = $l['horas']; }
+        else { $rot = 'Agenda online'; $chips = ['24 horas', 'Confirmação no WhatsApp']; }
+    } elseif ($modo === 'catalogo') {
+        $rot = 'Peça pelo site';
+        if (!empty($empresa['tempo_entrega'])) $chips[] = 'Entrega em ' . $empresa['tempo_entrega'];
+        if ($lig('aceita_entrega')) $chips[] = (float)($empresa['taxa_entrega'] ?? 0) > 0 ? 'Taxa ' . frag_preco($empresa['taxa_entrega']) : 'Entrega grátis';
+        if ($lig('aceita_retirada')) $chips[] = 'Retirada';
+        if (!$chips) $chips = ['Sem baixar app'];
+    } elseif ($modo === 'orcamento') {
+        $rot = 'Orçamento online'; $chips = ['Sem compromisso', 'Resposta no WhatsApp'];
+    } elseif (!empty($dados['imoveis'])) {
+        $n = count($dados['imoveis']);
+        $rot = 'No nosso site agora';
+        $chips[] = $n . ($n > 1 ? ' imóveis disponíveis' : ' imóvel disponível');
+        foreach (array_unique(array_map(fn($i) => $i['finalidade'] ?? '', $dados['imoveis'])) as $fin) if ($fin !== '' && defined('IMOVEL_FINALIDADES') && isset(IMOVEL_FINALIDADES[$fin])) $chips[] = IMOVEL_FINALIDADES[$fin];
+        $chips = array_slice($chips, 0, 4);
+    } else {
+        $rot = 'Atendimento'; $chips = array_values(array_filter([so_digitos_frag($empresa['whatsapp'] ?? '') ? 'Resposta pelo WhatsApp' : '', !empty($empresa['endereco']) ? 'Atendimento presencial' : '']));
+    }
+    $h = '<span class="lp-vivo-status"><span class="lp-pulso' . (!empty($status['aberto']) ? ' aberto' : '') . '" aria-hidden="true"></span>' . e($status['texto'] ?? 'Atendimento online') . '</span>'
+       . ($chips ? '<span class="lp-vivo-rot">' . e($rot) . '</span><span class="lp-vivo-chips">' . implode('', array_map(fn($c) => '<span>' . e($c) . '</span>', $chips)) . '</span>' : '');
+    if ($nota['total'] >= 3) {
+        $media = number_format($nota['media'], 1, ',', '');
+        $h .= '<span class="lp-vivo-nota"><strong data-conta="' . number_format($nota['media'], 1, '.', '') . '">' . $media . '</strong>'
+            . '<span class="lp-estrelas" style="--nota:' . round($nota['media'] / 5 * 100) . '%" aria-hidden="true">★★★★★</span>'
+            . '<span>' . (int)$nota['total'] . ' avaliações' . (($nota['fonte'] ?? '') === 'google' ? ' no Google' : '') . '</span></span>';
+    }
+    $link = in_array($modo, ['agendamento', 'orcamento', 'catalogo'], true) || !empty($dados['imoveis']);
+    return $link ? '<a class="lp-vivo" href="' . e(!empty($dados['imoveis']) && $modo !== 'agendamento' ? '#servicos' : $ctaHref) . '" data-ev="painel">' . $h . '</a>' : '<div class="lp-vivo">' . $h . '</div>';
+}
+
 // Mistura duas cores (para o fundo levar um tiquinho da cor da marca)
 function site_limpo_misturar($a, $b, $p) {
     $c1 = sscanf(ltrim($a, '#'), '%02x%02x%02x'); $c2 = sscanf(ltrim($b, '#'), '%02x%02x%02x');
@@ -103,6 +162,10 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     // Cor da marca (a escolhida ou a do ramo), legível no fundo
     $corEmpresa = cor_hex_valida_site($empresa['cor_primaria'] ?? '', '');
     $accent = in_array(strtolower($corEmpresa), ['', '#4f7cff', '#1a1a2e', '#2563eb'], true) ? $E['accent'] : $corEmpresa;
+    // Cor "do meio" (ex.: vermelho #e23b2a): nem texto preto nem branco chega a 4,5:1 nos botões.
+    // Escurece só o necessário para o texto branco ficar legível (a cor da marca continua reconhecível).
+    $onAccent = frag_cor_contraste($accent);
+    if (frag_contraste($accent, $onAccent) < 4.5) { $accent = frag_cor_legivel($accent, ['#ffffff'], 4.6); $onAccent = '#ffffff'; }
     $bg = $T['escuro'] ? $T['bg'] : site_limpo_misturar($T['bg'], $accent, ($V['h'] % 2) ? 0.035 : 0.0);
     $fundos = [$bg, $T['sup']];
     $accentTxt = frag_cor_legivel($accent, $fundos);
@@ -175,7 +238,8 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     $menu = array_slice(array_intersect_key($nav, array_flip(['servicos', 'agendar', 'sobre', 'avaliacoes', 'contato'])), 0, 4, true);
 
     $fonteUrl = 'https://fonts.googleapis.com/css2?family=' . $V['fonte'][0] . '&display=swap';
-    $classes = 'lp lp-tom-' . $V['tom'] . ' lp-comp-' . $comp . ($T['escuro'] ? ' lp-escuro' : '') . (!empty($V['fonte'][4]) ? ' lp-condensado' : '');
+    $classes = 'lp lp-tom-' . $V['tom'] . ' lp-comp-' . $comp . ($comp === 'tipografia' && (($V['h'] >> 5) % 2) ? ' lp-tipo-b' : '') . ($T['escuro'] ? ' lp-escuro' : '') . (!empty($V['fonte'][4]) ? ' lp-condensado' : '');
+    $painel = site_limpo_painel_vivo($empresa, $dados, $modo, $ctaHref);
     $logo = $empresa['logo'] ? '<img src="' . e($empresa['logo']) . '" alt="">' : '';
     ob_start(); ?>
 <!DOCTYPE html>
@@ -194,14 +258,16 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
-<link rel="stylesheet" href="/assets/css/site-limpo.css?v=1">
-<style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= frag_cor_contraste($accent) ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
+<link rel="stylesheet" href="/assets/css/site-limpo.css?v=2">
+<script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
+<style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
 <?= frag_css_apoio(['accent' => $accent, 'fundos' => $fundos]) ?>
 <?= site_json_ld($empresa, $dados) ?>
 <?= $preview ? '' : site_script_analytics($dados['analytics_id']) . site_script_eventos($empresa) ?>
 </head>
 <body>
 <?php if ($preview): ?><div class="pt-preview-aviso">Pré-visualização (formulários não enviam de verdade aqui)</div><?php endif; ?>
+<div class="lp-progresso" aria-hidden="true"></div>
 <a class="lp-pular" href="#conteudo">Pular para o conteúdo</a>
 <header class="lp-topo">
     <div class="lp-larg lp-topo-in">
@@ -212,24 +278,32 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 </header>
 
 <main id="conteudo">
-<section id="inicio" class="lp-hero">
+<section id="inicio" class="lp-hero" data-luz>
+    <div class="lp-luz" aria-hidden="true"><span></span><span></span><span></span></div>
     <?php if ($comp === 'foto'): ?><div class="lp-hero-foto"><img src="<?= e($fotoHero) ?>" alt="" fetchpriority="high"></div><?php endif; ?>
     <div class="lp-larg lp-hero-in">
         <div class="lp-hero-texto">
-            <?php if ($comp !== 'tipografia' && $headline !== $nome): ?><p class="lp-hero-nome"><?= e($nome) ?></p><?php endif; ?>
-            <h1><?= e($headline) ?></h1>
-            <p class="lp-hero-sub"><?= e($sub) ?></p>
-            <div class="lp-botoes">
-                <a class="lp-btn" href="<?= e($ctaHref) ?>" data-ev="<?= $temAgendar ? ($modo === 'orcamento' ? 'orcamento' : 'agendar') : ($modo === 'catalogo' ? 'pedido' : 'contato') ?>"><?= e($ctaTexto) ?></a>
+            <?php if ($comp !== 'tipografia' && $headline !== $nome): ?><p class="lp-hero-nome lp-entra"><?= e($nome) ?></p><?php endif; ?>
+            <h1 data-palavras><?= e($headline) ?></h1>
+            <p class="lp-hero-sub lp-entra"><?= e($sub) ?></p>
+            <div class="lp-botoes lp-entra">
+                <a class="lp-btn lp-btn-brilho" href="<?= e($ctaHref) ?>" data-ima data-ev="<?= $temAgendar ? ($modo === 'orcamento' ? 'orcamento' : 'agendar') : ($modo === 'catalogo' ? 'pedido' : 'contato') ?>"><?= e($ctaTexto) ?></a>
                 <?php if ($linkWhats): ?><a class="lp-link-wa" href="<?= e($linkWhats) ?>" target="_blank" rel="noopener" data-ev="whatsapp"><?= frag_icone('whats') ?> WhatsApp</a><?php endif; ?>
             </div>
-            <?php if ($prova): ?><p class="lp-prova"><?= $nota['total'] >= 3 ? '<span class="lp-estrela" aria-hidden="true">★</span> ' : '' ?><?= e($prova) ?></p><?php endif; ?>
         </div>
-        <?php if ($comp === 'lado' || $comp === 'moldura'): ?><figure class="lp-hero-fig"><img src="<?= e($fotoHero) ?>" alt="<?= e($nome) ?>" fetchpriority="high"></figure><?php endif; ?>
+        <?php if ($comp === 'lado' || $comp === 'moldura'): ?><figure class="lp-hero-fig"><img src="<?= e($fotoHero) ?>" alt="<?= e($nome) ?>" fetchpriority="high"><?= $painel ?></figure>
+        <?php else: ?><div class="lp-hero-painel"><?= $painel ?></div><?php endif; ?>
     </div>
 </section>
 
 <?php foreach ($ordem as $k): if (isset($sec[$k])) echo $sec[$k], "\n"; endforeach; ?>
+<section class="lp-fim" data-luz aria-label="<?= e($ctaTexto) ?>">
+    <div class="lp-luz" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="lp-larg lp-fim-in">
+        <h2 data-palavras><?= e(['agendamento' => 'Seu próximo horário está a um clique', 'orcamento' => 'Conte sua ideia, a gente responde', 'catalogo' => 'Bateu a vontade? Peça agora', 'contato' => 'Vamos conversar?'][$modo]) ?></h2>
+        <div class="lp-botoes"><a class="lp-btn lp-btn-brilho" href="<?= e($ctaHref) ?>" data-ima><?= e($ctaTexto) ?></a><?php if ($linkWhats): ?><a class="lp-link-wa" href="<?= e($linkWhats) ?>" target="_blank" rel="noopener" data-ev="whatsapp"><?= frag_icone('whats') ?> WhatsApp</a><?php endif; ?></div>
+    </div>
+</section>
 </main>
 
 <footer class="lp-rodape">
@@ -257,6 +331,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     window.gdsMostrarPagina = function (k) { var el = document.getElementById(k); if (el) el.scrollIntoView({ behavior: 'smooth' }); };
 })();
 </script>
+<script src="/assets/js/site-vivo.js?v=1" defer></script>
 <?= $preview ? site_script_preview() : '' ?>
 </body>
 </html>

@@ -103,6 +103,6 @@ if ($horario) {
     $lista = '<ul style="list-style:none;padding:0;margin:0;display:grid;gap:6px">' . implode('', array_map(fn($h) => '<li>' . e($h) . '</li>', $horario)) . '</ul>';
     $html = preg_replace('#(<h3 class="pt-h3">Horário de atendimento</h3>).*?(</div></div></div></section>)#s', '$1' . str_replace('$', '\\$', $lista) . '$2', $html, 1);
 }
-$html = str_replace('</body>', '<aside aria-label="Aviso" style="text-align:center;font:13px system-ui,sans-serif;color:#5f5f5f;padding:18px 16px 110px">Prévia de demonstração criada por ' . e($marca) . ' para ' . e($p['nome']) . '. Não é o site oficial da empresa.</aside></body>', $html);
+$html = str_replace('</body>', '<aside aria-label="Aviso" style="text-align:center;font:13px system-ui,sans-serif;color:var(--suave,#5f5f5f);background:var(--bg,#fff);padding:18px 16px 110px;position:relative;z-index:1">Prévia de demonstração criada por ' . e($marca) . ' para ' . e($p['nome']) . '. Não é o site oficial da empresa.</aside></body>', $html);
 header('X-Robots-Tag: noindex, nofollow');
 echo $html;
