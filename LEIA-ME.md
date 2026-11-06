@@ -514,6 +514,20 @@ skills `frontend-design` e `web-design-guidelines`:
 - Sites feitos 100% pela IA (`ia_modo_total`) e o layout "legado" continuam como estão.
 - Auditoria axe-core (WCAG AA) do modelo novo: **0 problemas**.
 
+**Limpo, mas com a tecnologia à mostra (v18.1)** — `assets/js/site-vivo.js` (sem bibliotecas):
+- **Painel ao vivo** no topo, o elemento marcante da página: "Aberto agora" com ponto pulsando, os **próximos
+  horários livres de verdade** (agenda), tempo e taxa de entrega (delivery), quantos imóveis disponíveis
+  (imobiliária) e a nota contando até o valor. Vidro fosco, borda de luz girando e brilho que segue o mouse.
+- **Luz da cor da marca** atrás do título que acompanha o mouse, com grade/pontos e textura variando por
+  personalidade (Firme: feixes na diagonal; Noturno: neon; Elegante: luz suave sem grade…).
+- **Entrada orquestrada** (título palavra por palavra → texto → botões → painel → horários um a um), linha de
+  progresso da leitura, cabeçalho de vidro que encolhe, títulos revelados ao rolar, itens em sequência,
+  botão principal "imã" com brilho e faixa final escura com luz.
+- Topo só com o nome tem 2 variações (lado a lado ou centralizado), para empresas sem foto não ficarem iguais.
+- Cores de marca "do meio" (ex.: vermelho #e23b2a) são escurecidas só o necessário nos botões para o texto
+  branco ter 4,5:1. "Reduzir movimento" do sistema: tudo aparece pronto, sem animação; se o script não
+  carregar, o conteúdo aparece sozinho em 2,5 s.
+
 ### Tudo com botões no painel (v16)
 **Regra do projeto:** nenhuma configuração do painel exige digitar "fórmula" ou lista separada por vírgula.
 Use os editores de `assets/js/gds-painel-editores.js` (carregado em todo o painel por `painel_head()`), que gravam
