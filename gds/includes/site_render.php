@@ -20,7 +20,7 @@ const PIX_ONLINE = 'Pix agora pelo site';
 const SITE_SQL_BASE = "
     SELECT e.*, s.titulo, s.subtitulo, s.sobre, s.publicado, s.cor_primaria, s.cor_secundaria,
            s.galeria_imagens, s.seo_titulo, s.seo_descricao, s.layout, s.secoes, s.banner_imagem,
-           s.html_gerado, s.ia_modo_total, s.ia_tema, s.estilo, s.fotos_banco, s.animacoes,
+           s.html_gerado, s.ia_modo_total, s.ia_tema, s.estilo, s.fotos_banco, s.animacoes, s.visual, s.composicao, s.tom,
            seg.nome AS segmento_nome, e.segmento_descricao AS segmento_descricao_emp, seg.slug AS segmento_slug, seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo,
            pl.permite_pix
     FROM empresas e
@@ -37,7 +37,7 @@ function site_buscar_empresa($where, $param) {
         $st->execute([$param]);
         return $st->fetch();
     } catch (PDOException $e) {
-        $legado = str_replace([', s.ia_tema, s.estilo, s.fotos_banco, s.animacoes', ', e.segmento_descricao AS segmento_descricao_emp', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], [', NULL AS ia_tema, NULL AS estilo, NULL AS fotos_banco, NULL AS animacoes', '', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
+        $legado = str_replace([', s.visual, s.composicao, s.tom', ', s.ia_tema, s.estilo, s.fotos_banco, s.animacoes', ', e.segmento_descricao AS segmento_descricao_emp', 'seg.modo_atendimento AS modo_segmento, seg.cta AS segmento_cta, seg.grupo AS segmento_grupo'], ['', ', NULL AS ia_tema, NULL AS estilo, NULL AS fotos_banco, NULL AS animacoes', '', 'NULL AS modo_segmento, NULL AS segmento_cta, NULL AS segmento_grupo'], SITE_SQL_BASE);
         $st = $pdo->prepare($legado . " WHERE $where LIMIT 1");
         $st->execute([$param]);
         return $st->fetch();
@@ -798,6 +798,8 @@ function psite_icon($nome) {
 // ------------------------------------------------------------
 function site_render_template($empresa, $dados, $estado, $preview = false) {
     // Template novo (5 estilos). O antigo fica abaixo só como reserva (layout "legado").
+    // Visual "Limpo" é o padrão; "completo" é o visual antigo, cheio de seções
+    if (($empresa['layout'] ?? '') !== 'legado' && ($empresa['visual'] ?? '') !== 'completo') { require_once __DIR__ . '/site_limpo.php'; return site_render_limpo($empresa, $dados, $estado, $preview); }
     if (($empresa['layout'] ?? '') !== 'legado') return site_render_template_premium($empresa, $dados, $estado, $preview);
     $layout = in_array($empresa['layout'], ['classico', 'bold', 'editorial', 'grid'], true) ? $empresa['layout'] : 'classico';
     $nome = $empresa['nome'];

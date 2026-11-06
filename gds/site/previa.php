@@ -82,7 +82,11 @@ $dados['tema'] = ['accent' => $empresa['cor_primaria'] ?: '#2563eb'];
 $dados['modo'] = atendimento_modo_da_linha($empresa);
 $dados['modulos'] = modulos_da_empresa($empresa)['ativos'];
 
-$html = site_render_template_premium($empresa, $dados, site_estado_vazio(), true);
+// Prévia com o visual Limpo (o mesmo que o site do cliente terá) e o horário real do Google
+require_once __DIR__ . '/../includes/site_limpo.php';
+if ($horario) $dados['horario_lista'] = $horario;
+$empresa['sobre'] = trim(preg_replace('/\n\nEste é um exemplo.*$/su', '', $empresa['sobre']));
+$html = site_render_limpo($empresa, $dados, site_estado_vazio(), true);
 
 // Faixa da prévia (no lugar do aviso padrão) + botão "Quero este site"
 $faixa = '<style>.gds-previa{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:10050;display:flex;gap:10px;align-items:center;'
@@ -90,7 +94,7 @@ $faixa = '<style>.gds-previa{position:fixed;left:50%;transform:translateX(-50%);
        . '.gds-previa a{flex:none;background:#25d366;color:#06240f;text-decoration:none;padding:9px 16px;border-radius:999px;font-weight:800}'
        . '.gds-previa .curto{display:none}@media(max-width:760px){.gds-previa{left:12px;right:12px;transform:none;max-width:none;justify-content:space-between;border-radius:16px;bottom:calc(88px + env(safe-area-inset-bottom,0px))}'
        . '.gds-previa .longo{display:none}.gds-previa .curto{display:inline}}.gds-wa{display:none!important}</style>'
-       . '<div class="gds-previa"><span class="longo">✨ Prévia do site da <strong>' . e($p['nome']) . '</strong> · por ' . e($marca) . '</span><span class="curto">✨ Prévia do seu site</span><a href="?quero=1">Quero este site</a></div>';
+       . '<aside class="gds-previa" aria-label="Prévia do site"><span class="longo">✨ Prévia do site da <strong>' . e($p['nome']) . '</strong> · por ' . e($marca) . '</span><span class="curto">✨ Prévia do seu site</span><a href="?quero=1">Quero este site</a></aside>';
 $html = preg_replace('#<div class="pt-preview-aviso">.*?</div>#s', '', $html, 1);
 $html = str_replace('</body>', $faixa . '</body>', $html);
 $html = str_replace('<head>', '<head><meta name="robots" content="noindex, nofollow">', $html);
@@ -99,6 +103,6 @@ if ($horario) {
     $lista = '<ul style="list-style:none;padding:0;margin:0;display:grid;gap:6px">' . implode('', array_map(fn($h) => '<li>' . e($h) . '</li>', $horario)) . '</ul>';
     $html = preg_replace('#(<h3 class="pt-h3">Horário de atendimento</h3>).*?(</div></div></div></section>)#s', '$1' . str_replace('$', '\\$', $lista) . '$2', $html, 1);
 }
-$html = str_replace('</body>', '<p style="text-align:center;font:13px system-ui,sans-serif;color:#888;padding:18px 16px 110px">Prévia de demonstração criada por ' . e($marca) . ' para ' . e($p['nome']) . '. Não é o site oficial da empresa.</p></body>', $html);
+$html = str_replace('</body>', '<aside aria-label="Aviso" style="text-align:center;font:13px system-ui,sans-serif;color:#5f5f5f;padding:18px 16px 110px">Prévia de demonstração criada por ' . e($marca) . ' para ' . e($p['nome']) . '. Não é o site oficial da empresa.</aside></body>', $html);
 header('X-Robots-Tag: noindex, nofollow');
 echo $html;
