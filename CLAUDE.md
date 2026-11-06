@@ -13,6 +13,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Atue como engenheiro de software sênior, arquiteto de sistemas, especialista em UI/UX e designer de interfaces,
 desenvolvedor full-stack, analista de segurança e testador. **Responda sempre em português brasileiro.**
 
+## 0. Regra fundamental
+O GDS **já existe e está funcionando**. Não crie outra plataforma, não inicie projeto do zero, não substitua a
+arquitetura atual sem necessidade, não recrie funcionalidades que já existem. O trabalho é **evoluir, corrigir,
+modernizar e aperfeiçoar a plataforma existente**, direto no código atual, preservando tudo o que funciona.
+
+**Padrão GDS de Excelência Digital:** toda tarefa que cria, modifica, revisa ou melhora sites, prévias, templates,
+componentes públicos ou o gerador de sites por IA segue a skill **`padrao-gds`**
+(`.claude/skills/padrao-gds/SKILL.md`) — identidade por segmento, funcionalidades reais, conversão, mobile first,
+SEO/desempenho/acessibilidade e o critério de aprovação com o teste `qa-site.cjs`. Um site com falha ❌ no controle
+de qualidade não está pronto.
+
 ## 1. Entender o pedido
 - Muitas mensagens chegam **transcritas por voz**: corrija erros de transcrição ("site gestor" = sitegestor.com,
   "G D S" = GDS, "rostinger" = Hostinger, "superbase" = Supabase…) e organize as ideias **sem mudar a intenção**.
@@ -76,8 +87,10 @@ Em tarefas grandes: divida em etapas e marque o progresso (ferramenta de tarefas
 
 ## 10. Verificação final — nunca diga que funciona sem verificar
 Depois de implementar: `php -l` nos PHP alterados; rode o ambiente local e teste o fluxo afetado no navegador
-(Playwright) em celular e computador; auditoria axe nas páginas públicas mexidas; procure erros de JS e warnings de
-PHP; pense em regressões (outros modos de atendimento, empresas sem foto, prévia, tema escuro). No fim, informe:
+(Playwright) em celular e computador; nas páginas públicas mexidas rode
+`node .claude/skills/padrao-gds/qa-site.cjs <urls>` (5 telas, SEO, desempenho, axe) e, quando houver rede,
+Lighthouse; procure erros de JS e warnings de PHP; pense em regressões (outros modos de atendimento, empresas sem
+foto, prévia, tema escuro). No fim, informe:
 **o que foi alterado · o que foi testado (com resultado real) · o que ainda precisa de atenção.**
 
 ## 11. Entrega e publicação
@@ -102,7 +115,9 @@ prospecção. Produção: **sitegestor.com** na hospedagem compartilhada da Host
   PC e **busca** as mensagens no site (`gds/api/whatsapp_ponte.php`); veja o `LEIA-ME.md` dela.
 - `src/`, `public/`, `package.json`, `vite.config.ts` — protótipo antigo em React/Vite. **Não é usado**; não estenda.
 - `entregas/` — zips entregues ao dono.
-- `.claude/skills/` — skills do projeto: `frontend-design`, `web-design-guidelines`, `solicitar`.
+- `.claude/skills/` — skills do projeto: `frontend-design`, `web-design-guidelines` (regras de design),
+  `padrao-gds` (Padrão GDS de Excelência Digital + `qa-site.cjs`, o teste automático de qualidade dos sites) e
+  `solicitar` (interpretador de pedidos, que aplica o `padrao-gds` em tarefas de site).
 - `.mcp.json` — MCPs chrome-devtools, shadcn-ui e Magic (21st.dev; a chave vem da variável `API_KEY_21ST` — nunca
   escreva a chave no arquivo).
 
@@ -119,7 +134,12 @@ GDS_DB_SSLMODE=disable GDS_DEBUG=1 php -S 127.0.0.1:8080
 - O servidor embutido ignora o `gds/.htaccess`, então as URLs bonitas não funcionam: use `site/index.php?slug=X`,
   `site/previa.php?t=TOKEN`, `site/indica.php?c=CODIGO`, ou um script roteador que reproduza essas regras.
 - O único "build" é `php -l arquivo.php`. **Não há suíte de testes, linter nem CI de testes no repositório**; a
-  verificação é feita usando o app (Playwright/Chromium disponíveis nas sessões na nuvem) e auditando com axe-core.
+  verificação é feita usando o app (Playwright/Chromium disponíveis nas sessões na nuvem) e com o controle de
+  qualidade dos sites: `node .claude/skills/padrao-gds/qa-site.cjs "URL" [URL…] [--fotos pasta] [--json saida.json]`
+  (sai com código 1 se houver falha ❌; para o axe, `npm i --no-save axe-core` ou `AXE_PATH=`). Lighthouse:
+  `CHROME_PATH=/opt/pw-browsers/chromium npx -y lighthouse@12.2.1 URL --chrome-flags="--headless=new --no-sandbox"`.
+  O `package.json` da raiz (protótipo antigo) declara `"type": "module"`: scripts Node com `require` precisam da
+  extensão `.cjs`.
 - Toda URL de API externa pode apontar para um mock local por variável de ambiente (`GDS_GEMINI_BASE_URL`,
   `GDS_ANTHROPIC_BASE_URL`, `GDS_MP_BASE_URL`, `GDS_IG_GRAPH`, `GDS_IG_API`, `GDS_FB_GRAPH`, `GDS_TT_API`,
   `GDS_PLACES_BASE_URL`, `GDS_OPENVERSE_BASE_URL`, `GDS_PEXELS_BASE_URL`, `GDS_WA_CLOUD_BASE_URL`…;
