@@ -1,0 +1,327 @@
+<?php
+// ============================================================
+// API do Estúdio IA (JSON). Incluída por admin/ia_estudio_api.php e
+// empresa/ia_estudio_api.php, que já validaram login + CSRF e
+// definiram $empresaId (o admin escolhe; a empresa só a própria).
+// ============================================================
+require_once __DIR__ . '/ia_site_engine.php';
+
+@set_time_limit(300); // planejar + gerar (e às vezes emendar) pode passar dos 2 minutos
+@ini_set('memory_limit', '256M');
+
+// Nunca devolve um "erro 500" mudo: qualquer falha vira uma mensagem que aparece no chat
+function estudio_explicar_erro($msg) {
+    $m = (string)$msg;
+    if (stripos($m, 'does not exist') !== false || stripos($m, 'não existe') !== false || stripos($m, 'undefined column') !== false) {
+        return 'O banco de dados está desatualizado. Rode o arquivo sql/adicional_10_estudio_ia.sql no Supabase (SQL Editor → New query → Run) e tente de novo. Detalhe: ' . mb_substr($m, 0, 200);
+    }
+    if (stripos($m, 'Maximum execution time') !== false) {
+        return 'A hospedagem encerrou o processo por tempo (a IA demorou demais). Tente de novo, ou use uma IA mais rápida (Groq) em Configurações.';
+    }
+    if (stripos($m, 'Allowed memory size') !== false) {
+        return 'O servidor ficou sem memória ao processar o site. Tente um pedido menor.';
+    }
+    return 'Erro interno no servidor: ' . mb_substr($m, 0, 300);
+}
+set_exception_handler(function (Throwable $e) {
+    error_log('GDS Estúdio IA: ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
+    if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
+    echo json_encode(['ok' => false, 'erro' => estudio_explicar_erro($e->getMessage())], JSON_UNESCAPED_UNICODE);
+});
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if (!$e || !in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) return;
+    error_log('GDS Estúdio IA (fatal): ' . $e['message'] . ' em ' . $e['file'] . ':' . $e['line']);
+    if (!headers_sent()) { http_response_code(200); header('Content-Type: application/json; charset=utf-8'); }
+    echo json_encode(['ok' => false, 'erro' => estudio_explicar_erro($e['message'])], JSON_UNESCAPED_UNICODE);
+});
+gds_garantir_schema();
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    responder_json(['ok' => false, 'erro' => 'Método inválido.'], 405);
+}
+
+$acao = $_POST['acao'] ?? '';
+$usuarioId = usuario_logado();
+$ehAdmin = is_admin();
+
+$site = $pdo->prepare("SELECT * FROM sites WHERE empresa_id=?");
+$site->execute([$empresaId]);
+$site = $site->fetch();
+if (!$site) responder_json(['ok' => false, 'erro' => 'Empresa sem site cadastrado.'], 404);
+
+// Limite diário de gerações para as empresas (controle de custo da IA). Admin não tem limite.
+function estudio_checar_limite($empresaId, $ehAdmin) {
+    global $pdo;
+    if ($ehAdmin) return;
+    $limite = (int)get_config('ia_limite_diario_empresa', '20');
+    if ($limite <= 0) return;
+    $st = $pdo->prepare("SELECT COUNT(*) c FROM ia_logs WHERE empresa_id=? AND criado_em >= CURRENT_DATE AND prompt LIKE 'Estúdio IA%'");
+    $st->execute([$empresaId]);
+    if ((int)$st->fetch()['c'] >= $limite) {
+        responder_json(['ok' => false, 'erro' => "Você atingiu o limite de $limite gerações com IA por hoje. Amanhã libera de novo."], 429);
+    }
+}
+
+function estudio_log($empresaId, $usuarioId, $resumo, $resposta) {
+    global $pdo;
+    $pdo->prepare("INSERT INTO ia_logs (empresa_id, usuario_id, prompt, resposta) VALUES (?,?,?,?)")
+        ->execute([$empresaId, $usuarioId, 'Estúdio IA — ' . mb_substr($resumo, 0, 1000), $resposta]);
+}
+
+// Depois que o site é gerado, o que a IA aprendeu do negócio vira cadastro:
+// forma de atendimento (se o dono não escolheu uma), descrição do segmento
+// (quando é "Outro") e serviços sugeridos (só se ainda não houver nenhum).
+function estudio_aplicar_analise($empresaId, $plano, $criarServicos) {
+    global $pdo;
+    $an = (array)($plano['analise'] ?? []);
+    $info = atendimento_info_empresa($empresaId);
+    $feito = ['servicos_criados' => 0];
+    try {
+        if ($info['modo_origem'] !== 'empresa' && atendimento_modo_valido($plano['modo'] ?? null) && $plano['modo'] !== $info['modo']) {
+            $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([$plano['modo'], $empresaId]);
+        }
+        $tipo = trim((string)($an['tipo_negocio'] ?? ''));
+        if ($tipo !== '' && (empty($info['segmento_slug']) || $info['segmento_slug'] === 'outro') && empty($info['segmento_descricao'])) {
+            $pdo->prepare("UPDATE empresas SET segmento_descricao=? WHERE id=?")->execute([mb_substr($tipo, 0, 150), $empresaId]);
+        }
+    } catch (PDOException $e) {
+        error_log('GDS Estúdio IA — salvar análise: ' . $e->getMessage());
+    }
+    if ($criarServicos && !empty($an['servicos_sugeridos'])) {
+        $st = $pdo->prepare("SELECT COUNT(*) c FROM servicos WHERE empresa_id=?");
+        $st->execute([$empresaId]);
+        if ((int)$st->fetch()['c'] === 0) {
+            $intervalo = 60;
+            $ins = $pdo->prepare("INSERT INTO servicos (empresa_id, nome, descricao, preco, duracao_minutos, ativo) VALUES (?,?,?,?,?,true)");
+            foreach (array_slice((array)$an['servicos_sugeridos'], 0, 8) as $sv) {
+                $nome = trim((string)($sv['nome'] ?? ''));
+                if ($nome === '') continue;
+                $preco = is_numeric($sv['preco'] ?? null) ? max(0, (float)$sv['preco']) : 0;
+                $dur = is_numeric($sv['duracao_minutos'] ?? null) && (int)$sv['duracao_minutos'] > 0 ? min(720, (int)$sv['duracao_minutos']) : $intervalo;
+                $ins->execute([$empresaId, mb_substr($nome, 0, 150), mb_substr(trim((string)($sv['descricao'] ?? '')), 0, 500), $preco, $dur]);
+                $feito['servicos_criados']++;
+            }
+        }
+    }
+    return $feito;
+}
+
+switch ($acao) {
+
+    case 'melhorar_briefing':
+        $briefing = trim($_POST['briefing'] ?? '');
+        session_write_close();
+        $ctx = ia_contexto_empresa($empresaId);
+        $prompt = "Você ajuda donos de pequenos negócios a descrever o que querem no site. Reescreva o briefing abaixo de forma "
+                . "mais rica e útil para um designer (público-alvo, tom de voz, clima visual, diferenciais, o que o visitante deve fazer no site), "
+                . "em até 120 palavras, em português, em primeira pessoa como se fosse o dono. Use só informações coerentes com os dados reais; "
+                . "não invente prêmios, números ou preços. Responda só com o texto.\n\nDADOS REAIS:\n" . ia_contexto_texto($ctx)
+                . "\n\nBRIEFING ATUAL: \"" . ($briefing ?: '(vazio)') . "\"";
+        $r = chamar_ia($prompt, 600, 40, 0.8, null, ['esforco' => 'low']);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        responder_json(['ok' => true, 'briefing' => $r['texto']]);
+
+    case 'planejar':
+        $briefing = trim($_POST['briefing'] ?? '');
+        if (mb_strlen($briefing) < 10) responder_json(['ok' => false, 'erro' => 'Conte um pouco mais sobre o negócio (pelo menos uma frase).']);
+        estudio_checar_limite($empresaId, $ehAdmin);
+        $direcao = $_POST['direcao'] ?? '';
+        $preferencias = trim($_POST['preferencias'] ?? '');
+        $referencia = ia_extrair_referencia(base64_decode((string)($_POST['referencia_b64'] ?? ''), true) ?: '');
+        if ($referencia !== '') $preferencias = trim($preferencias . "\nO dono mandou um SITE DE REFERÊNCIA: tire dele as fontes, a paleta e o tipo de layout (o conteúdo continua sendo deste negócio):\n" . mb_substr($referencia, 0, 3500));
+        session_write_close(); // não trava as outras telas enquanto a IA pensa
+        $ctx = ia_contexto_empresa($empresaId);
+        $plano = ia_planejar_site($ctx, $briefing, $direcao, $preferencias);
+        if ($referencia !== '') $plano['referencia'] = $referencia;
+        // Guarda o plano na sessão pro passo 2 (sem confiar no que o navegador mandar de volta)
+        session_start();
+        $_SESSION['ia_plano'][$empresaId] = ['plano' => $plano, 'briefing' => $briefing, 'criar_servicos' => ($_POST['criar_servicos'] ?? '') === '1'];
+        session_write_close();
+        $an = (array)($plano['analise'] ?? []);
+        responder_json(['ok' => true, 'plano' => [
+            'tipo_negocio' => (string)($an['tipo_negocio'] ?? ''), 'publico' => (string)($an['publico'] ?? ''),
+            'modo' => $plano['modo'], 'modo_nome' => atendimento_modos()[$plano['modo']]['nome'],
+            'motivo_modo' => (string)($an['motivo_modo'] ?? ''),
+            'direcao' => $plano['direcao_nome'], 'conceito' => $plano['conceito'] ?? '',
+            'fonte_titulo' => $plano['fonte_titulo'], 'fonte_corpo' => $plano['fonte_corpo'],
+            'paleta' => array_values((array)($plano['paleta'] ?? [])),
+            'paginas' => array_map(fn($p) => $p['titulo'] ?? $p['chave'] ?? '', (array)($plano['paginas'] ?? [])),
+            'headline' => $plano['headline'] ?? '',
+        ]]);
+
+    case 'gerar':
+        $guardado = $_SESSION['ia_plano'][$empresaId] ?? null;
+        if (!$guardado) responder_json(['ok' => false, 'erro' => 'Planejamento não encontrado. Clique em gerar de novo.']);
+        estudio_checar_limite($empresaId, $ehAdmin);
+        session_write_close();
+        $plano = $guardado['plano'];
+        // Serviços sugeridos entram ANTES de escrever o site, para aparecerem nele
+        $aplicado = estudio_aplicar_analise($empresaId, $plano, !empty($guardado['criar_servicos']));
+        $ctx = ia_contexto_empresa($empresaId);
+        $r = ia_gerar_html_site($ctx, $guardado['briefing'], $plano);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $versaoId = ia_salvar_versao($empresaId, $r['html'], 'geracao', 'Site gerado — estilo ' . $plano['direcao_nome'], $usuarioId,
+            ['direcao' => $plano['direcao_chave'], 'conceito' => $plano['conceito'] ?? '']);
+        ia_aplicar_html_no_site($empresaId, $r['html'], $guardado['briefing']);
+        ia_salvar_tema($empresaId, $plano);
+        ia_registrar_mensagem($empresaId, 'usuario', $guardado['briefing']);
+        ia_registrar_mensagem($empresaId, 'ia', 'Criei um site novo no estilo "' . $plano['direcao_nome'] . '". Conceito: ' . ($plano['conceito'] ?? '')
+            . ' Forma de atendimento: ' . atendimento_modos()[$plano['modo']]['nome'] . '.'
+            . ($aplicado['servicos_criados'] ? ' Cadastrei ' . $aplicado['servicos_criados'] . ' serviços sugeridos (confira preços e descrições em Serviços).' : '')
+            . ' — Peça qualquer ajuste aqui no chat.', $versaoId);
+        estudio_log($empresaId, $usuarioId, 'geração — ' . $plano['direcao_nome'], 'HTML com ' . strlen($r['html']) . ' caracteres');
+        responder_json(['ok' => true, 'versao_id' => $versaoId, 'direcao' => $plano['direcao_nome'], 'servicos_criados' => $aplicado['servicos_criados'],
+            'modo' => $plano['modo'], 'modo_nome' => atendimento_modos()[$plano['modo']]['nome']]);
+
+    // ---------- Chat no estilo Lovable: 1) entender  2) aplicar ----------
+    case 'entender':
+        $instrucao = trim($_POST['instrucao'] ?? '');
+        if ($instrucao === '') responder_json(['ok' => false, 'erro' => 'Escreva o que você quer mudar.']);
+        if (empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Gere o site primeiro, depois peça ajustes.']);
+        estudio_checar_limite($empresaId, $ehAdmin);
+        $elemento = json_decode((string)($_POST['elemento'] ?? ''), true) ?: null;
+        // Código/site colado no chat vira referência de estilo
+        $refBruta = base64_decode((string)($_POST['referencia_b64'] ?? ''), true) ?: '';
+        if ($refBruta === '' && mb_strlen($instrucao) > 600 && preg_match('/<(div|section|html|body|style)\b|className=/i', $instrucao)) {
+            $refBruta = $instrucao;
+            $instrucao = 'Deixe o meu site com o mesmo estilo deste site de referência que eu colei (cores, fontes, espaçamentos, componentes e layout), mantendo o meu negócio e os meus textos.';
+        }
+        $referencia = ia_extrair_referencia($refBruta);
+        session_write_close();
+        $ctx = ia_contexto_empresa($empresaId);
+        $historico = ia_historico_texto($empresaId);
+        $r = ia_entender_pedido($ctx, $site['html_gerado'], $instrucao, $historico, $elemento, $referencia);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $ent = $r['entendimento'];
+        ia_registrar_mensagem($empresaId, 'usuario', $instrucao . ($elemento ? ' [elemento: ' . mb_substr((string)($elemento['texto'] ?? $elemento['tag'] ?? ''), 0, 60) . ']' : '') . ($referencia !== '' ? ' [com site de referência]' : ''));
+        if (in_array($ent['tipo'], ['pergunta', 'conversa'], true)) {
+            $texto = $ent['tipo'] === 'pergunta' ? $ent['pergunta'] : ($ent['resposta'] ?: $ent['entendi']);
+            ia_registrar_mensagem($empresaId, 'ia', $texto);
+            responder_json(['ok' => true, 'tipo' => $ent['tipo'], 'texto' => $texto, 'opcoes' => $ent['opcoes'], 'proximos' => $ent['proximos']]);
+        }
+        session_start();
+        $_SESSION['ia_edicao'][$empresaId] = ['instrucao' => $instrucao, 'ent' => $ent, 'elemento' => $elemento, 'referencia' => $referencia, 'em' => time()];
+        session_write_close();
+        responder_json(['ok' => true, 'tipo' => $ent['tipo'], 'entendi' => $ent['entendi'], 'alteracoes' => $ent['alteracoes'], 'preservar' => $ent['preservar'],
+            'estrategia' => $ent['estrategia'], 'proximos' => $ent['proximos']]);
+
+    case 'aplicar':
+        $pend = $_SESSION['ia_edicao'][$empresaId] ?? null;
+        if (!$pend || time() - $pend['em'] > 1800) responder_json(['ok' => false, 'erro' => 'O pedido expirou. Envie de novo.']);
+        if (empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Gere o site primeiro, depois peça ajustes.']);
+        session_write_close();
+        $ctx = ia_contexto_empresa($empresaId);
+        $ent = $pend['ent'];
+        $r = ia_editar_site($ctx, $site['html_gerado'], $pend['instrucao'], $ent, $pend['elemento'], $pend['referencia']);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $versaoId = ia_salvar_versao($empresaId, $r['html'], 'ajuste', mb_substr($ent['entendi'] ?: $pend['instrucao'], 0, 250), $usuarioId);
+        ia_aplicar_html_no_site($empresaId, $r['html']);
+        $feito = ($r['resumo'] ?? '') ?: $ent['entendi'];
+        $linhas = array_merge([$feito], array_map(fn($a) => '• ' . $a, $ent['alteracoes']));
+        if ($ent['preservar']) $linhas[] = 'Mantive: ' . implode(', ', $ent['preservar']) . '.';
+        ia_registrar_mensagem($empresaId, 'ia', implode("\n", $linhas), $versaoId);
+        estudio_log($empresaId, $usuarioId, 'ajuste (' . ($r['metodo'] ?? '') . ') — ' . $pend['instrucao'], 'HTML com ' . strlen($r['html']) . ' caracteres');
+        session_start(); unset($_SESSION['ia_edicao'][$empresaId]); session_write_close();
+        responder_json(['ok' => true, 'versao_id' => $versaoId, 'texto' => implode("\n", $linhas), 'metodo' => $r['metodo'] ?? '', 'proximos' => $ent['proximos']]);
+
+    case 'refinar':
+        $instrucao = trim($_POST['instrucao'] ?? '');
+        if ($instrucao === '') responder_json(['ok' => false, 'erro' => 'Escreva o que você quer mudar.']);
+        if (empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Gere o site primeiro, depois peça ajustes.']);
+        estudio_checar_limite($empresaId, $ehAdmin);
+        session_write_close();
+        $ctx = ia_contexto_empresa($empresaId);
+        // Caminho de uma chamada só (compatibilidade): entende e já aplica
+        $e = ia_entender_pedido($ctx, $site['html_gerado'], $instrucao, ia_historico_texto($empresaId));
+        $ent = $e['ok'] && !in_array($e['entendimento']['tipo'], ['pergunta', 'conversa'], true) ? $e['entendimento'] : null;
+        $r = $ent ? ia_editar_site($ctx, $site['html_gerado'], $instrucao, $ent) : ia_refinar_html_site($ctx, $site['html_gerado'], $instrucao);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $versaoId = ia_salvar_versao($empresaId, $r['html'], 'ajuste', $instrucao, $usuarioId);
+        ia_aplicar_html_no_site($empresaId, $r['html']);
+        ia_registrar_mensagem($empresaId, 'usuario', $instrucao);
+        ia_registrar_mensagem($empresaId, 'ia', 'Pronto! Apliquei o ajuste. Se não ficou como você imaginou, é só pedir de novo ou voltar para a versão anterior.', $versaoId);
+        estudio_log($empresaId, $usuarioId, 'ajuste — ' . $instrucao, 'HTML com ' . strlen($r['html']) . ' caracteres');
+        responder_json(['ok' => true, 'versao_id' => $versaoId]);
+
+    case 'restaurar':
+        $versaoId = (int)($_POST['versao_id'] ?? 0);
+        $v = $pdo->prepare("SELECT * FROM site_versoes WHERE id=? AND empresa_id=?");
+        $v->execute([$versaoId, $empresaId]);
+        $v = $v->fetch();
+        if (!$v) responder_json(['ok' => false, 'erro' => 'Versão não encontrada.'], 404);
+        $nova = ia_salvar_versao($empresaId, $v['html'], 'restauracao', 'Restaurou a versão #' . $versaoId, $usuarioId);
+        ia_aplicar_html_no_site($empresaId, $v['html']);
+        ia_registrar_mensagem($empresaId, 'ia', 'Voltei o site para a versão #' . $versaoId . '.', $nova);
+        responder_json(['ok' => true, 'versao_id' => $nova]);
+
+    case 'salvar_codigo':
+        // Chega em base64 pra não ser barrado pelo firewall da hospedagem
+        // (ele costuma bloquear POST com HTML/JS cru, achando que é ataque).
+        $html = base64_decode($_POST['html_b64'] ?? '', true);
+        if ($html === false || stripos($html, '</html>') === false) responder_json(['ok' => false, 'erro' => 'O código precisa ser um documento HTML completo (até </html>).']);
+        $html = ia_pos_processar_html($html);
+        $versaoId = ia_salvar_versao($empresaId, $html, 'manual', 'Edição manual do código', $usuarioId);
+        ia_aplicar_html_no_site($empresaId, $html);
+        responder_json(['ok' => true, 'versao_id' => $versaoId]);
+
+    case 'codigo':
+        responder_json(['ok' => true, 'html' => $site['html_gerado'] ?? '']);
+
+    case 'historico':
+        responder_json(['ok' => true, 'versoes' => ia_listar_versoes($empresaId), 'mensagens' => ia_listar_mensagens($empresaId)]);
+
+    case 'tema':
+        $cor = $_POST['accent'] ?? '';
+        if (!preg_match('/^#[0-9a-fA-F]{6}$/', $cor)) responder_json(['ok' => false, 'erro' => 'Cor inválida.']);
+        $tema = json_decode((string)($site['ia_tema'] ?? ''), true) ?: [];
+        $tema['accent'] = $cor;
+        $pdo->prepare("UPDATE sites SET ia_tema=? WHERE empresa_id=?")->execute([json_encode($tema), $empresaId]);
+        responder_json(['ok' => true]);
+
+    case 'modo':
+        $ativar = ($_POST['ativo'] ?? '') === '1';
+        if ($ativar && empty($site['html_gerado'])) responder_json(['ok' => false, 'erro' => 'Ainda não existe site gerado por IA.']);
+        $pdo->prepare("UPDATE sites SET ia_modo_total=? WHERE empresa_id=?")->execute([$ativar ? 'true' : 'false', $empresaId]);
+        responder_json(['ok' => true, 'ativo' => $ativar]);
+
+    case 'gerar_foto':
+        // Uma foto por chamada (cada uma leva de 5 a 40s) — o navegador chama 3 vezes e mostra o progresso
+        session_write_close();
+        @set_time_limit(150);
+        $st = $pdo->prepare("SELECT e.nome, e.segmento_descricao, seg.slug, seg.nome AS segmento_nome FROM empresas e LEFT JOIN segmentos seg ON seg.id = e.segmento_id WHERE e.id=?");
+        $st->execute([$empresaId]);
+        $emp = $st->fetch() ?: [];
+        $cenas = img_ia_cenas($emp['slug'] ?? '', $emp['segmento_nome'] ?? '', $emp['segmento_descricao'] ?? '');
+        $i = max(0, min(count($cenas) - 1, (int)($_POST['indice'] ?? 0)));
+        $extra = trim($_POST['estilo'] ?? '');
+        $r = img_ia_gerar(img_ia_prompt_foto($cenas[$i], mb_substr($extra, 0, 200)), $i === 0 ? '16:9' : '4:5', 'ia/empresa-' . $empresaId);
+        if (!$r['ok']) responder_json(['ok' => false, 'erro' => $r['erro']]);
+        $lista = fotos_ia_adicionar($empresaId, $r['url']);
+        responder_json(['ok' => true, 'url' => $r['url'], 'total' => count($lista)]);
+
+    case 'remover_foto':
+        $url = (string)($_POST['url'] ?? '');
+        $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?"); $st->execute([$empresaId]);
+        $salvo = json_decode((string)$st->fetchColumn(), true) ?: [];
+        $salvo['ia'] = array_values(array_filter((array)($salvo['ia'] ?? []), fn($u) => $u !== $url));
+        $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES), $empresaId]);
+        if (str_starts_with($url, '/uploads/ia/empresa-' . $empresaId . '/')) @unlink(__DIR__ . '/..' . $url);
+        responder_json(['ok' => true]);
+
+    case 'atendimento':
+        // Forma de atendimento escolhida pelo dono ('' = seguir o segmento)
+        $modo = $_POST['modo_atendimento'] ?? '';
+        if ($modo !== '' && !atendimento_modo_valido($modo)) responder_json(['ok' => false, 'erro' => 'Forma de atendimento inválida.']);
+        $pdo->prepare("UPDATE empresas SET modo_atendimento=? WHERE id=?")->execute([$modo !== '' ? $modo : null, $empresaId]);
+        $info = atendimento_info_empresa($empresaId);
+        responder_json(['ok' => true, 'modo' => $info['modo'], 'modo_nome' => atendimento_modos()[$info['modo']]['nome']]);
+
+    case 'publicar':
+        $publicar = ($_POST['publicado'] ?? '') === '1';
+        $pdo->prepare("UPDATE sites SET publicado=? WHERE empresa_id=?")->execute([$publicar ? 'true' : 'false', $empresaId]);
+        responder_json(['ok' => true, 'publicado' => $publicar]);
+
+    default:
+        responder_json(['ok' => false, 'erro' => 'Ação inválida.'], 400);
+}
