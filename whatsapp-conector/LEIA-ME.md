@@ -19,20 +19,29 @@ chamar o conector, então não precisa de outra hospedagem, domínio, porta nem 
 1. GDS → **Admin → WhatsApp** → Serviço: **Conector GDS no celular ou computador** → Salvar.
    Aparecem o **endereço do site** e a **chave do conector**.
 
-### Celular Android (um aparelho antigo serve)
+### Celular Android (um aparelho antigo serve) — SEMPRE LIGADO
 Deixe-o no carregador e no Wi-Fi. Pode ser outro celular, não precisa ser o do chip.
-1. Instale o **Termux** pelo F-Droid (https://f-droid.org). A versão da Play Store é antiga.
-2. No Termux: `pkg update -y && pkg install -y nodejs-lts unzip`
-3. Coloque a pasta `whatsapp-conector` no celular. Por exemplo, baixe o zip e rode
-   `termux-setup-storage` e depois `cp -r ~/storage/downloads/whatsapp-conector ~/`.
-4. `cd ~/whatsapp-conector`, edite o `ponte.txt` com `nano ponte.txt` (SITE e CHAVE) e rode
-   `bash ligar-android.sh`.
-5. Nas configurações do Android, tire o Termux da **economia de bateria** ("Sem restrições"),
-   senão o sistema desliga o conector. Na notificação do Termux, toque em **"Acquire wakelock"**.
-6. (Recomendado) Instale o app **Termux:Boot** (F-Droid) e abra-o uma vez: o `ligar-android.sh`
-   cria o atalho e o conector **liga sozinho quando o celular reinicia**.
-7. Rode **só um** conector por número (um Termux só). Dois ao mesmo tempo ficam se derrubando —
-   a versão 1.2 avisa e não deixa abrir o segundo.
+1. Pelo **F-Droid** (https://f-droid.org) instale **Termux**, **Termux:Boot** e **Termux:API** (os três de lá;
+   a versão da Play Store é antiga e não combina com os outros dois). Abra o **Termux:Boot uma vez**.
+2. No Termux, cole **o comando pronto** que aparece em GDS → Admin → WhatsApp (botão "Copiar comando"). Ele é assim:
+   ```
+   pkg update -y && pkg install -y nodejs-lts curl unzip termux-api && curl -fsSL -o ~/conector.zip https://SEU-SITE/assets/conector/whatsapp-conector.zip && mkdir -p ~/whatsapp-conector && unzip -o -q ~/conector.zip -d ~/whatsapp-conector && bash ~/whatsapp-conector/sempre-ligado.sh https://SEU-SITE SUA_CHAVE
+   ```
+   O `sempre-ligado.sh` deixa o conector **sempre ligado**:
+   - para qualquer conector que já esteja rodando (nunca ficam dois se derrubando);
+   - **liga sozinho quando o celular reinicia** (Termux:Boot);
+   - **religa em 5 segundos** se o programa parar;
+   - agenda um **vigia** no Android a cada 15 minutos que liga de novo se o Android fechar o Termux (Termux:API);
+   - liga agora, em segundo plano (pode fechar a tela do Termux).
+   Pode rodar o mesmo comando de novo para **atualizar**: o login do WhatsApp continua (pasta `dados`).
+3. No celular: Configurações → Apps → **Termux**, **Termux:Boot** e **Termux:API** → Bateria → **Sem restrições**.
+   Xiaomi/Samsung/Motorola: permita também a **Inicialização automática** do Termux:Boot.
+   Android 14 ou mais novo: veja o item 2 de "Se o WhatsApp cair muito" abaixo.
+4. Comandos úteis: ver o que está acontecendo `tail -f ~/whatsapp-conector/conector.log`;
+   desligar de vez (o vigia não liga de novo) `bash ~/whatsapp-conector/desligar.sh`;
+   ligar de novo `bash ~/whatsapp-conector/sempre-ligado.sh`.
+
+Rodar **só um** conector por número. O `ligar-android.sh` não abre um segundo se já houver um ligado.
 
 **Versão 1.2 (não cai mais à toa):** religa sozinho para sempre quando a internet oscila ou o celular
 dorme (antes o site mandava "parar" e ele desistia), vigia conexões que morrem sem avisar, atualiza a
@@ -44,9 +53,13 @@ número, o WhatsApp desconectou o aparelho…). Antes de apagar o login por um a
 segunda vez (o aviso às vezes vem numa queda comum e obrigava a ler o QR de novo). Religa em no máximo 30 s.
 E não fica mais "travado" achando que já tem outro conector rodando depois que o Android o fecha à força.
 
-**Para atualizar** (o login do WhatsApp continua, não precisa ler o QR de novo): pare o conector
-(Ctrl+C no Termux ou feche a janela), troque o `server.js` e o `package.json` pelos novos e ligue de novo
-(`bash ligar-android.sh` no celular ou `ligar-windows.bat` no computador). **Não apague a pasta `dados`.**
+**Versão 1.3.1 (sempre ligado):** o comando `sempre-ligado.sh` (liga com o celular, religa se parar e vigia do Android a
+cada 15 min), `desligar.sh` para desligar de vez, trava para nunca rodar dois e registro (`conector.log`) que não enche
+o celular.
+
+**Para atualizar** (o login do WhatsApp continua, não precisa ler o QR de novo): no celular, rode de novo o comando
+pronto do painel. No computador: feche a janela, troque os arquivos pelos novos e abra o `ligar-windows.bat`.
+**Não apague a pasta `dados`.**
 
 ## Se o WhatsApp cair muito (celular Android)
 O motivo mais comum é o **Android fechando o Termux** para economizar bateria. No painel aparece

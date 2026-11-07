@@ -388,6 +388,13 @@ a cada agendamento, orçamento ou pedido novo.
   Android o fecha à força, e mostra no Termux o ajuste certo para cada versão do Android. Para atualizar, troque só
   `server.js` e `package.json` (o login continua). O painel avisa quando o conector está numa versão antiga
   (`WA_CONECTOR_VERSAO` em `includes/whatsapp_ponte.php`).
+- **Sempre ligado no celular (conector 1.3.1):** Admin → WhatsApp mostra **um comando pronto** (com o endereço e a
+  chave) para colar no Termux. Ele baixa o conector do próprio site (`assets/conector/whatsapp-conector.zip`), instala e
+  roda o `sempre-ligado.sh`: liga sozinho quando o celular reinicia (Termux:Boot), religa em 5 s se parar, vigia do
+  Android a cada 15 min (Termux:API) e nunca deixa dois rodando. `desligar.sh` desliga de vez. O passo a passo antigo
+  usava `npm start`, que rodava uma vez só e não voltava sozinho.
+  **Ao mudar o conector, gere de novo o zip** (`cd whatsapp-conector && zip -r ../gds/assets/conector/whatsapp-conector.zip
+  server.js package.json package-lock.json LEIA-ME.md *.sh ligar-windows.bat ponte.txt Dockerfile`) e publique-o.
 
 ## Pedidos de delivery pelo site
 Em negócios com a forma **Catálogo / delivery** (hamburgueria, pizzaria, açaí, loja…), cada item tem o botão

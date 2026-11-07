@@ -55,7 +55,7 @@ async function versaoAtual(forcar = false) {
     return versaoWa || undefined;
 }
 
-const VERSAO = '1.3.0';
+const VERSAO = '1.3.1';
 const INICIO = Date.now();
 const NO_ANDROID = String(process.env.PREFIX || '').includes('com.termux') || fs.existsSync('/data/data/com.termux');
 

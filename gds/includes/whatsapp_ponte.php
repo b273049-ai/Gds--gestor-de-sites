@@ -11,7 +11,7 @@
 const WA_PONTE_ONLINE_SEG = 75;     // sem notícia do conector por mais que isso = desligado (45 s piscava à toa)
 const WA_PONTE_SUMIU_SEG = 90;      // lacuna maior que isso entra no histórico como "o conector sumiu"
 const WA_PONTE_PEDIDO_MIN = 4;      // um pedido de QR vale por 4 minutos
-const WA_CONECTOR_VERSAO = '1.3.0'; // versão atual do whatsapp-conector (o painel avisa quem está atrás)
+const WA_CONECTOR_VERSAO = '1.3.1'; // versão atual do whatsapp-conector (o painel avisa quem está atrás)
 
 // ---------- Histórico da conexão (Admin → WhatsApp → Saúde da conexão) ----------
 // Guardado em configuracoes (sem tabela nova): últimos 7 dias, no máximo 150 eventos.

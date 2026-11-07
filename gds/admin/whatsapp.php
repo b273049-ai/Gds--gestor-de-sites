@@ -206,14 +206,19 @@ if ($a['tipo'] === 'ponte') {
 
         <details style="margin-top:18px" open data-tipo="ponte"><summary class="link" style="cursor:pointer">Passo a passo: conector no celular Android ou no computador (grátis)</summary>
             <p class="dica">O conector fica num aparelho sempre ligado e <strong>busca</strong> as mensagens aqui no site a cada poucos segundos. Não precisa de outra hospedagem.</p>
-            <p class="dica"><strong>Celular Android</strong> (um aparelho antigo serve, sempre no carregador e no Wi-Fi):</p>
+            <?php $siteBase = rtrim(get_config('plataforma_url', '') ?: site_url_base_admin(), '/');
+                $cmdSempre = 'pkg update -y && pkg install -y nodejs-lts curl unzip termux-api && curl -fsSL -o ~/conector.zip ' . $siteBase . '/assets/conector/whatsapp-conector.zip'
+                    . ' && mkdir -p ~/whatsapp-conector && unzip -o -q ~/conector.zip -d ~/whatsapp-conector && bash ~/whatsapp-conector/sempre-ligado.sh ' . $siteBase . ' ' . ($a['tipo'] === 'ponte' && $a['chave'] !== '' ? $a['chave'] : 'SUA_CHAVE'); ?>
+            <p class="dica"><strong>Celular Android</strong> (um aparelho antigo serve, sempre no carregador e no Wi-Fi). O conector fica <strong>sempre ligado</strong>: liga sozinho quando o celular reinicia, religa se cair e um vigia o liga de novo se o Android fechá-lo.</p>
             <ol class="dica" style="line-height:1.8">
-                <li>Instale o <strong>Termux</strong> pelo F-Droid (f-droid.org). A versão da Play Store é antiga.</li>
-                <li>No Termux, cole: <code>pkg update -y && pkg install -y nodejs-lts unzip</code></li>
-                <li>Copie a pasta <code>whatsapp-conector</code> para o celular (ou baixe o zip) e entre nela: <code>cd whatsapp-conector && npm install</code></li>
-                <li>Ligue: <code>termux-wake-lock; GDS_SITE=<?= e((get_config('plataforma_url', '') ?: site_url_base_admin())) ?> GDS_CHAVE=<?= e($a['tipo'] === 'ponte' ? $a['chave'] : 'SUA_CHAVE') ?> npm start</code></li>
+                <li>Pelo <strong>F-Droid</strong> (f-droid.org) instale <strong>Termux</strong>, <strong>Termux:Boot</strong> e <strong>Termux:API</strong> (os três de lá; a versão da Play Store é antiga). Abra o Termux:Boot <strong>uma vez</strong>.</li>
+                <li>No Termux, cole este comando (instala, liga e deixa sempre ligado — pode repetir para atualizar; o login do WhatsApp continua):
+                    <textarea id="cmdSempre" readonly rows="4" style="width:100%;margin-top:6px;font:12px/1.5 ui-monospace,monospace" aria-label="Comando para o Termux"><?= e($cmdSempre) ?></textarea>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="copiarCmd(this)">Copiar comando</button></li>
+                <li>No celular: Configurações → Apps → <strong>Termux</strong>, <strong>Termux:Boot</strong> e <strong>Termux:API</strong> → Bateria → <strong>Sem restrições</strong>. Android 14 ou mais novo: Opções do desenvolvedor → <strong>Desativar restrições de processos filhos</strong>.</li>
                 <li>Aqui em cima deve aparecer <strong>Conector ligado</strong>. Clique em <strong>Gerar QR code</strong> e leia com o WhatsApp do chip.</li>
             </ol>
+            <p class="dica">Para desligar de vez: <code>bash ~/whatsapp-conector/desligar.sh</code>. Para ver o que ele está fazendo: <code>tail -f ~/whatsapp-conector/conector.log</code>.</p>
             <p class="dica"><strong>Computador (Windows):</strong> instale o Node.js (nodejs.org, versão LTS), abra a pasta <code>whatsapp-conector</code>, edite o arquivo <code>ponte.txt</code> com o endereço e a chave acima e dê dois cliques em <code>ligar-windows.bat</code>.</p>
             <p class="dica">Use um chip só para isso e envie só o que o cliente pediu: disparo em massa faz o WhatsApp bloquear o número.</p></details>
         <details style="margin-top:18px" open data-tipo="gds"><summary class="link" style="cursor:pointer">Passo a passo: Conector GDS (grátis)</summary>
@@ -356,6 +361,11 @@ async function conectar(b, porCodigo) {
         else if (e.qr) { el('qrImg').src = e.qr; el('qrInfo').textContent = 'Aguardando leitura…'; }
     }, 3000);
     setTimeout(() => clearInterval(timerConexao), 300000);
+}
+async function copiarCmd(b) {
+    const t = document.getElementById('cmdSempre');
+    try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand('copy'); }
+    b.textContent = 'Copiado!'; setTimeout(() => { b.textContent = 'Copiar comando'; }, 2500);
 }
 async function rotina(b) {
     b.disabled = true; const r = await post({ acao: 'rotina' }); b.disabled = false;
