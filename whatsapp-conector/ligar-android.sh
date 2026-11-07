@@ -23,7 +23,7 @@ echo $$ > "$TRAVA"
 trap 'rm -f "$TRAVA"' EXIT
 rm -f dados/desligado   # ligou na mão: volta a valer o vigia
 
-command -v node >/dev/null || pkg install -y nodejs-lts
+command -v node >/dev/null || apt install -y nodejs-lts
 [ -d node_modules ] || npm install --omit=dev
 command -v termux-wake-lock >/dev/null && termux-wake-lock
 [ -f "$HOME/.termux/boot/gds-conector" ] || echo "Dica: para ligar sozinho quando o celular reinicia, rode uma vez: bash sempre-ligado.sh"

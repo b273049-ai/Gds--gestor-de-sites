@@ -48,8 +48,8 @@ if ! grep -q '^SITE=http' ponte.txt 2>/dev/null || grep -q 'COLE-AQUI' ponte.txt
 fi
 
 echo "1/4 Instalando o que falta (só na primeira vez)…"
-command -v node >/dev/null || pkg install -y nodejs-lts
-command -v termux-job-scheduler >/dev/null || pkg install -y termux-api
+command -v node >/dev/null || apt install -y nodejs-lts
+command -v termux-job-scheduler >/dev/null || apt install -y termux-api
 [ -d node_modules ] || npm install --omit=dev
 chmod +x ligar-android.sh vigia.sh 2>/dev/null
 

@@ -25,7 +25,7 @@ Deixe-o no carregador e no Wi-Fi. Pode ser outro celular, não precisa ser o do 
    a versão da Play Store é antiga e não combina com os outros dois). Abra o **Termux:Boot uma vez**.
 2. No Termux, cole **o comando pronto** que aparece em GDS → Admin → WhatsApp (botão "Copiar comando"). Ele é assim:
    ```
-   pkg update -y && pkg install -y nodejs-lts curl unzip termux-api && curl -fsSL -o ~/conector.zip https://SEU-SITE/assets/conector/whatsapp-conector.zip && mkdir -p ~/whatsapp-conector && unzip -o -q ~/conector.zip -d ~/whatsapp-conector && bash ~/whatsapp-conector/sempre-ligado.sh https://SEU-SITE SUA_CHAVE
+   apt update && apt -y -o Dpkg::Options::=--force-confnew full-upgrade && apt -y install nodejs-lts curl unzip termux-api && curl -fsSL -o ~/conector.zip https://SEU-SITE/assets/conector/whatsapp-conector.zip && mkdir -p ~/whatsapp-conector && unzip -o -q ~/conector.zip -d ~/whatsapp-conector && bash ~/whatsapp-conector/sempre-ligado.sh https://SEU-SITE SUA_CHAVE
    ```
    O `sempre-ligado.sh` deixa o conector **sempre ligado**:
    - para qualquer conector que já esteja rodando (nunca ficam dois se derrubando);
@@ -60,6 +60,14 @@ o celular.
 **Para atualizar** (o login do WhatsApp continua, não precisa ler o QR de novo): no celular, rode de novo o comando
 pronto do painel. No computador: feche a janela, troque os arquivos pelos novos e abra o `ligar-windows.bat`.
 **Não apague a pasta `dados`.**
+
+## Se o comando der erro no Termux
+- **"CANNOT LINK EXECUTABLE curl"** ou **"No mirror or mirror group selected"**: o Termux está com pacotes atualizados
+  pela metade. Rode `apt update && apt -y -o Dpkg::Options::=--force-confnew full-upgrade` e cole o comando do painel
+  de novo (o comando do painel já faz isso no começo).
+- **Muito lento ou "Unable to fetch"**: rode `termux-change-repo`, escolha "Mirror group" → "All mirrors" e tente de novo.
+- **"Permission denied" ou nada acontece no Termux:Boot**: confira se o Termux, o Termux:Boot e o Termux:API vieram
+  todos do F-Droid (não misture com a Play Store).
 
 ## Se o WhatsApp cair muito (celular Android)
 O motivo mais comum é o **Android fechando o Termux** para economizar bateria. No painel aparece
