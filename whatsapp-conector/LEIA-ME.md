@@ -38,6 +38,32 @@ Deixe-o no carregador e no Wi-Fi. Pode ser outro celular, não precisa ser o do 
 dorme (antes o site mandava "parar" e ele desistia), vigia conexões que morrem sem avisar, atualiza a
 versão do WhatsApp Web sozinho e segura a mensagem até 45 s enquanto religa (nada se perde).
 
+**Versão 1.3 (conta por que caiu):** cada queda vai para o painel em **Admin → WhatsApp → Saúde da conexão**,
+com o motivo em português e o que fazer (internet oscilou, o Android fechou o Termux, outro conector abriu o mesmo
+número, o WhatsApp desconectou o aparelho…). Antes de apagar o login por um aviso de "saiu", ele confere uma
+segunda vez (o aviso às vezes vem numa queda comum e obrigava a ler o QR de novo). Religa em no máximo 30 s.
+E não fica mais "travado" achando que já tem outro conector rodando depois que o Android o fecha à força.
+
+**Para atualizar** (o login do WhatsApp continua, não precisa ler o QR de novo): pare o conector
+(Ctrl+C no Termux ou feche a janela), troque o `server.js` e o `package.json` pelos novos e ligue de novo
+(`bash ligar-android.sh` no celular ou `ligar-windows.bat` no computador). **Não apague a pasta `dados`.**
+
+## Se o WhatsApp cair muito (celular Android)
+O motivo mais comum é o **Android fechando o Termux** para economizar bateria. No painel aparece
+"O conector foi fechado à força" ou "O conector ficou sem falar com o site". Faça, nesta ordem:
+1. **Bateria:** Configurações → Apps → Termux → Bateria → **Sem restrições** (em alguns aparelhos: "Não otimizar").
+   Faça o mesmo no Termux:Boot.
+2. **Android 14 ou mais novo:** ative as Opções do desenvolvedor (Configurações → Sobre o telefone → toque 7 vezes
+   em "Número da versão"), entre nelas e ligue **"Desativar restrições de processos filhos"**. Reinicie o celular.
+3. **Android 12L ou 13:** essa opção não aparece na tela. Com o celular ligado a um computador pelo cabo (depuração
+   USB ativada nas Opções do desenvolvedor), rode no computador:
+   `adb shell settings put global settings_enable_monitor_phantom_procs false` e reinicie o celular.
+4. Deixe o celular **no carregador e no Wi-Fi**, com a notificação do Termux em "Acquire wakelock".
+5. Só **um** conector por número: se aparecer "Outro conector abriu o mesmo número", feche o outro celular,
+   computador ou janela do Termux.
+
+Esses ajustes do Android não são oficiais do Google e mudam um pouco de aparelho para aparelho.
+
 ### Computador (Windows)
 1. Instale o Node.js (https://nodejs.org, versão LTS).
 2. Na pasta `whatsapp-conector`, abra o `ponte.txt` no Bloco de Notas e cole SITE e CHAVE.

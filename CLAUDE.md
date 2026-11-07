@@ -80,8 +80,9 @@ Em tarefas grandes: divida em etapas e marque o progresso (ferramenta de tarefas
 - **Nunca exponha nem faça commit de credenciais.** `gds/config/local.php` (senha do banco e chave de recuperação)
   e `gds/uploads/` são ignorados pelo Git — antes de todo commit confira que nenhum segredo entrou no diff.
   Não peça ao dono para colar senhas/tokens no chat: eles são colados no painel (Admin → Configurações).
-- **Banco de produção** (Supabase) só com autorização. Atenção: publicar uma migração nova (`gds/sql/adicional_*`)
-  faz ela rodar sozinha em produção na próxima visita — isso conta como alteração do banco de produção.
+- **Banco de produção** (Supabase): uma migração nova (`gds/sql/adicional_*`) roda sozinha em produção na próxima
+  visita depois de publicada. Migrações **aditivas** que a alteração precisa são publicadas junto (regra 11). Mexer
+  direto em **dados** de produção (UPDATE/DELETE em empresas, clientes, pedidos…) continua precisando de autorização.
 - Preserve os dados existentes (migrações só `ADD COLUMN IF NOT EXISTS`/`CREATE … IF NOT EXISTS`, nada de `DROP`).
 - Antes de refatorações grandes, confira `git status` e recomende um ponto de restauração (commit ou branch).
 
@@ -93,11 +94,24 @@ Lighthouse; procure erros de JS e warnings de PHP; pense em regressões (outros 
 foto, prévia, tema escuro). No fim, informe:
 **o que foi alterado · o que foi testado (com resultado real) · o que ainda precisa de atenção.**
 
-## 11. Entrega e publicação
-- Commits em português com mensagem descritiva; push no branch de trabalho indicado na sessão.
-- Publicar na Hostinger só quando o dono pedir ou já tiver autorizado. Antes de sobrescrever um arquivo ao vivo,
-  confira que o tamanho dele é igual ao da versão anterior do Git (para não apagar mudança feita direto no servidor);
-  nunca envie `config/local.php` nem `uploads/`; depois verifique o site no ar.
+## 11. Entrega e publicação — **toda alteração vai para a Hostinger**
+Regra do dono (permanente, 2026-11-07): **sempre implemente a alteração direto na hospedagem.** Toda mudança em
+`gds/` que passou nos testes é publicada na Hostinger (sitegestor.com) na mesma tarefa, sem pedir permissão de novo.
+Não deixe alteração só no Git.
+1. Testes da regra 10 aprovados (se algo falhou, **não publique**: corrija ou informe).
+2. Commit em português com mensagem descritiva + push no branch de trabalho da sessão.
+3. Para cada arquivo que vai subir, compare o tamanho ao vivo (`hosting_files_list-website-and-directories`, usuário
+   `u346751170`, domínio `sitegestor.com`, pasta relativa a `gds/`) com o da versão anterior no Git
+   (`git cat-file -s HEAD~1:gds/<arquivo>`). Se for diferente, alguém mexeu direto no servidor: pare e avise.
+4. Gere as credenciais com `hosting_files_generate-upload-url`, grave-as num arquivo no scratchpad com `umask 077`
+   (`URL='…'`, `AK='…'`, `RK='…'`) e rode `.claude/scripts/publicar-hostinger.sh <arquivo> <caminhos relativos a gds/…>`
+   — ele envia a versão do commit (TUS), confere cada envio e esvazia o arquivo de credenciais no fim.
+   Ordem: `sql/` e `assets/` antes dos PHP que dependem deles.
+5. **Nunca** envie `config/local.php`, nada de `config/` nem `uploads/` (o script recusa).
+6. Verifique no ar: páginas afetadas respondem 200 sem erro de PHP, CSS/JS novos com o tamanho do Git; nos sites,
+   rode o `qa-site.cjs` na URL de produção quando fizer sentido.
+7. No relatório, diga o que foi publicado. O `whatsapp-conector/` roda no aparelho do dono: gere o zip em
+   `entregas/`, envie o arquivo e explique como atualizar (não dá para publicá-lo pela Hostinger).
 - Atualize `gds/LEIA-ME.md` (manual do produto) quando entregar função nova.
 
 ---

@@ -92,6 +92,15 @@ $resumo = $pdo->query("SELECT status, COUNT(*) c FROM whatsapp_mensagens WHERE c
 $empresasProprio = (int)$pdo->query("SELECT COUNT(*) FROM empresas WHERE wa_modo='proprio' AND wa_status='conectado'")->fetchColumn();
 $ultimas = $pdo->query("SELECT m.*, e.nome AS empresa_nome FROM whatsapp_mensagens m LEFT JOIN empresas e ON e.id = m.empresa_id ORDER BY m.id DESC LIMIT 25")->fetchAll();
 $chaveSalva = $a['chave'] !== '';
+// Saúde da conexão (conector no celular/computador): situação agora + histórico das quedas com o motivo
+$saude = null;
+if ($a['tipo'] === 'ponte') {
+    $saude = wa_ponte_saude();
+    $saude['online'] = wa_ponte_online();
+    $saude['plat'] = $a['plat_instancia'] !== '' ? wa_ponte_ler($a['plat_instancia']) : null;
+    $saude['nomes'] = [$a['plat_instancia'] => 'Número da plataforma'];
+    foreach ($pdo->query("SELECT wa_instancia, nome FROM empresas WHERE COALESCE(wa_instancia, '') <> ''")->fetchAll(PDO::FETCH_KEY_PAIR) as $i => $n) $saude['nomes'][$i] ??= $n;
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -229,6 +238,51 @@ $chaveSalva = $a['chave'] !== '';
             <p class="dica">Use um número dedicado (chip só para isso). A GDS só envia mensagens que o cliente pediu; nunca use o número para disparo em massa.</p></details>
     </section>
     </div>
+
+    <?php if ($saude): $info = $saude['info']; $plat = $saude['plat'];
+        $platEstado = !$saude['online'] ? ['Sem notícia do conector', 'pill-aviso'] : (!$plat ? ['Ainda não conectado', 'pill-neutro']
+            : ($plat['estado'] === 'open' ? ['Conectado', 'pill-ok'] : ($plat['estado'] === 'connecting' ? ['Religando sozinho…', 'pill-aviso'] : ['Desconectado — gere o QR code', 'pill-aviso'])));
+        $sistema = ['android' => 'Android', 'win32' => 'Windows', 'darwin' => 'Mac', 'linux' => 'Linux'][$info['plataforma'] ?? ''] ?? ''; ?>
+    <section class="form-box largo" id="saude" aria-labelledby="tituloSaude">
+        <h3 id="tituloSaude">Saúde da conexão</h3>
+        <p class="dica">O que aconteceu com o WhatsApp nas últimas 24 horas e por quê. Atualiza sozinho a cada volta do conector.</p>
+        <div class="cards" style="margin-top:14px">
+            <div class="card"><div class="label"><?= icone('celular', 16) ?> Conector</div>
+                <div class="value" style="font-size:18px"><span class="pill <?= $saude['online'] ? 'pill-ok' : 'pill-aviso' ?>"><?= $saude['online'] ? 'Ligado' : 'Desligado' ?></span></div>
+                <div class="dica"><?= $saude['versao'] !== '' ? 'Versão ' . e($saude['versao']) . ($sistema ? ' · ' . e($sistema) : '') : 'Versão 1.2 ou anterior' ?><?= !empty($info['inicio']) && $saude['online'] ? ' · ligado há ' . e(wa_ponte_duracao(time() - (int)$info['inicio'])) : '' ?></div></div>
+            <div class="card"><div class="label"><?= icone('chat', 16) ?> WhatsApp da plataforma</div>
+                <div class="value" style="font-size:18px"><span class="pill <?= $platEstado[1] ?>"><?= e($platEstado[0]) ?></span></div>
+                <div class="dica"><?= $plat && $plat['numero'] ? '+' . e($plat['numero']) : 'Número ainda não lido' ?></div></div>
+            <div class="card"><div class="label"><?= icone('historico', 16) ?> Quedas em 24 h</div>
+                <div class="value"><?= (int)$saude['quedas_24h'] ?></div>
+                <div class="dica"><?= $saude['fora_24h'] > 0 ? 'Fora do ar no total: ' . e(wa_ponte_duracao($saude['fora_24h'])) : 'Sem tempo fora do ar registrado' ?></div></div>
+        </div>
+        <?php if ($saude['desatualizado']): ?>
+        <div class="alert alert-aviso" role="status"><strong>Atualize o conector para a versão <?= e(WA_CONECTOR_VERSAO) ?>.</strong>
+            <?= $saude['versao'] !== '' ? 'O seu está na ' . e($saude['versao']) . '.' : 'O seu é de uma versão antiga e não conta o motivo das quedas.' ?>
+            Pare o conector, troque os arquivos <code>server.js</code> e <code>package.json</code> pelos novos e ligue de novo. O login do WhatsApp continua (não apague a pasta <code>dados</code>).</div>
+        <?php endif; ?>
+        <?php if ($saude['grupos']): $g = $saude['grupos'][0]; ?>
+        <div class="alert <?= $g['motivo'][3] === 'grave' ? 'alert-erro' : ($g['motivo'][3] === 'aviso' ? 'alert-aviso' : 'alert-info') ?>" role="status">
+            <strong>O que mais derrubou: <?= e($g['motivo'][0]) ?></strong> (<?= (int)$g['n'] ?>× nas últimas 24 h)<br>
+            <?= e($g['motivo'][1]) ?><?php if ($g['motivo'][2] !== ''): ?><br><strong>O que fazer:</strong> <?= e($g['motivo'][2]) ?><?php endif; ?></div>
+        <?php elseif ($saude['online'] && $plat && $plat['estado'] === 'open'): ?>
+        <div class="alert alert-sucesso" role="status">Nenhuma queda nas últimas 24 horas.</div>
+        <?php endif; ?>
+        <?php if ($saude['recentes']): ?>
+        <div class="tabela-wrap"><table>
+            <thead><tr><th>Quando</th><th>O que aconteceu</th><th>Número</th></tr></thead>
+            <tbody>
+            <?php foreach ($saude['recentes'] as $ev): $m = wa_ponte_motivo($ev); ?>
+            <tr><td><?= date('d/m H:i', (int)$ev['em']) ?></td>
+                <td><span class="pill <?= $m[3] === 'grave' ? 'pill-aviso' : ($ev['tipo'] === 'conectou' ? 'pill-ok' : 'pill-neutro') ?>" style="white-space:normal"><?= e($m[0]) ?></span><span class="mini"><?= e($m[1]) ?></span></td>
+                <td><?= e($saude['nomes'][$ev['inst'] ?? ''] ?? (($ev['inst'] ?? '') !== '' ? $ev['inst'] : 'Conector')) ?></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+        <?php else: ?><p class="dica">Ainda sem histórico. Ele começa a ser registrado assim que o conector fala com o site.</p><?php endif; ?>
+    </section>
+    <?php endif; ?>
 
     <section class="form-box largo">
         <h3>Últimas mensagens (todas as empresas)</h3>

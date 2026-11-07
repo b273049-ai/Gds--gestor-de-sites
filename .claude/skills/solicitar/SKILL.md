@@ -52,8 +52,9 @@ WebSearch/WebFetch ou o agente `web-fetch`; se não for possível, diga. Nunca i
 Apresente: **Objetivo · Diagnóstico** (com `arquivo:linha` quando útil) **· Problemas identificados · Solução
 recomendada** (e alternativa, se relevante) **· Etapas · Testes necessários.**
 - **Pequena** (1–2 arquivos, sem mudar comportamento existente): plano em poucas linhas e já execute.
-- **Grande** (vários arquivos, migração de banco, mudança de fluxo ou visual amplo da plataforma, publicação em
-  produção): **pare e peça aprovação** — salvo se o pedido disser explicitamente para seguir sem pedir permissão.
+- **Grande** (vários arquivos, migração de banco, mudança de fluxo ou visual amplo da plataforma): **pare e peça
+  aprovação do plano** — salvo se o pedido disser explicitamente para seguir sem pedir permissão. Aprovado o plano,
+  a publicação na Hostinger já está autorizada (regra 11 do `CLAUDE.md`).
 - Antes de refatoração grande, recomende um ponto de restauração (commit/branch).
 
 ## 7. Identificar melhorias adicionais
@@ -67,7 +68,7 @@ desempenho, conversão) e **Opcionais**. Implemente as Essenciais ligadas à tar
 - Melhoria de padrão de site entra no **motor compartilhado** (Limpo + fragmentos) para valer para todas as empresas
   e prévias, mantendo a personalização de cada uma; nunca altere dados de clientes.
 - Migração nova = `gds/sql/adicional_NN_*.sql` idempotente + entrada em `gds_migracoes()` + subir
-  `GDS_SCHEMA_VERSAO` (publicá-la altera o banco de produção: precisa de autorização).
+  `GDS_SCHEMA_VERSAO` (só aditiva; ela é publicada junto e roda sozinha em produção).
 
 ## 9. Executar testes (nunca declarar que funciona sem verificar)
 - `php -l` em todo PHP alterado; ambiente local + Playwright no fluxo afetado; sem erro de JS nem warning de PHP.
@@ -87,5 +88,8 @@ hierarquia, espaçamento, alinhamento, identidade do segmento, nada genérico, n
 - **O que ainda precisa de atenção** (pendências, riscos, o que depende do dono)
 - **Próximos passos sugeridos** (Recomendadas/Opcionais que ficaram de fora)
 
-Commit e push no branch de trabalho ao final, com mensagem em português. Publicar na Hostinger apenas se o dono
-pediu ou já autorizou nesta conversa.
+## 12. Publicar na Hostinger (sempre)
+Com os testes aprovados: commit e push em português no branch de trabalho e **publicação na Hostinger de tudo o que
+mudou em `gds/`**, seguindo a regra 11 do `CLAUDE.md` (conferir tamanho ao vivo, `.claude/scripts/publicar-hostinger.sh`,
+nunca `config/` nem `uploads/`, verificar no ar). O relatório final diz o que foi publicado. Mudança do
+`whatsapp-conector/` vira zip em `entregas/` enviado ao dono, com o passo a passo para atualizar o aparelho.

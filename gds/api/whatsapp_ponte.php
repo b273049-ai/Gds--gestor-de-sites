@@ -25,7 +25,13 @@ if ($a['tipo'] !== 'ponte' || $a['chave'] === '' || !hash_equals($a['chave'], $e
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { http_response_code(405); echo json_encode(['ok' => false, 'erro' => 'Use POST.']); exit; }
 if (!is_array($dados)) { http_response_code(400); echo json_encode(['ok' => false, 'erro' => 'JSON inválido.']); exit; }
 try {
-    echo json_encode(wa_ponte_sincronizar($dados), JSON_UNESCAPED_UNICODE);
+    $json = json_encode(wa_ponte_sincronizar($dados), JSON_UNESCAPED_UNICODE);
+    // Responde e fecha já: o que demora (IA, lembretes) roda depois, sem segurar o conector
+    ignore_user_abort(true);
+    header('Content-Length: ' . strlen($json));
+    header('Connection: close');
+    echo $json;
+    wa_ponte_liberar_resposta();
 } catch (Throwable $e) {
     error_log('GDS ponte: ' . $e->getMessage());
     http_response_code(500);

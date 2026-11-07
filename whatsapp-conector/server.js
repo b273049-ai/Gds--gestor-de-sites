@@ -55,17 +55,48 @@ async function versaoAtual(forcar = false) {
     return versaoWa || undefined;
 }
 
+const VERSAO = '1.3.0';
+const INICIO = Date.now();
+const NO_ANDROID = String(process.env.PREFIX || '').includes('com.termux') || fs.existsSync('/data/data/com.termux');
+
+// O processo com esse número é mesmo um conector? (no Android o número de um processo morto é reaproveitado
+// por outro app; sem essa conferência o conector novo achava que "já tinha um rodando" e não ligava mais)
+function ehConector(pid) {
+    try { process.kill(pid, 0); } catch { return false; }
+    try { return /server\.js|gds-whatsapp|whatsapp-conector/.test(fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')); }
+    catch { return process.platform === 'win32'; } // sem /proc para ler: só confia no Windows (lá não há esse reaproveitamento rápido)
+}
+
 // Um conector só por pasta: dois rodando com o mesmo login ficam se derrubando (erro 440)
+// Também descobre como o anterior terminou: trava esquecida = foi fechado à força (Android, falta de energia…)
+let fimAnterior = null;   // null = primeira vez | { forcado, parado_seg }
 function travarProcesso() {
     const arq = path.join(DADOS, 'conector.pid');
-    try {
-        const pid = Number(fs.readFileSync(arq, 'utf8'));
-        if (pid && pid !== process.pid) { try { process.kill(pid, 0); console.log(`\n⚠ Já tem um conector rodando (processo ${pid}). Feche o outro Termux/janela: dois ao mesmo tempo ficam derrubando a conexão.\n`); process.exit(1); } catch { /* processo antigo já morreu */ } }
-    } catch { /* sem trava */ }
+    const vivo = path.join(DADOS, 'vivo.txt');
+    let ultimoSinal = 0;
+    try { ultimoSinal = Number(fs.readFileSync(vivo, 'utf8')) || 0; } catch { /* primeira vez */ }
+    let pid = 0;
+    try { pid = Number(fs.readFileSync(arq, 'utf8')); } catch { /* sem trava */ }
+    if (pid && pid !== process.pid) {
+        if (ehConector(pid)) { console.log(`\n⚠ Já tem um conector rodando (processo ${pid}). Feche o outro Termux/janela: dois ao mesmo tempo ficam derrubando a conexão.\n`); process.exit(1); }
+        fimAnterior = { forcado: true };
+    } else if (ultimoSinal) fimAnterior = { forcado: false };
+    if (fimAnterior && ultimoSinal) fimAnterior.parado_seg = Math.max(0, Math.round((Date.now() - ultimoSinal) / 1000));
     fs.writeFileSync(arq, String(process.pid));
     process.on('exit', () => { try { if (Number(fs.readFileSync(arq, 'utf8')) === process.pid) fs.unlinkSync(arq); } catch { /* ignore */ } });
+    // "Ainda estou vivo" a cada minuto: no próximo início dá para saber quanto tempo ficou parado
+    const marcar = () => { try { fs.writeFileSync(vivo, String(Date.now())); } catch { /* ignore */ } };
+    marcar(); setInterval(marcar, 60000).unref();
 }
 travarProcesso();
+
+// ---------- Histórico para o site (Admin → WhatsApp → Saúde da conexão) ----------
+const eventos = [];
+function registrar({ em, ...e }) {
+    eventos.push({ ...e, em: Math.floor((em || Date.now()) / 1000) });   // em: milissegundos → segundos
+    if (eventos.length > 200) eventos.splice(0, eventos.length - 200);
+}
+if (fimAnterior) registrar({ tipo: 'reiniciou', forcado: fimAnterior.forcado, seg: fimAnterior.parado_seg || 0 });
 // Um erro solto não pode derrubar o conector inteiro
 process.on('unhandledRejection', (e) => console.log(new Date().toISOString().slice(0, 19), 'erro ignorado:', e?.message || e));
 process.on('uncaughtException', (e) => console.log(new Date().toISOString().slice(0, 19), 'erro ignorado:', e?.message || e));
@@ -132,32 +163,61 @@ async function iniciar(nome, numeroPareamento = '') {
         if (u.connection === 'open') {
             inst.estado = 'open'; inst.qr = inst.qrBase64 = inst.pareamento = inst.numeroPareamento = null; inst.tentativas = 0;
             inst.dono = sock.user?.id || null;
+            inst.confirmarSaida = 0;
             log(nome, 'conectado', (inst.dono || '').split(':')[0]);
+            if (inst.caiuEm) {
+                registrar({ tipo: 'conectou', inst: nome, seg: Math.round((Date.now() - inst.caiuEm) / 1000), codigo: inst.ultimoCodigo || null });
+                inst.caiuEm = null; inst.ultimoRegistro = null;
+            }
         }
         if (u.connection === 'close') {
             const codigo = u.lastDisconnect?.error?.output?.statusCode;
+            const motivo = String(u.lastDisconnect?.error?.message || '').slice(0, 120);
+            const estavaAberta = inst.estado === 'open';
             inst.estado = 'close'; inst.sock = null;
             if (inst.parado) return;
             if (codigo === DisconnectReason.loggedOut) {
+                // O aviso de "saiu" às vezes chega numa queda comum: confere uma vez antes de apagar o login
+                // (sem login salvo só lendo o QR de novo). Se o WhatsApp repetir, aí sim era saída de verdade.
+                if (!inst.confirmarSaida && jaLogado(nome)) {
+                    inst.confirmarSaida = 1;
+                    if (!inst.caiuEm) inst.caiuEm = Date.now();
+                    inst.ultimoCodigo = codigo;
+                    registrar({ tipo: 'caiu', inst: nome, codigo, det: motivo });
+                    log(nome, 'o WhatsApp avisou saída; conferindo de novo antes de apagar o login…');
+                    if (!inst.religar) inst.religar = setTimeout(() => { inst.religar = null; if (!inst.parado) iniciar(nome).catch((e) => log(nome, 'erro ao religar:', e.message)); }, 5000);
+                    return;
+                }
                 // Saiu pelo celular: apaga o login para gerar um QR novo da próxima vez
-                log(nome, 'desconectado pelo celular');
+                log(nome, 'desconectado pelo celular (o WhatsApp confirmou a saída)');
+                registrar({ tipo: 'deslogado', inst: nome, codigo, det: motivo });
                 fs.rmSync(pastaDe(nome), { recursive: true, force: true });
-                inst.dono = null;
+                inst.dono = null; inst.confirmarSaida = 0; inst.caiuEm = null;
                 return;
+            }
+            if (codigo !== DisconnectReason.restartRequired) {   // 515 = reinício normal logo depois de ler o QR
+                const tipo = codigo === DisconnectReason.connectionReplaced ? 'substituido' : codigo === 403 ? 'bloqueado' : 'caiu';
+                // Uma queda vira um registro (as tentativas seguintes não enchem o histórico)
+                if (estavaAberta || !inst.caiuEm || (tipo !== 'caiu' && inst.ultimoRegistro !== tipo)) registrar({ tipo, inst: nome, codigo, det: motivo });
+                inst.ultimoRegistro = tipo;
+                if (!inst.caiuEm) inst.caiuEm = Date.now();
+                inst.ultimoCodigo = codigo;
             }
             if (codigo === 405) await versaoAtual(true); // versão do WhatsApp Web velha: pega a nova
             if (codigo === DisconnectReason.connectionReplaced) log(nome, '⚠ Outro aparelho/conector abriu este mesmo número. Feche o outro (só um conector por número).');
+            if (codigo === 403) log(nome, '⚠ O WhatsApp recusou este número (403). Veja no celular do chip se há aviso de restrição.');
             agendarReligar(inst, codigo);
         }
     });
     return inst;
 }
 
-// Religa sozinho, cada vez esperando um pouco mais (2 s, 4 s, 8 s… até 1 min); nunca desiste
+// Religa sozinho, cada vez esperando um pouco mais (2 s, 4 s, 8 s, 16 s… até 30 s); nunca desiste
 function agendarReligar(inst, codigo) {
     if (inst.parado || inst.religar) return;
-    let atraso = codigo === DisconnectReason.restartRequired ? 500 : Math.min(60000, 2000 * 2 ** Math.min(inst.tentativas++, 5));
+    let atraso = codigo === DisconnectReason.restartRequired ? 500 : Math.min(30000, 2000 * 2 ** Math.min(inst.tentativas++, 4));
     if (codigo === DisconnectReason.connectionReplaced) atraso = Math.max(atraso, 30000);
+    if (codigo === 403) atraso = Math.max(atraso, 300000);   // número recusado: insistir rápido só piora
     log(inst.nome, `conexão caiu (código ${codigo ?? '?'}), religando em ${Math.round(atraso / 1000)}s`);
     inst.religar = setTimeout(() => {
         inst.religar = null;
@@ -174,6 +234,8 @@ setInterval(() => {
         const travado = inst.estado === 'connecting' && inst.sock && Date.now() - inst.ultimoEvento > 120000 && jaLogado(inst.nome);
         if (morto || travado) {
             log(inst.nome, morto ? 'a conexão morreu sem avisar; religando' : 'ficou travado conectando; religando');
+            registrar({ tipo: morto ? 'morto' : 'travado', inst: inst.nome });
+            if (!inst.caiuEm) inst.caiuEm = Date.now();
             const s = inst.sock; inst.sock = null; inst.estado = 'close';
             try { s.end(undefined); } catch { /* ignore */ }
             agendarReligar(inst, null);
@@ -410,6 +472,12 @@ let verificando = Promise.resolve();
 const removidas = new Set();    // números desconectados, para avisar o site uma vez
 let ultimoAviso = '';
 const avisar = (msg) => { if (msg !== ultimoAviso) { log(msg); ultimoAviso = msg; } };
+let falhaSite = null;           // desde quando o site não responde (vira um registro quando voltar)
+function anotarFalhaSite(det) {
+    falhaSite ??= { desde: Date.now(), n: 0 };
+    falhaSite.n++; falhaSite.det = det;
+}
+const infoConector = () => ({ versao: VERSAO, inicio: Math.floor(INICIO / 1000), plataforma: NO_ANDROID ? 'android' : process.platform, node: process.version });
 
 async function voltaPonte(p) {
     const estados = [...instancias.values()].map((i) => ({
@@ -421,21 +489,33 @@ async function voltaPonte(p) {
     const lote = resultados.splice(0);
     const loteVerif = verificacoes.splice(0);
     const loteRec = recebidas.splice(0, 100);
+    // O site esteve fora/lento por um tempo: conta agora que ele voltou a responder
+    if (falhaSite && Date.now() - falhaSite.desde >= 20000 && !falhaSite.contado) {
+        registrar({ tipo: 'site_falhou', em: falhaSite.desde, seg: Math.round((Date.now() - falhaSite.desde) / 1000), n: falhaSite.n, det: falhaSite.det });
+        falhaSite.contado = true;
+    }
+    const loteEv = eventos.splice(0, 100);
+    const devolver = () => { resultados.unshift(...lote); verificacoes.unshift(...loteVerif); recebidas.unshift(...loteRec); eventos.unshift(...loteEv); };
     let r;
     try {
         const resp = await fetch(p.url, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-GDS-Chave': p.chave },
-            body: JSON.stringify({ chave: p.chave, estados, resultados: lote, verificacoes: loteVerif, recebidas: loteRec }), signal: AbortSignal.timeout(25000),
+            body: JSON.stringify({ chave: p.chave, estados, resultados: lote, verificacoes: loteVerif, recebidas: loteRec, eventos: loteEv, info: infoConector() }),
+            signal: AbortSignal.timeout(30000),
         });
         r = await resp.json().catch(() => null);
-        if (!resp.ok || !r || !r.ok) { resultados.unshift(...lote); verificacoes.unshift(...loteVerif); recebidas.unshift(...loteRec); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
+        if (!resp.ok || !r || !r.ok) { devolver(); anotarFalhaSite('o site recusou (resposta ' + resp.status + ')'); avisar('⚠ O site recusou: ' + (r?.erro || `resposta ${resp.status}`)); return 15; }
     } catch (e) {
-        resultados.unshift(...lote);
-        verificacoes.unshift(...loteVerif);
-        recebidas.unshift(...loteRec);
-        avisar('⚠ Sem conexão com o site (' + e.message + '). Tentando de novo…');
+        devolver();
+        const demorou = e?.name === 'TimeoutError' || e?.name === 'AbortError';
+        const causa = String(e?.cause?.code || e?.cause?.message || e?.message);
+        const semNet = /ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|getaddrinfo/i.test(causa);
+        const siteFora = /ECONNREFUSED|ECONNRESET|EPIPE|socket hang up|other side closed/i.test(causa);
+        anotarFalhaSite(demorou ? 'o site demorou mais de 30 s para responder' : semNet ? 'sem internet' : siteFora ? 'o site não atendeu' : 'erro: ' + String(e?.message || e).slice(0, 80));
+        avisar('⚠ Sem conexão com o site (' + (demorou ? 'demorou demais' : e.message) + '). Tentando de novo…');
         return 10;
     }
+    falhaSite = null;
     avisar('✅ Conectado ao site. Pode gerar o QR code no painel do GDS.');
     // Quais números devem repassar as respostas que chegam (o site decide)
     const ouvir = new Set(Array.isArray(r.ouvir) ? r.ouvir : []);
@@ -478,7 +558,8 @@ async function voltaPonte(p) {
 }
 
 async function rodarPonte(p) {
-    log('Conector WhatsApp GDS no modo ponte →', p.url);
+    log(`Conector WhatsApp GDS ${VERSAO} no modo ponte →`, p.url);
+    if (fimAnterior?.forcado) log('⚠ Da última vez o conector foi fechado à força (o Android costuma fazer isso). Veja "Se o WhatsApp cair muito" no LEIA-ME.');
     for (;;) {
         const seg = await voltaPonte(p).catch((e) => { log('erro:', e.message); return 10; });
         await esperar(seg * 1000);
