@@ -101,7 +101,7 @@ foreach (wa_eventos() as $k => $ev) {
     if (isset($modGrupo[$g]) && !modulo_ativo($modGrupo[$g])) continue;
     $grupos[$g][$k] = $ev;
 }
-$statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pill-neutro'], 'enviando' => ['Enviando', 'pill-neutro'], 'erro' => ['Falhou', 'pill-aviso'], 'manual' => ['Envio manual', 'pill-neutro']];
+$statusMsg = ['enviado' => ['Enviada', 'pill-ok'], 'pendente' => ['Na fila', 'pill-neutro'], 'enviando' => ['Enviando', 'pill-neutro'], 'erro' => ['Falhou', 'pill-aviso'], 'manual' => ['Envio manual', 'pill-neutro'], 'expirado' => ['Não saiu (WhatsApp estava desligado)', 'pill-aviso']];
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
