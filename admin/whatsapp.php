@@ -207,7 +207,7 @@ if ($a['tipo'] === 'ponte') {
         <details style="margin-top:18px" open data-tipo="ponte"><summary class="link" style="cursor:pointer">Passo a passo: conector no celular Android ou no computador (grátis)</summary>
             <p class="dica">O conector fica num aparelho sempre ligado e <strong>busca</strong> as mensagens aqui no site a cada poucos segundos. Não precisa de outra hospedagem.</p>
             <?php $siteBase = rtrim(get_config('plataforma_url', '') ?: site_url_base_admin(), '/');
-                $cmdSempre = 'pkg update -y && pkg install -y nodejs-lts curl unzip termux-api && curl -fsSL -o ~/conector.zip ' . $siteBase . '/assets/conector/whatsapp-conector.zip'
+                $cmdSempre = 'apt update && apt -y -o Dpkg::Options::=--force-confnew full-upgrade && apt -y install nodejs-lts curl unzip termux-api && curl -fsSL -o ~/conector.zip ' . $siteBase . '/assets/conector/whatsapp-conector.zip'
                     . ' && mkdir -p ~/whatsapp-conector && unzip -o -q ~/conector.zip -d ~/whatsapp-conector && bash ~/whatsapp-conector/sempre-ligado.sh ' . $siteBase . ' ' . ($a['tipo'] === 'ponte' && $a['chave'] !== '' ? $a['chave'] : 'SUA_CHAVE'); ?>
             <p class="dica"><strong>Celular Android</strong> (um aparelho antigo serve, sempre no carregador e no Wi-Fi). O conector fica <strong>sempre ligado</strong>: liga sozinho quando o celular reinicia, religa se cair e um vigia o liga de novo se o Android fechá-lo.</p>
             <ol class="dica" style="line-height:1.8">

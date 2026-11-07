@@ -392,7 +392,8 @@ a cada agendamento, orçamento ou pedido novo.
   chave) para colar no Termux. Ele baixa o conector do próprio site (`assets/conector/whatsapp-conector.zip`), instala e
   roda o `sempre-ligado.sh`: liga sozinho quando o celular reinicia (Termux:Boot), religa em 5 s se parar, vigia do
   Android a cada 15 min (Termux:API) e nunca deixa dois rodando. `desligar.sh` desliga de vez. O passo a passo antigo
-  usava `npm start`, que rodava uma vez só e não voltava sozinho.
+  usava `npm start`, que rodava uma vez só e não voltava sozinho. O comando começa com `apt update && apt full-upgrade` (com `apt`, não `pkg`):
+  em Termux com pacotes atualizados pela metade o `pkg` quebrava com "CANNOT LINK EXECUTABLE curl".
   **Ao mudar o conector, gere de novo o zip** (`cd whatsapp-conector && zip -r ../gds/assets/conector/whatsapp-conector.zip
   server.js package.json package-lock.json LEIA-ME.md *.sh ligar-windows.bat ponte.txt Dockerfile`) e publique-o.
 
