@@ -371,6 +371,24 @@ a cada agendamento, orçamento ou pedido novo.
 4. Lembretes: rodam sozinhos com o uso do painel; para ficar pontual crie um **Cron Job** a cada 5 minutos
    com a URL mostrada em Admin → WhatsApp (`cron.php?chave=...`).
 
+### Conexão estável e "Saúde da conexão" (conector 1.3)
+- **A ponte responde na hora** (`api/whatsapp_ponte.php`): a IA do piloto da prospecção, os lembretes e as outras
+  rotinas rodam **depois** de responder ao conector. Antes, quando o piloto pedia texto à IA (até 40 s), a resposta
+  passava dos 25 s que o conector espera: ele achava que o site tinha caído e as mensagens daquela volta ficavam
+  presas 3 minutos. Medido: 28,4 s → instantâneo, com a mensagem da IA saindo na volta seguinte.
+- O painel só mostra "Conector desligado" depois de **75 s** sem notícia (antes 45 s, que piscava à toa).
+- **Admin → WhatsApp → Saúde da conexão:** situação do conector (versão, sistema, há quanto tempo está ligado) e do
+  número da plataforma, quedas e tempo fora do ar nas últimas 24 h, **a causa que mais derrubou com o que fazer**, e o
+  histórico das últimas quedas em português (internet oscilou, o Android fechou o Termux, outro conector abriu o mesmo
+  número, o WhatsApp desconectou o aparelho, o site não respondeu…). O site registra sozinho quando o conector some
+  (funciona até com o conector antigo); o conector 1.3 conta o resto. Guardado em `configuracoes`
+  (`wa_ponte_eventos`, `wa_ponte_info`), 7 dias — sem tabela nova.
+- **Conector 1.3** (`whatsapp-conector/`): confere duas vezes antes de apagar o login num aviso de "saiu" (evita ler o
+  QR de novo à toa), religa em no máximo 30 s, não fica mais travado "achando que já tem outro rodando" depois que o
+  Android o fecha à força, e mostra no Termux o ajuste certo para cada versão do Android. Para atualizar, troque só
+  `server.js` e `package.json` (o login continua). O painel avisa quando o conector está numa versão antiga
+  (`WA_CONECTOR_VERSAO` em `includes/whatsapp_ponte.php`).
+
 ## Pedidos de delivery pelo site
 Em negócios com a forma **Catálogo / delivery** (hamburgueria, pizzaria, açaí, loja…), cada item tem o botão
 **Adicionar** e aparece o carrinho: entrega ou retirada, endereço, taxa de entrega, pedido mínimo, forma de
