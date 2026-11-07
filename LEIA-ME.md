@@ -372,6 +372,11 @@ a cada agendamento, orçamento ou pedido novo.
    com a URL mostrada em Admin → WhatsApp (`cron.php?chave=...`).
 
 ### Conexão estável e "Saúde da conexão" (conector 1.3)
+- **Fila que não trava:** mensagem que não saiu em 24 h (o WhatsApp estava desconectado) vira **"expirado"** sozinha
+  (`wa_expirar_velhas()`, na rotina a cada 5 min) e não é mais reenviada — lembrete atrasado confunde o cliente. Antes ela
+  ficava "pendente" para sempre e o **piloto da prospecção parava de mandar** (ele espera a fila esvaziar): no site real
+  uma mensagem de 43 h travou o piloto quase 2 dias mostrando "Mandando". A tela agora mostra "Esperando a mensagem
+  anterior sair pelo WhatsApp" quando é isso que está segurando. "Expirado" não conta como falha do número.
 - **A ponte responde na hora** (`api/whatsapp_ponte.php`): a IA do piloto da prospecção, os lembretes e as outras
   rotinas rodam **depois** de responder ao conector. Antes, quando o piloto pedia texto à IA (até 40 s), a resposta
   passava dos 25 s que o conector espera: ele achava que o site tinha caído e as mensagens daquela volta ficavam

@@ -406,6 +406,24 @@ function wa_processar_fila($limite = 20) {
     return $n;
 }
 
+// Mensagem que não saiu em 24 h não sai mais (lembrete atrasado confunde o cliente) e não pode travar a fila:
+// vira "expirado" (não conta como falha do número) e o lead da prospecção volta para a fila do piloto.
+// Antes ela ficava "pendente" para sempre — a ponte e o reenvio ignoram mensagens com mais de 1 dia — e o
+// piloto da prospecção, que espera a fila esvaziar, parava de mandar.
+function wa_expirar_velhas() {
+    global $pdo;
+    try {
+        $velhas = $pdo->query("UPDATE whatsapp_mensagens SET status='expirado', ponte_em=NULL,
+                erro='Não saiu em 24 h (o WhatsApp estava desconectado); não foi reenviada para não chegar atrasada'
+            WHERE status IN ('pendente','enviando') AND criado_em < NOW() - INTERVAL '1 day' RETURNING id, ref_tipo")->fetchAll();
+    } catch (PDOException $e) { error_log('GDS expirar mensagens: ' . $e->getMessage()); return 0; }
+    $prosp = array_map(fn($m) => (int)$m['id'], array_filter($velhas, fn($m) => ($m['ref_tipo'] ?? '') === 'prospect'));
+    if ($prosp) {
+        try { $pdo->exec("UPDATE prospects SET envio_msg_id=NULL WHERE envio_msg_id IN (" . implode(',', $prosp) . ")"); } catch (PDOException $e) { /* coluna antiga */ }
+    }
+    return count($velhas);
+}
+
 // ---------- Rotina automática (lembretes + reenvios) ----------
 // Roda pelo cron (cron.php) e também "de carona" nos acessos ao painel, no máximo a cada 5 minutos.
 function wa_rotina($forcar = false) {
@@ -415,7 +433,7 @@ function wa_rotina($forcar = false) {
         if (time() - $ultima < 300) return ['pulou' => true];
     }
     set_config('wa_rotina_ultima', (string)time());
-    $res = ['lembretes' => 0, 'reenvios' => 0];
+    $res = ['lembretes' => 0, 'reenvios' => 0, 'expiradas' => wa_expirar_velhas()];
     try {
         $res['reenvios'] = wa_processar_fila();
         // Lembretes: agendamentos que começam dentro de N horas (padrão 24) e ainda não foram lembrados

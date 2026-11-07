@@ -160,7 +160,8 @@ function prosp_piloto_contagem() {
     return [
         'hoje' => $q("SELECT COUNT(*) FROM whatsapp_mensagens WHERE ref_tipo='prospect' AND evento='prosp_cadencia' AND status IN ('pendente','enviando','enviado') AND criado_em::date = CURRENT_DATE"),
         'hora' => $q("SELECT COUNT(*) FROM whatsapp_mensagens WHERE ref_tipo='prospect' AND evento='prosp_cadencia' AND status IN ('pendente','enviando','enviado') AND criado_em > NOW() - INTERVAL '1 hour'"),
-        'na_fila' => $q("SELECT COUNT(*) FROM whatsapp_mensagens WHERE ref_tipo='prospect' AND status IN ('pendente','enviando')"),
+        // (só as de menos de 1 dia: as mais velhas não saem mais e não podem travar o piloto — ver wa_expirar_velhas)
+        'na_fila' => $q("SELECT COUNT(*) FROM whatsapp_mensagens WHERE ref_tipo='prospect' AND status IN ('pendente','enviando') AND criado_em > NOW() - INTERVAL '1 day'"),
     ];
 }
 
@@ -379,7 +380,8 @@ function prosp_piloto_status() {
     $canal = prosp_piloto_canal();
     $situacao = !$c['ligado'] ? 'Desligado' : ($c['pausa'] ? 'Pausado' : (!$canal ? 'Aguardando o WhatsApp da plataforma conectar'
         : (!prosp_piloto_na_janela($c) ? 'Fora do horário — volta no próximo horário escolhido' : ($n['hoje'] >= prosp_piloto_limite_hoje($c) ? 'Limite de hoje atingido — continua amanhã'
-        : ($prox > time() ? 'Próxima mensagem por volta das ' . date('H:i', $prox) : 'Mandando')))));
+        : ($n['na_fila'] > 0 ? 'Esperando a mensagem anterior sair pelo WhatsApp'
+        : ($prox > time() ? 'Próxima mensagem por volta das ' . date('H:i', $prox) : 'Mandando'))))));
     $perfis = prosp_piloto_perfis();
     $perfilTxt = $perfis[$c['perfil']]['nome'] . ($c['perfil'] === 'auto' ? ' — agora no ' . $perfis[$c['efetivo']]['nome'] : '');
     return ['perfil' => $c['perfil'], 'perfil_txt' => $perfilTxt, 'ligado' => $c['ligado'], 'pausa' => $c['pausa'], 'situacao' => $situacao, 'hoje' => $n['hoje'], 'limite' => prosp_piloto_limite_hoje($c),
