@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
+// Segmento "Rastreamento de motoboys": a tela inicial é o mapa ao vivo
+if ((modulos_atuais()['empresa']['segmento_slug'] ?? '') === 'rastreio-motoboy') { header('Location: /empresa/rastreio.php'); exit; }
 require_once __DIR__ . '/../includes/painel_ramo.php';
 $empresaId = empresa_id_atual();
 

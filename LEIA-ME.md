@@ -586,6 +586,34 @@ num `<input type="hidden">`:
 - Acompanhamento do pedido: **previsão de entrega** ("até 20:35"), **cancelar** enquanto a loja não aceitou (devolve o
   estoque e avisa a loja) e **avaliar o pedido** com estrelas depois de entregue (vai para Avaliações, para aprovar).
 
+## Rastreamento de motoboys (segmento próprio, migração 35)
+Para quem já tem o cardápio/pedidos em outro sistema e quer só **acompanhar as entregas** (não liga em nada de pedido do GDS).
+Crie a empresa em Admin → Empresas com o segmento **"Rastreamento de motoboys"** (grupo "Entregas e logística").
+O painel dessa empresa fica enxuto: **Mapa ao vivo · Motoboys · Histórico · Loja e TV**. Qualquer outra empresa (ex.: um
+delivery) também pode ligar o módulo "Rastreamento de motoboys" em Configurações → Módulos.
+
+- **Motoboys:** nome, WhatsApp, PIN (4 a 8 números), veículo e cor no mapa — tudo com botões. "Enviar o app" abre o
+  WhatsApp do motoboy com o link pessoal dele (`/m/CÓDIGO`). "Link novo" desconecta o celular antigo; "Pausar" bloqueia.
+- **App do motoboy** (o próprio site da empresa, `sitegestor.com/slug`): entra com WhatsApp + PIN (no próximo acesso abre
+  direto), botões grandes **Saí para entregar → Entreguei → Voltei**, GPS ao vivo a cada ~8 s em rota, tela que não apaga
+  em rota (Wake Lock), rota no Google Maps, WhatsApp do cliente com o link pronto, "+ Nova entrega" e "instalar na tela
+  inicial" (PWA). O navegador só manda GPS com o app aberto na tela — é a limitação de qualquer app web.
+- **Mapa ao vivo da loja:** todos os motoboys deslizando no mapa (direção, rastro dos últimos 40 min, sinal, bateria,
+  velocidade, há quanto tempo está fora), contadores (em rota, voltando, na loja, entregues hoje, tempo médio), nova entrega
+  com link do cliente + botão do WhatsApp, trocar o motoboy, marcar entregue, cancelar e "Voltou" (se o celular dele morreu).
+- **Link do cliente** (`/r/CÓDIGO`): mapa com o motoboy, previsão de chegada, distância e etapas. Mostra a posição **só
+  enquanto a entrega dele está a caminho**; depois de entregue mostra "entregue"; quando o motoboy volta para a loja (botão
+  "Voltei" ou automático ao chegar perto da loja) o link **expira** (responde 410 "Este link expirou"). Segurança extra:
+  validade máxima de 2/4/6/12 h. O cliente nunca vê telefone nem sobrenome do motoboy.
+- **Mapa da TV** (`/tv/CÓDIGO`): tela cheia para a TV/computador da loja, relógio, contadores e lista dos motoboys, sem
+  nenhum dado de cliente. Gere/troque/desligue em "Loja e TV".
+- **Loja e TV:** marque a loja pelo GPS do aparelho, pelo endereço ou tocando no mapa; raio de "chegou na loja" (50–300 m).
+- **Mapas:** Leaflet + OpenStreetMap (sem chave e sem custo); endereços viram ponto no mapa pelo Nominatim, perto da loja,
+  com cache. O trajeto fica guardado 3 dias. Segurança: links de 32 caracteres aleatórios, PIN com hash, freio de tentativas
+  por aparelho e por motoboy (8 erros em 15 min bloqueiam aquele WhatsApp).
+- Arquivos: `includes/rastreio.php`, `api/rastreio.php`, `empresa/rastreio.php`, `site/motoboy.php`, `site/rastreio.php`,
+  `site/tv.php`, `assets/css/rastreio.css`, `assets/js/rastreio-*.js`; regras `/r/`, `/m/` e `/tv/` no `.htaccess`.
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)

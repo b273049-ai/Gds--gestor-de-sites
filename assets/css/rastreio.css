@@ -1,0 +1,231 @@
+/* ============================================================
+   RASTREAMENTO DE MOTOBOYS — app do motoboy, link do cliente, TV e mapa do painel
+   Conceito: asfalto + faixa amarela de estrada; tipografia Barlow (placas de rodovia).
+   Um elemento marcante: o mapa ao vivo com o motoboy deslizando e o pulso de "ao vivo".
+   ============================================================ */
+:root {
+  --rz-asfalto: #15171b; --rz-asfalto-2: #1d2026; --rz-asfalto-3: #272b33; --rz-linha: rgba(238, 240, 243, .1);
+  --rz-txt: #eef0f3; --rz-suave: #a7aeb9; --rz-faixa: #f5c518; --rz-faixa-txt: #1a1500;
+  --rz-ok: #34d399; --rz-rota: #f5c518; --rz-volta: #38bdf8; --rz-sem: #f87171;
+  --rz-raio: 14px; --rz-fonte: 'Barlow', system-ui, sans-serif; --rz-fonte-tit: 'Barlow Semi Condensed', 'Barlow', system-ui, sans-serif;
+}
+.rz { margin: 0; background: var(--rz-asfalto); color: var(--rz-txt); font-family: var(--rz-fonte); font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.rz *, .rz *::before, .rz *::after { box-sizing: border-box; }
+.rz h1, .rz h2, .rz h3 { font-family: var(--rz-fonte-tit); font-weight: 700; letter-spacing: -.01em; line-height: 1.1; margin: 0; }
+.rz :focus-visible { outline: 3px solid var(--rz-faixa); outline-offset: 2px; }
+.rz-num { font-variant-numeric: tabular-nums; }
+/* "hidden" sempre esconde (os botões e caixas daqui têm display próprio) */
+.rz [hidden], .rz-painel [hidden], .rz-ajustes [hidden] { display: none !important; }
+
+/* ---------- mapa ---------- */
+.rz-mapa { width: 100%; height: 100%; background: #0f1114; }
+.rz-mapa.leaflet-container { font-family: var(--rz-fonte); }
+.rz-escuro .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.5); }
+.rz-escuro .leaflet-control-attribution { background: rgba(21, 23, 27, .75); color: var(--rz-suave); }
+.rz-escuro .leaflet-control-attribution a { color: var(--rz-txt); }
+.rz-escuro .leaflet-bar a { background: var(--rz-asfalto-2); color: var(--rz-txt); border-color: var(--rz-linha); }
+
+/* motoboy no mapa: círculo com as iniciais, seta da direção e pulso quando ao vivo */
+.rz-moto { position: relative; width: 44px; height: 44px; }
+.rz-moto-pin { position: absolute; inset: 4px; border-radius: 50%; display: grid; place-items: center; font: 700 14px/1 var(--rz-fonte-tit);
+  color: #15171b; background: var(--cor, var(--rz-faixa)); border: 3px solid #15171b; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); z-index: 2; }
+.rz-moto-seta { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -31px 0 0 -7px; border: 7px solid transparent; border-bottom: 11px solid var(--cor, var(--rz-faixa));
+  transform-origin: 7px 31px; transform: rotate(var(--rumo, 0deg)); z-index: 1; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6)); }
+.rz-moto.sem-rumo .rz-moto-seta { display: none; }
+.rz-moto.ao-vivo::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--cor, var(--rz-faixa)); opacity: .45; animation: rz-pulso 1.8s ease-out infinite; }
+.rz-moto.sem-sinal .rz-moto-pin { filter: grayscale(1) brightness(.75); }
+.rz-moto-nome { position: absolute; left: 50%; top: 46px; transform: translateX(-50%); white-space: nowrap; padding: 2px 8px; border-radius: 999px;
+  background: rgba(21, 23, 27, .88); color: var(--rz-txt); font: 600 12px/1.5 var(--rz-fonte); border: 1px solid var(--rz-linha); }
+@keyframes rz-pulso { 0% { transform: scale(.7); opacity: .55; } 100% { transform: scale(1.9); opacity: 0; } }
+.rz-ponto { width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: grid; place-items: center; border: 3px solid #15171b; box-shadow: 0 6px 16px rgba(0, 0, 0, .4); }
+.rz-ponto span { transform: rotate(45deg); font-size: 14px; line-height: 1; }
+.rz-ponto-loja { background: var(--rz-txt); }
+.rz-ponto-destino { background: var(--rz-ok); }
+@media (prefers-reduced-motion: reduce) { .rz-moto.ao-vivo::before { animation: none; opacity: .25; transform: scale(1.3); } }
+
+/* ---------- peças comuns ---------- */
+.rz-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font: 600 13px/1.6 var(--rz-fonte); background: var(--rz-asfalto-3); color: var(--rz-txt); white-space: nowrap; }
+.rz-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--rz-suave); }
+.rz-chip[data-s="rota"]::before { background: var(--rz-rota); } .rz-chip[data-s="voltando"]::before { background: var(--rz-volta); }
+.rz-chip[data-s="loja"]::before { background: var(--rz-ok); } .rz-chip[data-s="sem"]::before { background: var(--rz-sem); }
+.rz-chip[data-s="entregue"]::before { background: var(--rz-ok); } .rz-chip[data-s="aguardando"]::before { background: var(--rz-suave); }
+.rz-vivo { display: inline-flex; align-items: center; gap: 7px; font: 600 13px/1 var(--rz-fonte); color: var(--rz-suave); }
+.rz-vivo::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--rz-ok); box-shadow: 0 0 0 0 rgba(52, 211, 153, .6); animation: rz-bate 1.6s infinite; }
+.rz-vivo.parado::before { background: var(--rz-sem); animation: none; }
+@keyframes rz-bate { 70% { box-shadow: 0 0 0 9px rgba(52, 211, 153, 0); } 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); } }
+@media (prefers-reduced-motion: reduce) { .rz-vivo::before { animation: none; } }
+.rz-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 12px; border: 0; cursor: pointer;
+  font: 700 16px/1 var(--rz-fonte); text-decoration: none; background: var(--rz-asfalto-3); color: var(--rz-txt); }
+.rz-btn:disabled { opacity: .5; cursor: not-allowed; }
+.rz-btn-faixa { background: var(--rz-faixa); color: var(--rz-faixa-txt); }
+.rz-btn-ok { background: var(--rz-ok); color: #052e1f; }
+.rz-btn-volta { background: var(--rz-volta); color: #04263a; }
+.rz-btn-linha { background: transparent; border: 1.5px solid var(--rz-linha); color: var(--rz-txt); }
+.rz-btn-grande { width: 100%; min-height: 64px; font-size: 20px; border-radius: 16px; }
+.rz-btn svg { width: 20px; height: 20px; }
+.rz-card { background: var(--rz-asfalto-2); border: 1px solid var(--rz-linha); border-radius: var(--rz-raio); padding: 16px; }
+.rz-mute { color: var(--rz-suave); }
+.rz-campo { display: grid; gap: 6px; margin-bottom: 12px; }
+.rz-campo label { font-weight: 600; font-size: 14px; color: var(--rz-suave); }
+.rz-campo input, .rz-campo textarea { width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 12px; border: 1.5px solid var(--rz-linha); background: var(--rz-asfalto); color: var(--rz-txt); font: 400 17px/1.4 var(--rz-fonte); }
+.rz-campo input:focus { border-color: var(--rz-faixa); outline: none; }
+.rz-aviso { padding: 12px 14px; border-radius: 12px; background: rgba(245, 197, 24, .12); border: 1px solid rgba(245, 197, 24, .35); color: #fde68a; font-size: 15px; }
+.rz-erro { padding: 12px 14px; border-radius: 12px; background: rgba(248, 113, 113, .12); border: 1px solid rgba(248, 113, 113, .4); color: #fecaca; font-size: 15px; }
+.rz-faixa-deco { height: 6px; background: repeating-linear-gradient(90deg, var(--rz-faixa) 0 28px, transparent 28px 46px); opacity: .9; }
+
+/* ---------- app do motoboy (celular) ---------- */
+.rz-app { min-height: 100svh; display: flex; flex-direction: column; }
+.rz-app-topo { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top));
+  background: rgba(21, 23, 27, .92); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rz-linha); }
+.rz-app-topo strong { font: 700 18px/1.1 var(--rz-fonte-tit); display: block; }
+.rz-app-topo small { color: var(--rz-suave); font-size: 13px; }
+.rz-app-topo .rz-vivo { margin-left: auto; }
+.rz-app-corpo { flex: 1; width: min(560px, 100%); margin: 0 auto; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); display: grid; gap: 14px; align-content: start; }
+.rz-status { display: grid; gap: 10px; padding: 18px; border-radius: 18px; background: var(--rz-asfalto-2); border: 1px solid var(--rz-linha); }
+.rz-status h1 { font-size: 30px; }
+.rz-status[data-s="rota"] { border-color: rgba(245, 197, 24, .5); box-shadow: inset 0 0 0 1px rgba(245, 197, 24, .2); }
+.rz-entrega { display: grid; gap: 10px; padding: 14px; border-radius: 14px; background: var(--rz-asfalto-2); border: 1px solid var(--rz-linha); }
+.rz-entrega-topo { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.rz-entrega h3 { font-size: 20px; }
+.rz-entrega .rz-end { color: var(--rz-suave); font-size: 15px; }
+.rz-entrega-acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rz-entrega-acoes .rz-btn-ok { grid-column: 1 / -1; }
+.rz-gps { font-size: 13px; color: var(--rz-suave); display: flex; gap: 12px; flex-wrap: wrap; }
+.rz-lista-vazia { text-align: center; padding: 22px 12px; color: var(--rz-suave); border: 1.5px dashed var(--rz-linha); border-radius: 14px; }
+.rz-dialogo { border: 0; padding: 0; background: transparent; width: min(520px, calc(100% - 24px)); color: var(--rz-txt); }
+.rz-dialogo::backdrop { background: rgba(0, 0, 0, .6); }
+.rz-dialogo form { background: var(--rz-asfalto-2); border: 1px solid var(--rz-linha); border-radius: 18px; padding: 18px; }
+
+/* ---------- entrada do app (site da empresa) ---------- */
+.rz-entrar { min-height: 100svh; display: grid; place-items: center; padding: 24px 16px; }
+.rz-entrar-caixa { width: min(420px, 100%); display: grid; gap: 18px; }
+.rz-entrar-caixa h1 { font-size: clamp(34px, 9vw, 46px); }
+.rz-marca { display: flex; align-items: center; gap: 12px; }
+.rz-marca img { width: 48px; height: 48px; border-radius: 12px; object-fit: cover; }
+
+/* ---------- link do cliente ---------- */
+.rz-cliente { height: 100svh; display: grid; grid-template-rows: 1fr auto; }
+.rz-cliente .rz-mapa { min-height: 0; }
+.rz-folha { position: relative; z-index: 500; margin-top: -18px; border-radius: 22px 22px 0 0; background: var(--rz-asfalto); border-top: 1px solid var(--rz-linha);
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); display: grid; gap: 12px; box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); }
+.rz-folha h1 { font-size: 26px; }
+.rz-eta { display: flex; align-items: baseline; gap: 8px; }
+.rz-eta strong { font: 700 44px/1 var(--rz-fonte-tit); color: var(--rz-faixa); }
+.rz-folha-linha { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--rz-suave); font-size: 15px; }
+.rz-folha-marca { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.rz-folha-marca img { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
+.rz-folha-marca .rz-vivo { margin-left: auto; }
+.rz-folha-marca .rz-vivo[hidden] { display: none; }
+.rz-folha .rz-btn { width: 100%; }
+.rz-passos { list-style: none; margin: 2px 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; counter-reset: p; }
+.rz-passos li { position: relative; padding-top: 12px; font-size: 13px; font-weight: 600; color: var(--rz-suave); }
+.rz-passos li::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; border-radius: 3px; background: var(--rz-asfalto-3); }
+.rz-passos li.feito::before { background: var(--rz-ok); }
+.rz-passos li.agora { color: var(--rz-txt); }
+.rz-passos li.agora::before { background: repeating-linear-gradient(90deg, var(--rz-faixa) 0 14px, rgba(245, 197, 24, .35) 14px 22px); background-size: 44px 5px; animation: rz-faixa 1.2s linear infinite; }
+@keyframes rz-faixa { to { background-position: 44px 0; } }
+@media (prefers-reduced-motion: reduce) { .rz-passos li.agora::before { animation: none; } }
+@media (min-width: 900px) {
+  .rz-cliente { grid-template-columns: 1fr 420px; grid-template-rows: 1fr; }
+  .rz-folha { margin: 0; border-radius: 0; border-top: 0; border-left: 1px solid var(--rz-linha); align-content: start; box-shadow: none; padding-top: 28px; }
+}
+.rz-expirado { min-height: 100svh; display: grid; place-items: center; text-align: center; padding: 24px; }
+.rz-expirado .rz-card { max-width: 420px; display: grid; gap: 10px; }
+
+/* ---------- TV ---------- */
+.rz-tv { height: 100vh; display: grid; grid-template-columns: 1fr minmax(300px, 24vw); grid-template-rows: auto 1fr; overflow: hidden; cursor: none; }
+.rz-tv-topo { grid-column: 1 / -1; display: flex; align-items: center; gap: 2vw; padding: 1.2vh 2vw; background: var(--rz-asfalto-2); border-bottom: 1px solid var(--rz-linha); }
+.rz-tv-topo h1 { font-size: clamp(22px, 2vw, 40px); }
+.rz-tv-relogio { margin-left: auto; font: 700 clamp(26px, 2.6vw, 52px)/1 var(--rz-fonte-tit); }
+.rz-tv-contas { display: flex; gap: 1.6vw; }
+.rz-tv-conta { display: grid; }
+.rz-tv-conta strong { font: 700 clamp(24px, 2.2vw, 46px)/1 var(--rz-fonte-tit); }
+.rz-tv-conta span { font-size: clamp(12px, .9vw, 18px); color: var(--rz-suave); }
+.rz-tv-lado { overflow: auto; padding: 1.2vw; display: grid; gap: 10px; align-content: start; border-left: 1px solid var(--rz-linha); background: var(--rz-asfalto); }
+.rz-tv-moto { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 12px; border-radius: 12px; background: var(--rz-asfalto-2); border: 1px solid var(--rz-linha); }
+.rz-tv-moto b { font: 700 clamp(16px, 1.25vw, 26px)/1.1 var(--rz-fonte-tit); display: block; }
+.rz-tv-moto small { color: var(--rz-suave); font-size: clamp(12px, .85vw, 17px); }
+.rz-tv.mexendo { cursor: auto; }
+.rz-tv > .rz-mapa { min-height: 0; }
+.rz-tv-nome { display: grid; gap: 4px; }
+.rz-tv-logo { width: clamp(40px, 3vw, 64px); height: clamp(40px, 3vw, 64px); border-radius: 12px; object-fit: cover; }
+.rz-tv-cheia { min-height: 40px; font-size: 14px; }
+@media (max-width: 860px) {
+  .rz-tv { height: auto; min-height: 100svh; grid-template-columns: 1fr; grid-template-rows: auto 62svh auto; overflow: visible; cursor: auto; }
+  .rz-tv-topo { flex-wrap: wrap; gap: 12px 18px; padding: 12px 16px; }
+  .rz-tv-contas { order: 3; flex-basis: 100%; justify-content: space-between; }
+  .rz-tv-lado { border-left: 0; border-top: 1px solid var(--rz-linha); padding: 16px; }
+}
+.rz-av { width: clamp(36px, 2.6vw, 52px); height: clamp(36px, 2.6vw, 52px); border-radius: 50%; display: grid; place-items: center; background: var(--cor); color: #15171b; font: 700 clamp(14px, 1vw, 20px)/1 var(--rz-fonte-tit); }
+
+/* ---------- mapa dentro do painel da empresa ---------- */
+.rz-painel { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.rz-painel-mapa { position: sticky; top: 12px; height: calc(100vh - 140px); min-height: 420px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border, rgba(255,255,255,.1)); }
+.rz-painel-lado { display: grid; gap: 14px; }
+.rz-linha-moto { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,.08)); }
+.rz-linha-moto:last-child { border-bottom: 0; }
+.rz-linha-entrega { padding: 10px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,.08)); display: grid; gap: 6px; }
+.rz-linha-entrega:last-child { border-bottom: 0; }
+.rz-linha-entrega .acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 1100px) { .rz-painel { grid-template-columns: 1fr; } .rz-painel-mapa { position: relative; top: 0; height: 58vh; } }
+.rz-painel .rz-caixa { margin: 0; padding: 16px 18px; }
+.rz-painel .rz-caixa h3 { font-size: 16px; margin-bottom: 6px; }
+.rz-mapa-selo { position: absolute; z-index: 500; left: 12px; bottom: 12px; display: flex; gap: 10px; align-items: center; padding: 7px 12px; border-radius: 999px; background: rgba(21, 23, 27, .86); border: 1px solid var(--rz-linha); backdrop-filter: blur(6px); font-size: 13px; }
+.rz-mapa-selo .rz-vivo { color: var(--rz-txt); }
+.rz-mapa-ajustar { position: absolute; z-index: 500; right: 12px; top: 12px; background: rgba(21, 23, 27, .86) !important; }
+.rz-abas .btn { text-decoration: none; }
+.rz-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.rz-kpis div { display: grid; gap: 2px; padding: 10px; border-radius: 12px; background: var(--surface, #121528); border: 1px solid var(--border, rgba(255,255,255,.1)); min-width: 0; }
+.rz-kpis strong { font: 700 24px/1 var(--rz-fonte-tit); }
+.rz-kpis div:first-child strong { color: var(--rz-faixa); }
+.rz-kpis span { font-size: 12px; color: var(--text-dim, #a0a6c8); line-height: 1.2; }
+.rz-kpis-claros { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin: 12px 0; }
+.rz-kpis-claros div { background: var(--surface-2, #181c35); }
+.rz-kpis-claros div:first-child strong { color: inherit; }
+.rz-primeiros ol { margin: 8px 0 0 20px; display: grid; gap: 6px; }
+.rz-primeiros li.feito { color: var(--text-dim, #a0a6c8); text-decoration: line-through; }
+.rz-primeiros a { color: var(--primary, #5b7cff); }
+.rz-escolha { display: flex; flex-wrap: wrap; gap: 6px; }
+.rz-escolha label, .rz-cores label { margin: 0 !important; cursor: pointer; }
+.rz-escolha input, .rz-cores input { position: absolute; opacity: 0; pointer-events: none; }
+.rz-escolha span { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border, rgba(255,255,255,.12)); color: var(--text, #e9ebf6); font-size: 13px; font-weight: 600; }
+.rz-escolha span i { width: 10px; height: 10px; border-radius: 50%; background: var(--cor); }
+.rz-escolha input:checked + span { background: var(--primary-btn, #4a63e8); border-color: var(--primary-btn, #4a63e8); color: #fff; }
+.rz-escolha input:focus-visible + span, .rz-cores input:focus-visible + span { outline: 3px solid var(--rz-faixa); outline-offset: 2px; }
+.rz-duas { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 520px) { .rz-duas { grid-template-columns: 1fr; } .rz-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.rz-pronto { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: rgba(52, 211, 153, .08); border: 1px solid rgba(52, 211, 153, .35); }
+.rz-pronto input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border, rgba(255,255,255,.12)); background: var(--bg, #0b0d18); color: var(--text, #fff); font: 500 14px/1.3 ui-monospace, monospace; }
+.rz-pronto-acoes, .rz-loja-botoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rz-loja-botoes { margin-top: 10px; }
+.rz-loja-botoes form { margin: 0; }
+.rz-linha-moto .rz-av, .form-box .rz-linha-moto button.rz-av { width: 38px; height: 38px; font-size: 14px; border: 0; cursor: pointer; padding: 0; margin: 0; background: var(--cor); color: #15171b; }
+.rz-linha-moto small, .rz-linha-entrega small { display: block; color: var(--text-dim, #a0a6c8); font-size: 12px; }
+.rz-linha-moto .rz-chip, .rz-linha-entrega .rz-chip { font-size: 12px; padding: 1px 8px; }
+.rz-linha-moto.foco { background: rgba(245, 197, 24, .07); border-radius: 10px; }
+.rz-linha-topo { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.rz-linha-topo small { display: inline; }
+.rz-quem { display: inline-flex !important; align-items: center; gap: 6px; margin: 0 !important; font-size: 12px !important; }
+.rz-quem select { padding: 4px 8px !important; font-size: 13px; width: auto !important; }
+.rz-motoboys, .rz-ajustes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.rz-ajustes #formLoja { grid-row: span 3; }
+.rz-motoboys .form-box, .rz-ajustes .form-box { margin: 0; }
+@media (max-width: 1000px) { .rz-motoboys, .rz-ajustes { grid-template-columns: 1fr; } .rz-ajustes #formLoja { grid-row: auto; } }
+.rz-cores { display: flex; flex-wrap: wrap; gap: 8px; }
+.rz-cores span { display: block; width: 34px; height: 34px; border-radius: 50%; background: var(--cor); border: 3px solid transparent; box-shadow: 0 0 0 1px rgba(255,255,255,.15); }
+.rz-cores input:checked + span { border-color: #fff; box-shadow: 0 0 0 2px var(--cor); }
+.rz-equipe { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+.rz-equipe li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: center; padding: 12px; border: 1px solid var(--border, rgba(255,255,255,.1)); border-radius: 12px; }
+.rz-equipe li.pausado { border-style: dashed; }
+.rz-equipe li.pausado .rz-av { filter: grayscale(1); }
+.rz-equipe .rz-av { width: 40px; height: 40px; font-size: 15px; }
+.rz-equipe small { display: block; color: var(--text-dim, #a0a6c8); font-size: 12px; }
+.rz-equipe-acoes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rz-equipe-acoes form { margin: 0; }
+.rz-dia { display: flex; gap: 6px; align-items: center; margin: 0; }
+.rz-loja-mapa { height: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border, rgba(255,255,255,.1)); cursor: crosshair; }
+.rz-busca { display: inline-flex; gap: 6px; flex: 1 1 260px; }
+.rz-busca input { flex: 1; min-width: 0; margin: 0 !important; }
+.rz-ajustes .ed-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+/* botões de formulário dentro das fileiras não herdam o espaço de cima do .form-box */
+.rz-loja-botoes button, .rz-equipe-acoes button, .rz-pronto-acoes button { margin-top: 0 !important; }
