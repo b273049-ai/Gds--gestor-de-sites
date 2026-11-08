@@ -1,12 +1,19 @@
 <?php
 $estudioLiberado = empresa_pode_usar_estudio((int)empresa_id_atual());
 $mods = modulos_atuais();
+$soRastreio = ($mods['empresa']['segmento_slug'] ?? '') === 'rastreio-motoboy';
 ?>
 <button class="sidebar-toggle" onclick="document.body.classList.toggle('sidebar-aberta')" aria-label="Abrir menu"><?= icone('menu', 20) ?></button>
 <div class="sidebar-overlay" onclick="document.body.classList.remove('sidebar-aberta')"></div>
 <aside class="sidebar">
-    <div class="sidebar-brand"><span class="brand-logo">G</span><div><strong>Meu Negócio</strong><small><?= e(atendimento_modos()[$mods['modo']]['nome'] ?? 'GDS') ?></small></div></div>
+    <div class="sidebar-brand"><span class="brand-logo">G</span><div><strong>Meu Negócio</strong><small><?= e($soRastreio ? 'Rastreamento de entregas' : (atendimento_modos()[$mods['modo']]['nome'] ?? 'GDS')) ?></small></div></div>
     <nav>
+        <?php if ($soRastreio):
+            // Segmento "Rastreamento de motoboys": painel enxuto, só o que a loja usa
+            $abaR = basename($_SERVER['PHP_SELF']) === 'rastreio.php' ? ($_GET['aba'] ?? 'mapa') : '';
+            foreach (['mapa' => ['mapa', 'Mapa ao vivo'], 'motoboys' => ['cracha', 'Motoboys'], 'historico' => ['historico', 'Histórico'], 'ajustes' => ['desktop', 'Loja e TV']] as $k => [$ic, $rot]): ?>
+            <a href="/empresa/rastreio.php<?= $k !== 'mapa' ? '?aba=' . $k : '' ?>" class="<?= $abaR === $k ? 'active' : '' ?><?= $k === 'mapa' ? ' destaque' : '' ?>"><?= icone($ic) ?><span><?= e($rot) ?></span></a>
+        <?php endforeach; else: ?>
         <?= menu_item('/empresa/index.php', 'index.php', 'dashboard', 'Dashboard') ?>
         <?= menu_item('/empresa/desempenho.php', 'desempenho.php', 'grafico', 'Desempenho') ?>
         <?php if ($estudioLiberado): ?><?= menu_item('/empresa/ia_estudio.php', 'ia_estudio.php', 'brilho', 'Estúdio IA', 'destaque') ?><?php else: ?><?= menu_item('/empresa/meu_site.php', 'meu_site.php', 'globo', 'Meu site') ?><?php endif; ?>
@@ -27,6 +34,8 @@ $mods = modulos_atuais();
         <?php if (modulo_ativo('equipe')): ?><?= menu_item('/empresa/profissionais.php', 'profissionais.php', 'cracha', 'Equipe') ?><?php endif; ?>
         <?php if (modulo_ativo('cupons')): ?><?= menu_item('/empresa/cupons.php', 'cupons.php', 'cupom', 'Cupons') ?><?php endif; ?>
         <?php if (modulo_ativo('avaliacoes')): ?><?= menu_item('/empresa/avaliacoes.php', 'avaliacoes.php', 'estrela', 'Avaliações') ?><?php endif; ?>
+        <?php if (modulo_ativo('rastreio')): ?><?= menu_item('/empresa/rastreio.php', 'rastreio.php', 'mapa', 'Rastreamento de motoboys') ?><?php endif; ?>
+        <?php endif; ?>
         <div class="sidebar-grupo">Conta</div>
         <?= menu_item('/empresa/dominio.php', 'dominio.php', 'globo', 'Meu domínio') ?>
         <?= menu_item('/empresa/assinatura.php', 'assinatura.php', 'cartao', 'Minha Assinatura') ?>

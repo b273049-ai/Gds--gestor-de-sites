@@ -5,7 +5,7 @@
 // de repetir). Assim ninguém precisa lembrar de colar SQL no Supabase
 // depois de atualizar os arquivos da plataforma.
 // ============================================================
-const GDS_SCHEMA_VERSAO = 34;
+const GDS_SCHEMA_VERSAO = 35;
 
 // versão => [arquivo, consulta que diz se ela já está aplicada]
 function gds_migracoes() {
@@ -35,6 +35,7 @@ function gds_migracoes() {
         32 => ['adicional_32_vendedor_ia.sql', $coluna('prospects', 'ia_tom') . " AND " . $coluna('empresas', 'indica_codigo') . " AND " . $coluna('prospects', 'ia_fechou_em')],
         33 => ['adicional_33_mp_link.sql', $coluna('pagamentos_assinaturas', 'link_pagamento')],
         34 => ['adicional_34_site_limpo.sql', $coluna('sites', 'visual') . " AND " . $coluna('sites', 'composicao') . " AND " . $coluna('sites', 'tom')],
+        35 => ['adicional_35_rastreio.sql', "to_regclass('public.rastreio_entregas') IS NOT NULL AND to_regclass('public.rastreio_pontos') IS NOT NULL AND " . $coluna('entregadores', 'app_token') . " AND " . $coluna('empresas', 'rastreio_validade') . " AND EXISTS (SELECT 1 FROM segmentos WHERE slug='rastreio-motoboy')"],
     ];
 }
 

@@ -39,6 +39,7 @@ function icone($nome, $tamanho = 18) {
         'lapis'     => '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
         'lixeira'   => '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
         'menu'      => '<path d="M3 6h18M3 12h18M3 18h18"/>',
+        'mapa'      => '<path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13M15 6.5v13"/>',
     ];
     return '<svg class="ico" data-icone="' . e($nome) . '" width="' . (int)$tamanho . '" height="' . (int)$tamanho . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($p[$nome] ?? '') . '</svg>';
 }

@@ -16,6 +16,7 @@ function modulos_catalogo() {
         'avaliacoes' => ['rotulo' => 'Avaliações', 'desc' => 'Clientes avaliam pelo site; você aprova o que aparece.', 'icone' => 'estrela'],
         'pix'        => ['rotulo' => 'Pagamento PIX', 'desc' => 'Cobrança PIX automática no agendamento (Mercado Pago).', 'icone' => 'cartao'],
         'imoveis'    => ['rotulo' => 'Imóveis', 'desc' => 'Vitrine de imóveis no site com filtros, fotos, ficha completa e agendamento de visita.', 'icone' => 'casa'],
+        'rastreio'   => ['rotulo' => 'Rastreamento de motoboys', 'desc' => 'App do motoboy com GPS ao vivo, mapa de todos na loja e na TV e link para o cliente acompanhar (expira quando o motoboy volta).', 'icone' => 'mapa'],
     ];
 }
 
@@ -33,6 +34,8 @@ function modulos_padrao($modo) {
 function modulos_da_empresa($empresa) {
     $modo = atendimento_modo_da_linha($empresa); // modo da empresa > do segmento > agendamento
     $ativos = array_fill_keys(modulos_padrao($modo), true);
+    // Segmento "Rastreamento de motoboys": o painel é só o rastreamento (o cardápio é de outro sistema)
+    if (($empresa['segmento_slug'] ?? '') === 'rastreio-motoboy') $ativos = ['rastreio' => true];
     // Ramos de imóveis já começam com a vitrine de imóveis
     if (in_array($empresa['segmento_slug'] ?? '', ['imobiliaria', 'construtora', 'loteamento', 'chales'], true)) $ativos['imoveis'] = true;
     $escolhas = json_decode((string)($empresa['modulos'] ?? ''), true) ?: [];

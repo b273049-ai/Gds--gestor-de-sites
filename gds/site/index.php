@@ -24,6 +24,14 @@ if (!$empresa && $slug !== '') {
 }
 
 $bloqueado = $empresa && in_array($empresa['status'], ['suspenso', 'cancelado'], true);
+// Segmento "Rastreamento de motoboys": o site é a entrada do app do motoboy (não depende de publicar o site)
+if ($empresa && !$bloqueado && ($empresa['segmento_slug'] ?? '') === 'rastreio-motoboy') {
+    session_write_close();
+    define('RASTREIO_SO_FUNCOES', true);
+    require __DIR__ . '/motoboy.php';
+    rastreio_pagina_entrada($empresa);
+    exit;
+}
 if (!$empresa || !pg_bool($empresa['publicado']) || $bloqueado) {
     http_response_code(404);
     $msg = $bloqueado ? 'Este site está temporariamente indisponível.' : 'Site não encontrado ou ainda não publicado.';
