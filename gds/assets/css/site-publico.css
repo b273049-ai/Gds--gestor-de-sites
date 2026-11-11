@@ -1,0 +1,353 @@
+/* Fontes carregadas via <link> no <head> do HTML (mais rápido que @import, que trava o carregamento) */
+
+:root {
+    --bg: #0b0e1f;
+    --surface: #12162e;
+    --surface-2: #1c2145;
+    --text: #eef0fa;
+    --text-dim: #9aa3c7;
+    --accent: #4f7cff;
+    --accent-2: #16213e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    line-height: 1.6;
+}
+
+h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; font-weight: 600; letter-spacing: -0.01em; }
+
+a { color: inherit; }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- NAV ---------- */
+.psite-nav {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 20px;
+    background: rgba(11,14,31,0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--surface-2);
+}
+.psite-brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; }
+.psite-brand img { height: 28px; width: 28px; border-radius: 6px; object-fit: cover; }
+.psite-nav-links { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.psite-nav-links::-webkit-scrollbar { display: none; }
+.psite-nav-links a {
+    flex-shrink: 0;
+    font-size: 14px; font-weight: 500; color: var(--text-dim);
+    padding: 8px 14px; border-radius: 8px; white-space: nowrap;
+}
+.psite-nav-links a:hover { color: var(--text); background: var(--surface); }
+.psite-nav-links a.psite-nav-ativo { color: var(--text); background: var(--surface); font-weight: 600; }
+
+/* ---------- TROCA DE PÁGINAS (em vez de scroll único) ---------- */
+.psite-page { display: none; }
+.psite-page.psite-page-ativa { display: block; animation: psite-rise 0.4s ease-out; }
+
+/* ---------- HERO ---------- */
+.psite-hero {
+    padding: 72px 24px 56px;
+    position: relative;
+    overflow: hidden;
+}
+.psite-hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 65%, var(--bg) 100%);
+    opacity: 0.18;
+    z-index: 0;
+}
+.psite-hero-inner {
+    position: relative; z-index: 1;
+    max-width: 720px;
+    animation: psite-rise 0.6s ease-out;
+}
+.psite-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--text-dim);
+    margin-bottom: 16px;
+}
+.psite-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.psite-hero h1 { font-size: clamp(32px, 6vw, 48px); line-height: 1.1; margin-bottom: 14px; }
+.psite-hero p { font-size: 17px; color: var(--text-dim); max-width: 480px; margin-bottom: 28px; }
+
+@keyframes psite-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.psite-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #fff;
+    font-weight: 600; font-size: 15px;
+    padding: 13px 22px; border-radius: 10px; border: none; cursor: pointer;
+}
+.psite-btn:hover { filter: brightness(1.08); }
+.psite-btn-outline {
+    background: transparent; border: 1px solid var(--surface-2); color: var(--text);
+}
+
+/* ============================================================
+   ESTILOS VISUAIS (layout mood) — mudam de verdade a cara do site,
+   não só a cor. Escolhido em Admin > Criar Site ou Empresa > Layout.
+   ============================================================ */
+
+/* ---- CLÁSSICO (padrão): hero à esquerda, tom tech discreto ---- */
+.layout-classico .psite-hero::before {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 65%, var(--bg) 100%);
+    opacity: 0.18;
+}
+.layout-classico .psite-hero-inner { text-align: left; }
+
+/* ---- BOLD: centralizado, tipografia enorme, bloco de cor forte ---- */
+.layout-bold .psite-hero { padding: 96px 24px 72px; text-align: center; }
+.layout-bold .psite-hero::before {
+    background: linear-gradient(180deg, var(--accent) 0%, var(--bg) 90%);
+    opacity: 0.32;
+}
+.layout-bold .psite-hero-inner { max-width: 780px; margin: 0 auto; }
+.layout-bold .psite-tag { justify-content: center; }
+.layout-bold .psite-hero h1 { font-size: clamp(40px, 8vw, 64px); }
+.layout-bold .psite-hero p { margin-left: auto; margin-right: auto; }
+.layout-bold .psite-btn { padding: 16px 32px; border-radius: 999px; font-size: 16px; }
+.layout-bold .psite-item { border-left: none; border-top: 3px solid var(--accent); }
+.layout-bold .psite-section h2 { text-align: center; }
+
+/* ---- EDITORIAL: serifa, layout assimétrico, régua fina ---- */
+.layout-editorial h1, .layout-editorial h2, .layout-editorial h3 { font-family: 'Fraunces', serif; font-weight: 600; }
+.layout-editorial .psite-hero::before { display: none; }
+.layout-editorial .psite-hero { border-bottom: 1px solid var(--surface-2); padding-bottom: 64px; }
+.layout-editorial .psite-hero-inner { max-width: 620px; }
+.layout-editorial .psite-hero h1 { font-size: clamp(34px, 6vw, 52px); font-style: normal; }
+.layout-editorial .psite-tag::before { content: '— '; }
+.layout-editorial .psite-grid { background: transparent; border: none; gap: 0; }
+.layout-editorial .psite-item { border-left: none; border-top: 1px solid var(--surface-2); padding: 22px 0; }
+.layout-editorial .psite-item:first-child { border-top: none; }
+.layout-editorial .psite-review { border-left: none; border-top: 1px solid var(--surface-2); padding-top: 16px; }
+
+/* ---- GRID: visual/foto em destaque, mosaico denso ---- */
+.layout-grid .psite-hero { padding: 0; }
+.layout-grid .psite-hero::before { display: none; }
+.layout-grid .psite-hero-grid { display: grid; grid-template-columns: 1.1fr 1fr; min-height: 380px; }
+.layout-grid .psite-hero-text { padding: 64px 40px; display: flex; flex-direction: column; justify-content: center; }
+.layout-grid .psite-hero-banner-wrap { position: relative; overflow: hidden; background: var(--surface); }
+.layout-grid .psite-hero-banner-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.layout-grid .psite-hero-banner-wrap::after {
+    content: ''; position: absolute; inset: 0;
+    background: var(--accent); mix-blend-mode: multiply; opacity: 0.35;
+}
+@media (max-width: 720px) { .layout-grid .psite-hero-grid { grid-template-columns: 1fr; } .layout-grid .psite-hero-banner-wrap { height: 220px; } }
+.layout-grid .psite-item { border-left: none; border: 1px solid var(--surface-2); }
+.layout-grid .psite-grid { gap: 8px; background: transparent; border: none; }
+.layout-grid .psite-price { font-family: 'Space Grotesk', monospace; }
+
+/* ---------- QUICK FEATURES ---------- */
+.psite-features {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    padding: 0 24px 8px;
+}
+.psite-feature {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text-dim);
+    border: 1px solid var(--surface-2); border-radius: 999px;
+    padding: 7px 14px;
+}
+.psite-feature svg { width: 15px; height: 15px; stroke: var(--accent); flex-shrink: 0; }
+
+/* ---------- SECTIONS ---------- */
+.psite-section {
+    padding: 52px 24px;
+    border-top: 1px solid var(--surface-2);
+}
+.psite-section h2 {
+    font-size: 24px; margin-bottom: 22px;
+}
+.psite-section p.lead { color: var(--text-dim); max-width: 640px; }
+
+/* ---------- GRID / ITEMS (barra lateral colorida em vez de card com sombra) ---------- */
+.psite-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--surface-2);
+}
+.psite-item {
+    background: var(--bg);
+    padding: 20px;
+    border-left: 3px solid var(--accent);
+}
+.psite-item h3 { font-size: 16px; margin-bottom: 6px; }
+.psite-item p { font-size: 14px; color: var(--text-dim); }
+.psite-price { font-family: 'Space Grotesk', monospace; font-weight: 600; font-size: 17px; margin-top: 10px; display: block; }
+
+/* ---------- EQUIPE ---------- */
+.psite-team { display: flex; flex-wrap: wrap; gap: 28px; }
+.psite-person { text-align: center; width: 120px; }
+.psite-person img, .psite-person .avatar-fallback {
+    width: 76px; height: 76px; border-radius: 50%; object-fit: cover;
+    margin: 0 auto 10px; display: block;
+    background: var(--surface); border: 1px solid var(--surface-2);
+}
+.psite-person .avatar-fallback { display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-size: 22px; color: var(--accent); }
+.psite-person h3 { font-size: 14px; }
+.psite-person p { font-size: 12px; color: var(--text-dim); }
+
+/* ---------- GALERIA ---------- */
+.psite-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.psite-gallery img { width: 100%; height: 160px; object-fit: cover; }
+
+/* ---------- BLOCOS PERSONALIZADOS (conteúdo livre da empresa) ---------- */
+.psite-bloco {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 18px;
+    margin-bottom: 24px;
+}
+.psite-bloco h3 { font-size: 18px; margin-bottom: 8px; }
+.psite-bloco p { color: var(--text-dim); white-space: pre-wrap; }
+
+/* ---------- CUPONS ---------- */
+.psite-cupom {
+    border: 1px dashed var(--accent);
+    border-radius: 10px;
+    padding: 16px;
+}
+.psite-cupom strong { font-family: 'Space Grotesk', sans-serif; font-size: 16px; }
+
+/* ---------- AGENDAR / CONTATO (form) ---------- */
+.psite-form-wrap {
+    display: grid; grid-template-columns: 1fr 1.1fr; gap: 40px;
+    align-items: start;
+}
+@media (max-width: 720px) { .psite-form-wrap { grid-template-columns: 1fr; } }
+
+.psite-form, .gds-form {
+    background: var(--surface);
+    border: 1px solid var(--surface-2);
+    border-radius: 12px;
+    padding: 24px;
+}
+.psite-form label, .gds-form label { display: block; font-size: 13px; color: var(--text-dim); margin: 14px 0 6px; }
+.psite-form label:first-child, .gds-form label:first-child { margin-top: 0; }
+.psite-form input, .psite-form select, .psite-form textarea,
+.gds-form input, .gds-form select, .gds-form textarea {
+    width: 100%; padding: 11px; border-radius: 8px;
+    border: 1px solid var(--surface-2); background: var(--bg); color: var(--text);
+    font-family: inherit; font-size: 14px;
+}
+.psite-form input:focus, .psite-form select:focus, .psite-form textarea:focus,
+.gds-form input:focus, .gds-form select:focus, .gds-form textarea:focus {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.psite-form button, .gds-form button { margin-top: 18px; width: 100%; }
+
+.psite-success, .gds-msg-sucesso {
+    background: rgba(94,224,108,0.1); border: 1px solid rgba(94,224,108,0.3);
+    color: #5ee06c; padding: 14px 16px; border-radius: 10px; font-size: 14px;
+}
+.psite-error, .gds-msg-erro {
+    background: rgba(255,118,118,0.1); border: 1px solid rgba(255,118,118,0.3);
+    color: #ff7676; padding: 14px 16px; border-radius: 10px; font-size: 14px;
+}
+
+/* ---------- CALENDÁRIO DE AGENDAMENTO ---------- */
+.gds-calendario { border: 1px solid var(--surface-2); border-radius: 10px; padding: 14px; max-width: 320px; background: var(--surface); }
+.gds-cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.gds-cal-header button { background: none; border: 1px solid var(--surface-2); border-radius: 6px; width: 28px; height: 28px; cursor: pointer; font-size: 16px; color: var(--text); }
+.gds-cal-dias-semana { display: grid; grid-template-columns: repeat(7,1fr); text-align: center; font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+.gds-cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
+.gds-cal-dia { aspect-ratio: 1; border: none; border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; font-size: 13px; }
+.gds-cal-dia:hover:not(:disabled) { background: var(--surface-2); }
+.gds-cal-dia-passado { opacity: 0.25; cursor: not-allowed; }
+.gds-cal-dia-selecionado { background: var(--accent) !important; color: #fff; font-weight: 600; }
+#gds-cal-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------- CARTÃO DE CONCLUSÃO (agendamento/contato confirmados) ---------- */
+.gds-confirmacao { background: rgba(94,224,108,0.08); border: 1px solid rgba(94,224,108,0.35); border-radius: 12px; padding: 24px 20px; text-align: center; max-width: 420px; }
+.gds-confirmacao-icone { width: 48px; height: 48px; border-radius: 50%; background: #2f9e46; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto 12px; }
+.gds-confirmacao h3 { margin-bottom: 10px; }
+.gds-confirmacao-resumo { text-align: left; background: var(--surface-2); border-radius: 8px; padding: 12px 14px; margin: 12px 0; font-size: 14px; }
+.gds-confirmacao-resumo p { margin: 4px 0; color: var(--text); }
+.gds-confirmacao-acoes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.gds-btn-secundario { display: block; padding: 12px; border-radius: 8px; border: 1px solid var(--surface-2); text-decoration: none; color: var(--text); font-size: 14px; font-weight: 600; }
+.gds-btn-secundario:hover { background: var(--surface-2); }
+
+/* ---------- REFORÇO MOBILE (evita zoom no iOS, alvos de toque maiores) ---------- */
+@media (max-width: 480px) {
+  .gds-form input, .gds-form select, .gds-form textarea, .gds-form button,
+  .psite-form input, .psite-form select, .psite-form textarea, .psite-form button { font-size: 16px; }
+  .gds-calendario { max-width: 100%; padding: 10px; }
+  .gds-cal-dia { font-size: 12px; min-height: 36px; }
+  .gds-cal-header button { width: 36px; height: 36px; }
+  .psite-whatsapp-float, .gds-whatsapp-float { width: 50px; height: 50px; bottom: 14px; right: 14px; }
+  .gds-confirmacao { padding: 18px 14px; }
+  .gds-btn-secundario { padding: 14px; }
+  .psite-hero { padding-left: 20px; padding-right: 20px; }
+  .psite-nav { padding: 10px 14px; }
+}
+
+/* ---------- AVALIACOES ---------- */
+.psite-review {
+    border-left: 2px solid var(--surface-2);
+    padding: 4px 0 4px 16px;
+    margin-bottom: 18px;
+}
+.psite-review strong { font-size: 14px; }
+.psite-stars { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
+.psite-review p { font-size: 14px; color: var(--text-dim); margin-top: 4px; }
+
+/* ---------- FOOTER ---------- */
+.psite-footer {
+    padding: 32px 24px 100px;
+    border-top: 1px solid var(--surface-2);
+    color: var(--text-dim); font-size: 13px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+
+/* ---------- WHATSAPP FLUTUANTE ---------- */
+.psite-whatsapp-float {
+    position: fixed; bottom: 20px; right: 20px; z-index: 60;
+    width: 54px; height: 54px; border-radius: 50%;
+    background: #25D366; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+.psite-whatsapp-float svg { width: 26px; height: 26px; fill: #fff; }
+
+/* ---------- v2: horários livres/ocupados, avaliações pelo site, etc. ---------- */
+.psite-brand { text-decoration: none; color: var(--text); }
+.psite-preview-aviso { position: relative; z-index: 999; background: #4f7cff; color: #fff; text-align: center; padding: 6px; font-size: 13px; }
+.psite-dur { display: inline-block; margin-left: 10px; font-size: 13px; color: var(--text-dim); }
+.psite-horario { display: flex; align-items: center; gap: 8px; color: var(--text-dim); margin-top: 18px; font-size: 14px; }
+.psite-horario svg { width: 16px; height: 16px; stroke: var(--accent); }
+.psite-mapa { margin-top: 20px; border: 1px solid var(--surface-2); border-radius: 12px; overflow: hidden; }
+.psite-mapa iframe { display: block; filter: grayscale(.3) invert(.9) contrast(.85); }
+.psite-grid-cupons { background: transparent; border: none; gap: 12px; }
+.psite-cupom p { color: var(--text-dim); font-size: 13px; margin-top: 6px; }
+.gds-form { position: relative; }
+.gds-cal-header button { min-height: 0; margin: 0; padding: 0; width: 34px; height: 34px; }
+.gds-cal-dia { margin: 0 !important; padding: 0; width: auto !important; min-height: 34px; }
+.gds-horarios { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+.gds-horario { margin: 0 !important; width: auto !important; padding: 10px 4px; border-radius: 8px; border: 1px solid var(--surface-2); background: var(--bg); color: var(--text); cursor: pointer; font: inherit; font-size: 14px; }
+.gds-horario:hover:not(:disabled) { border-color: var(--accent); }
+.gds-horario-selecionado { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.gds-horario-ocupado { opacity: .35; text-decoration: line-through; cursor: not-allowed; }
+.gds-form > button[type=submit] { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 13px; font-weight: 600; font-size: 15px; cursor: pointer; }
+.gds-form > button[type=submit]:disabled { opacity: .5; cursor: not-allowed; }
+.gds-vazio { color: var(--text-dim); font-size: 14px; }
+.gds-avaliacoes { display: grid; gap: 18px; }
+.gds-avaliacao-item { border-left: 2px solid var(--surface-2); padding: 4px 0 4px 16px; }
+.gds-avaliacao-item strong { font-size: 14px; }
+.gds-stars { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
+.gds-avaliacao-item p { font-size: 14px; color: var(--text-dim); margin-top: 4px; }
+.gds-avaliar { margin-top: 26px; max-width: 460px; }
+.gds-avaliar summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 8px 0; }
+.gds-avaliar .gds-form { margin-top: 10px; }
+.gds-pix { margin-top: 14px; text-align: center; }
+.gds-whatsapp-float { position: fixed; bottom: 20px; right: 20px; z-index: 60; width: 54px; height: 54px; border-radius: 50%; background: #25D366; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+@media (prefers-reduced-motion: reduce) { .psite-page.psite-page-ativa, .psite-hero-inner { animation: none; } }
+.psite-nav-links a, .psite-btn, .psite-brand { text-decoration: none; }

@@ -1,0 +1,31 @@
+# Mantém a branch "hostinger" com o conteúdo da pasta gds/ na raiz.
+# A Hostinger (hPanel → Avançado → Git) puxa essa branch e atualiza o site.
+# Arquivos que não estão no Git (config/local.php, uploads/) nunca entram nela.
+name: Atualizar branch da Hostinger
+
+on:
+  push:
+    branches: [main, master, claude/platform-analysis-improvements-4icwxs]
+    paths: ['gds/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hostinger
+  cancel-in-progress: false
+
+jobs:
+  hostinger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Separar a pasta gds/ e enviar para a branch hostinger
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git subtree split --prefix=gds -b hostinger-novo
+          git push --force origin hostinger-novo:hostinger

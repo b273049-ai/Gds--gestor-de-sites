@@ -1,0 +1,42 @@
+Options -Indexes
+RewriteEngine On
+
+# Arquivos que nunca devem ser baixados pelo navegador
+RewriteRule ^(sql|includes|config)(/|$) - [F,L]
+RewriteRule (^|/)\.git - [F,L]
+RewriteRule \.(md|sql|log|bak)$ - [F,L,NC]
+
+# Prévia de site para prospect: /previa/CODIGO
+RewriteRule ^previa/([a-f0-9]+)/?$ site/previa.php?t=$1 [L,QSA]
+# Indique e ganhe: /indica/CODIGO
+RewriteRule ^indica/([a-f0-9]+)/?$ site/indica.php?c=$1 [L,QSA]
+# Rastreamento de motoboys: link do cliente /r/CODIGO, app do motoboy /m/CODIGO, mapa da TV /tv/CODIGO
+RewriteRule ^r/([a-f0-9]{32})/?$ site/rastreio.php?t=$1 [L,QSA]
+RewriteRule ^m/([a-f0-9]{32})/?$ site/motoboy.php?t=$1 [L,QSA]
+RewriteRule ^tv/([a-f0-9]{32})/?$ site/tv.php?t=$1 [L,QSA]
+
+# URL bonita: sitegestor.com/barbearia-do-ze -> site/index.php?slug=barbearia-do-ze
+# Só entra aqui se NÃO for um arquivo/pasta real (admin, empresa, assets, login.php etc continuam normais)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([a-zA-Z0-9\-]+)/?$ site/index.php?slug=$1 [L,QSA]
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # Ninguém coloca o painel dentro de um iframe de outro site (clickjacking)
+    Header always set X-Frame-Options "SAMEORIGIN"
+    # Só HTTPS por 1 ano (o navegador nem tenta o http://)
+    Header always set Strict-Transport-Security "max-age=31536000"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=()"
+    # Não conta para o mundo a versão do PHP
+    Header always unset X-Powered-By
+    Header unset X-Powered-By
+</IfModule>
+
+# O instalador só serve uma vez: depois que o admin existe, ele se bloqueia sozinho (veja install.php)
+<Files "install.php">
+    <IfModule mod_headers.c>
+        Header always set X-Robots-Tag "noindex"
+    </IfModule>
+</Files>
