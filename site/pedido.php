@@ -26,6 +26,8 @@ if (strlen($token) === 32) {
 
 // O cliente aprova o orçamento pela página
 $msg = '';
+// Cancelamento (devolve estoque) ou avaliação nova: o site em cache da empresa é refeito
+if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') gds_cache_invalidar((int)$p['empresa_id']);
 if ($p && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['aprovar'])) {
     if (!hash_equals($_SESSION['gds_pedido_csrf'] ?? '', (string)($_POST['k'] ?? ''))) $msg = 'Página expirada. Tente de novo.';
     elseif ($p['status'] !== 'orcado') $msg = 'Este orçamento não pode mais ser aprovado por aqui.';

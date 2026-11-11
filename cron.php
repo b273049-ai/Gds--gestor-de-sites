@@ -39,4 +39,8 @@ try { require_once __DIR__ . '/includes/marketing_ia.php'; $res += mkt_rotina();
 try { require_once __DIR__ . '/includes/mp_assinaturas.php'; $res += mp_rotina(); } catch (Throwable $e) { $res['mp'] = 'erro'; }
 // Caçadas de prospecção continuam mesmo com a tela fechada
 try { $res += prosp_rotina(); } catch (Throwable $e) { $res['prospeccao'] = 'erro'; }
+// Visitas e cliques dos sites que estão na fila vão para o banco
+try { require_once __DIR__ . '/includes/site_eventos.php'; $res['site_eventos'] = site_eventos_descarregar(); } catch (Throwable $e) { $res['site_eventos'] = 'erro'; }
+// Visitas das prévias que foram contadas em arquivo (página servida do cache) vão para o banco
+try { $res['previa_visitas'] = prosp_previa_descarregar_visitas(); } catch (Throwable $e) { $res['previa_visitas'] = 'erro'; }
 echo json_encode($res);

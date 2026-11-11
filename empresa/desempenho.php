@@ -4,6 +4,9 @@
 // mais vendidos e comissão por profissional).
 require_once __DIR__ . '/../includes/auth.php';
 exigir_login('empresa');
+// Visitas que ainda estão na fila (includes/site_eventos.php) entram no banco antes de contar
+require_once __DIR__ . '/../includes/site_eventos.php';
+try { site_eventos_descarregar(); } catch (Throwable $e) {}
 $empresaId = (int)empresa_id_atual();
 $mods = modulos_atuais();
 

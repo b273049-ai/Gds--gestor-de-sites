@@ -32,6 +32,7 @@ function exigir_login($role = null) {
     }
 
     gds_tratar_erros_painel();
+    gds_config_precarregar();
     gds_garantir_schema();
     wa_rotina_em_segundo_plano();
 
@@ -43,6 +44,9 @@ function exigir_login($role = null) {
         header('Location: ' . strtok($_SERVER['REQUEST_URI'] ?? '/', '?') . (isset($_GET['empresa_id']) ? '?empresa_id=' . (int)$_GET['empresa_id'] : ''));
         exit;
     }
+    // Alguém mudou alguma coisa no painel: o site em cache é refeito na próxima visita
+    // (a empresa refaz só o dela; o admin, que mexe em qualquer empresa, refaz todos)
+    if ($ehPost || $temAcaoGet) gds_cache_invalidar(($_SESSION['role'] ?? '') === 'admin' ? 0 : (int)empresa_id_atual());
 }
 
 // Erro inesperado numa tela do painel: em vez de página em branco, mostra o que houve
@@ -218,6 +222,7 @@ function empresa_pode_usar_estudio($empresaId) {
     }
 }
 
+require_once __DIR__ . '/cache_pagina.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/ia_helper.php';
 require_once __DIR__ . '/migracoes.php';

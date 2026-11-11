@@ -453,7 +453,7 @@ function site_script_eventos($empresa) {
          . 'function v(){try{var k="gds_v",x=localStorage.getItem(k);if(!x){x=Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem(k,x)}return x}catch(e){return""}}'
          . 'function env(t){var d=new FormData();d.append("e",E);d.append("t",t);d.append("v",v());d.append("r",document.referrer||"");d.append("u",location.search||"");'
          . 'if(navigator.sendBeacon)navigator.sendBeacon(U,d);else fetch(U,{method:"POST",body:d,keepalive:true})}'
-         . 'window.gdsEvento=env;env("visita");'
+         . 'window.gdsEvento=env;try{var kv="gds_vt"+E,n=Date.now();if(n-(+localStorage.getItem(kv)||0)>18e5){localStorage.setItem(kv,n);env("visita")}}catch(e){env("visita")}'
          . 'document.addEventListener("click",function(ev){var a=ev.target.closest&&ev.target.closest("a,button");if(!a)return;var t=a.getAttribute("data-ev"),h=a.getAttribute("href")||"";'
          . 'if(!t){if(/wa\\.me|whatsapp/i.test(h))t="whatsapp";else if(/^tel:/.test(h))t="ligar";else if(/maps/.test(h))t="rota";else if(/instagram\\.com/.test(h))t="instagram"}'
          . 'if(t)env(t)},true);'

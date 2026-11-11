@@ -39,6 +39,49 @@ function gds_migracoes() {
     ];
 }
 
+// ============================================================
+// CONFIGURAÇÕES NUMA CONSULTA SÓ
+// get_config() (config/db.php) busca uma chave por consulta; uma tela que lê 40 configurações fazia 40
+// idas ao banco. Aqui carregamos de uma vez todas as chaves pequenas para o mesmo cache que o get_config
+// usa. Chaves que o sistema já perguntou e não existem ficam anotadas (arquivo no cache) e também não
+// viram consulta. Valores grandes e famílias de cache (geo, fotos, contadores) continuam sob demanda.
+// Chamado só nas páginas (painel, site, prévia) — o cron e as pontes seguem lendo na hora.
+// ============================================================
+const GDS_CONFIG_FAMILIAS = '^(rast_geo_|rast_falhas_|prosp_geo_|fotos_cache_|prosp_mensagem_|prosp_resposta_|ia_api_key_|wa_wpp_token_)';
+
+function gds_config_precarregar() {
+    global $pdo;
+    static $feito = false;
+    if ($feito) return;
+    $feito = true;
+    try {
+        $linhas = $pdo->query("SELECT chave, CASE WHEN length(valor) <= 4000 THEN valor END AS valor FROM configuracoes WHERE chave !~ '" . GDS_CONFIG_FAMILIAS . "'")->fetchAll();
+    } catch (Throwable $e) { return; }
+    $cache = &$GLOBALS['gds_config_cache'];
+    $existe = [];
+    foreach ($linhas as $l) {
+        $existe[$l['chave']] = true;
+        // valor grande (NULL aqui) fica para o get_config buscar quando alguém pedir
+        if ($l['valor'] !== null && $l['valor'] !== '' && !array_key_exists($l['chave'], $cache)) $cache[$l['chave']] = $l['valor'];
+    }
+    // Chaves que o código costuma pedir e não estão no banco: já respondidas como "sem valor"
+    // (menos as 4 que o get_config completa com as constantes do config/db.php)
+    $pasta = function_exists('gds_cache_pasta') ? gds_cache_pasta() : null;
+    if (!$pasta) return;
+    $arq = $pasta . '/config_chaves.json';
+    $pedidas = (array)json_decode((string)@file_get_contents($arq), true);
+    $comConstante = ['ia_provider' => 1, 'ia_api_key' => 1, 'mercadopago_access_token' => 1, 'whatsapp_api_token' => 1];
+    foreach ($pedidas as $k) if (!isset($existe[$k]) && !isset($comConstante[$k]) && !array_key_exists($k, $cache)) $cache[$k] = null;
+    // No fim do pedido, anota as chaves novas que apareceram (acontece só nas primeiras visitas de cada tela)
+    register_shutdown_function(function () use ($arq, $pedidas) {
+        $agora = array_filter(array_keys((array)($GLOBALS['gds_config_cache'] ?? [])), fn($k) => is_string($k) && strlen($k) <= 80 && !preg_match('/' . GDS_CONFIG_FAMILIAS . '/', $k));
+        $novas = array_diff($agora, $pedidas);
+        if (!$novas || count($pedidas) > 1500) return;
+        $tudo = array_values(array_unique(array_merge($pedidas, $novas)));
+        if (@file_put_contents($arq . '.' . getmypid(), json_encode($tudo)) !== false) @rename($arq . '.' . getmypid(), $arq);
+    });
+}
+
 function gds_garantir_schema($forcar = false) {
     global $pdo;
     $atual = (int)get_config('schema_versao', '0');

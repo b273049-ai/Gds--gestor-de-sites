@@ -1,10 +1,18 @@
 <?php
 // Site público de cada empresa: /slug-da-empresa  (ou o domínio próprio dela)
-session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
-session_start();
+// Página pronta em cache: sai daqui mesmo, sem sessão e sem banco (veja includes/cache_pagina.php)
+require_once __DIR__ . '/../includes/cache_pagina.php';
+$gdsCache = gds_cache_abrir(gds_cache_partes_site());
+if ($gdsCache && $gdsCache['estado'] === 'SERVIDO') exit;
+// A sessão só é necessária para quem enviou um formulário (o resultado fica nela até a página seguinte)
+if (!$gdsCache) {
+    session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
+    session_start();
+}
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/site_render.php';
 require_once __DIR__ . '/../includes/migracoes.php';
+gds_config_precarregar();
 gds_garantir_schema();
 
 if (!function_exists('e')) {
@@ -26,10 +34,12 @@ if (!$empresa && $slug !== '') {
 $bloqueado = $empresa && in_array($empresa['status'], ['suspenso', 'cancelado'], true);
 // Segmento "Rastreamento de motoboys": o site é a entrada do app do motoboy (não depende de publicar o site)
 if ($empresa && !$bloqueado && ($empresa['segmento_slug'] ?? '') === 'rastreio-motoboy') {
-    session_write_close();
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
     define('RASTREIO_SO_FUNCOES', true);
     require __DIR__ . '/motoboy.php';
+    ob_start();
     rastreio_pagina_entrada($empresa);
+    gds_cache_finalizar($gdsCache, ob_get_clean(), (int)$empresa['id']);
     exit;
 }
 if (!$empresa || !pg_bool($empresa['publicado']) || $bloqueado) {
@@ -47,19 +57,21 @@ $dados = site_carregar_dados($empresa);
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $estado = site_processar_post($empresa, $dados);
     $_SESSION['gds_site_estado'][$empresa['id']] = $estado;
+    // Quem enviou o formulário vê a resposta dele (não a página em cache), e o site é refeito com o dado novo
+    setcookie('gds_fresco', '1', ['expires' => time() + 60, 'path' => '/', 'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
+    gds_cache_invalidar((int)$empresa['id']);
     $url = strtok($_SERVER['REQUEST_URI'] ?? '/', '#');
     header('Location: ' . $url . ($estado['pagina_forcada'] ? '#' . $estado['pagina_forcada'] : ''), true, 303);
     exit;
 }
 $estado = $_SESSION['gds_site_estado'][$empresa['id']] ?? site_estado_vazio();
-unset($_SESSION['gds_site_estado'][$empresa['id']]);
-session_write_close();
-
-header('X-Content-Type-Options: nosniff');
-header('Referrer-Policy: strict-origin-when-cross-origin');
-
-if (pg_bool($empresa['ia_modo_total'] ?? false) && !empty($empresa['html_gerado'])) {
-    echo site_render_ia($empresa, $dados, $estado);
-} else {
-    echo site_render_template($empresa, $dados, $estado);
+if (session_status() === PHP_SESSION_ACTIVE) {
+    unset($_SESSION['gds_site_estado'][$empresa['id']]);
+    session_write_close();
+    if (isset($_COOKIE['gds_fresco']) && !headers_sent()) setcookie('gds_fresco', '', ['expires' => time() - 3600, 'path' => '/']);
 }
+
+$html = pg_bool($empresa['ia_modo_total'] ?? false) && !empty($empresa['html_gerado'])
+    ? site_render_ia($empresa, $dados, $estado)
+    : site_render_template($empresa, $dados, $estado);
+gds_cache_finalizar($gdsCache, $html, (int)$empresa['id'], ['X-Content-Type-Options: nosniff', 'Referrer-Policy: strict-origin-when-cross-origin']);

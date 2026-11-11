@@ -23,6 +23,8 @@ if (strlen($token) === 32) {
 }
 
 $msg = '';
+// O cliente cancelou, confirmou ou remarcou: o site e os horários em cache da empresa são refeitos
+if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') gds_cache_invalidar((int)$ag['empresa_id']);
 if ($ag && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['cancelar'])) {
     if (!hash_equals($_SESSION['gds_cancel_csrf'] ?? '', (string)($_POST['k'] ?? ''))) {
         $msg = 'Página expirada. Tente de novo.';
