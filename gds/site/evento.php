@@ -1,7 +1,9 @@
 <?php
 // Endpoint público: registra uma visita ou um clique importante do site
 // (anônimo — só um id aleatório do navegador). Alimenta "Desempenho do site".
-require_once __DIR__ . '/../config/db.php';
+// O registro vai para um arquivo e segue para o banco em lote (includes/site_eventos.php): a visita não abre conexão.
+require_once __DIR__ . '/../includes/cache_pagina.php';
+require_once __DIR__ . '/../includes/site_eventos.php';
 header('Cache-Control: no-store');
 http_response_code(204);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') exit;
@@ -29,6 +31,18 @@ elseif ($ref !== '' && $ref !== strtolower((string)($_SERVER['HTTP_HOST'] ?? '')
 elseif ($ref !== '') $origem = 'interno';
 $dispositivo = preg_match('/Mobi|Android|iPhone|iPad/i', $ua) ? 'celular' : 'computador';
 
+if ($tipo === 'visita' && $origem === 'interno') exit;
+if (site_eventos_guardar($empresaId, $tipo, $visitante, $origem, $dispositivo)) {
+    // De minuto em minuto, um destes pedidos leva a fila para o banco (depois de já ter respondido ao navegador)
+    if (site_eventos_hora_de_descarregar()) {
+        gds_cache_responder_e_continuar();
+        require_once __DIR__ . '/../config/db.php';
+        site_eventos_descarregar();
+    }
+    exit;
+}
+// Sem pasta para a fila: grava direto, como antes
+require_once __DIR__ . '/../config/db.php';
 try {
     // Visita conta 1 vez a cada 30 min por pessoa; cliques, 1 vez por minuto do mesmo tipo
     $janela = $tipo === 'visita' ? '30 minutes' : '1 minute';

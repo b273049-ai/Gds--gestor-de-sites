@@ -8,6 +8,7 @@ require_once __DIR__ . '/site_fragmentos.php';
 require_once __DIR__ . '/agenda_helper.php';
 require_once __DIR__ . '/atendimento.php';
 require_once __DIR__ . '/whatsapp.php';
+require_once __DIR__ . '/cache_pagina.php';
 require_once __DIR__ . '/modulos.php';
 require_once __DIR__ . '/fotos.php';
 require_once __DIR__ . '/site_template.php';
@@ -59,7 +60,8 @@ function site_carregar_dados($empresa) {
     $d['mais_pedidos'] = [];
     try {
         $cont = [];
-        foreach ($q("SELECT itens FROM pedidos WHERE empresa_id=? AND tipo='delivery' AND status <> 'cancelado' AND criado_em > NOW() - INTERVAL '30 days' ORDER BY id DESC LIMIT 1500") as $r)
+        $temDelivery = in_array('delivery', modulos_da_empresa($empresa)['ativos'], true);
+        foreach ($temDelivery ? $q("SELECT itens FROM pedidos WHERE empresa_id=? AND tipo='delivery' AND status <> 'cancelado' AND criado_em > NOW() - INTERVAL '30 days' ORDER BY id DESC LIMIT 1500") : [] as $r)
             foreach ((array)json_decode((string)$r['itens'], true) as $i) if (!empty($i['id'])) $cont[(int)$i['id']] = ($cont[(int)$i['id']] ?? 0) + (int)($i['qtd'] ?? 1);
         arsort($cont);
         if (count($cont) >= 3) $d['mais_pedidos'] = array_slice(array_keys(array_filter($cont, fn($n) => $n >= 3)), 0, 3);

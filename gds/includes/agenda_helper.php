@@ -30,6 +30,9 @@ function agenda_config($empresa) {
 // Folgas/feriados: [ 'Y-m-d' => [null (empresa toda) | profissional_id, ...] ]
 function agenda_bloqueios($empresaId, $de, $ate) {
     global $pdo;
+    static $memoria = [];                       // a mesma página pede o mesmo período várias vezes
+    $chave = (int)$empresaId . '|' . $de . '|' . $ate;
+    if (isset($memoria[$chave])) return $memoria[$chave];
     try {
         $st = $pdo->prepare("SELECT data, profissional_id FROM agenda_bloqueios WHERE empresa_id=? AND data BETWEEN ?::date AND ?::date");
         $st->execute([$empresaId, $de, $ate]);
@@ -38,7 +41,7 @@ function agenda_bloqueios($empresaId, $de, $ate) {
     }
     $r = [];
     foreach ($st->fetchAll() as $b) $r[$b['data']][] = $b['profissional_id'] ? (int)$b['profissional_id'] : null;
-    return $r;
+    return $memoria[$chave] = $r;
 }
 
 // Dias do período em que a empresa inteira está fechada (folga/feriado)
@@ -74,9 +77,11 @@ function agenda_ocupacoes_do_dia($empresaId, $dataYmd) {
 
 function agenda_qtd_profissionais($empresaId) {
     global $pdo;
+    static $memoria = [];
+    if (isset($memoria[(int)$empresaId])) return $memoria[(int)$empresaId];
     $st = $pdo->prepare("SELECT COUNT(*) c FROM profissionais WHERE empresa_id=? AND ativo=true");
     $st->execute([$empresaId]);
-    return max(1, (int)$st->fetch()['c']);
+    return $memoria[(int)$empresaId] = max(1, (int)$st->fetch()['c']);
 }
 
 // O intervalo [ini, ini+dur) está livre? Com profissional: ninguém dele sobreposto.

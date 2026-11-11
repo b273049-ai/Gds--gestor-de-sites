@@ -5,19 +5,42 @@
 // fotos e avaliações reais do Google), com uma faixa "Quero este site".
 // Avisa o dono da plataforma quando o prospect abre ou pede o site.
 // ============================================================
-session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
-session_start();
+// Página pronta em cache (includes/cache_pagina.php): a prévia sai na hora, sem banco.
+require_once __DIR__ . '/../includes/cache_pagina.php';
+$token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['t'] ?? ''));
+$robo = preg_match('/bot|crawl|spider|preview|facebookexternalhit|whatsapp|telegram|slack|discord|headless|lighthouse/i', (string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+// A sessão só serve para saber se quem abriu é o admin (a visita dele não conta)
+$ehAdmin = false;
+if (isset($_COOKIE[session_name()])) {
+    session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
+    session_start(['read_and_close' => true]);
+    $ehAdmin = ($_SESSION['role'] ?? '') === 'admin';
+}
+$contaVisita = !$ehAdmin && !$robo;
+$soVisita = false;      // true = a página já foi entregue do cache; falta só gravar a visita
+$gdsCache = $token !== '' && !isset($_GET['quero']) && in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD'], true) ? gds_cache_abrir(['previa', $token]) : null;
+if ($gdsCache && $gdsCache['estado'] === 'SERVIDO') {
+    if (!$contaVisita) exit;
+    // A visita é contada em arquivo; o banco só é aberto na primeira visita ou 1 vez por minuto (o cron grava o resto)
+    gds_cache_contador_somar('pv_' . $token);
+    $gdsMarca = gds_cache_pasta() . '/pv_' . $token . '.ok';
+    if (is_file($gdsMarca) && time() - (int)filemtime($gdsMarca) < 60) exit;
+    @touch($gdsMarca);
+    gds_cache_responder_e_continuar();
+    $soVisita = true;
+}
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/site_render.php';
 require_once __DIR__ . '/../includes/migracoes.php';
 require_once __DIR__ . '/../includes/prospeccao.php';
+gds_config_precarregar();
 gds_garantir_schema();
 if (!function_exists('e')) { function e($s) { return htmlspecialchars((string)($s ?? ''), ENT_QUOTES, 'UTF-8'); } }
 
-$token = preg_replace('/[^a-f0-9]/', '', (string)($_GET['t'] ?? ''));
 $p = null;
 if ($token !== '') { $st = $pdo->prepare("SELECT * FROM prospects WHERE token=?"); $st->execute([$token]); $p = $st->fetch(); }
 if (!$p || $p['status'] === 'descartado') {
+    if ($soVisita) exit;
     http_response_code(404);
     echo '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Prévia indisponível</title></head>'
        . '<body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f5f6fa;color:#333;text-align:center;padding:20px"><div><h1 style="font-size:22px">Esta prévia não está mais disponível.</h1></div></body></html>';
@@ -25,8 +48,6 @@ if (!$p || $p['status'] === 'descartado') {
 }
 $marca = get_config('mkt_marca', '') ?: 'GDS Sites';
 $numeroVendas = preg_replace('/\D/', '', get_config('prosp_whatsapp_alerta', '') ?: get_config('mkt_whatsapp', ''));
-$ehAdmin = ($_SESSION['role'] ?? '') === 'admin';
-$robo = preg_match('/bot|crawl|spider|preview|facebookexternalhit|whatsapp|telegram|slack|discord|headless|lighthouse/i', (string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
 
 // "Quero este site": registra, avisa e abre o WhatsApp de quem vende
 if (isset($_GET['quero'])) {
@@ -40,11 +61,15 @@ if (isset($_GET['quero'])) {
 }
 
 // Registra a visita (sem contar o próprio admin nem as pré-visualizações de link do WhatsApp)
-if (!$ehAdmin && !$robo) {
-    $primeira = empty($p['previa_aberta_em']);
-    $pdo->prepare("UPDATE prospects SET previa_visitas=previa_visitas+1, previa_aberta_em=COALESCE(previa_aberta_em, NOW()), atualizado_em=NOW() WHERE id=?")->execute([$p['id']]);
-    if ($primeira) prosp_alertar("👀 {$p['nome']} acabou de abrir a prévia do site!\nÉ a hora de chamar: " . ($p['whatsapp'] ? 'https://wa.me/' . $p['whatsapp'] : ($p['telefone'] ?: '')));
+// O aviso "abriu a prévia" sai depois que a página foi entregue (não segura o carregamento de quem abriu).
+$alertaPrimeira = null;
+if ($contaVisita) {
+    $visitas = ($soVisita ? 0 : 1) + gds_cache_contador_pegar('pv_' . $token);      // esta visita + as contadas em arquivo
+    if ($visitas > 0) $pdo->prepare("UPDATE prospects SET previa_visitas=previa_visitas+?, previa_aberta_em=COALESCE(previa_aberta_em, NOW()), atualizado_em=NOW() WHERE id=?")->execute([$visitas, $p['id']]);
+    if (($gdsPasta = gds_cache_pasta())) @touch($gdsPasta . '/pv_' . $token . '.ok');
+    if (empty($p['previa_aberta_em'])) $alertaPrimeira = "👀 {$p['nome']} acabou de abrir a prévia do site!\nÉ a hora de chamar: " . ($p['whatsapp'] ? 'https://wa.me/' . $p['whatsapp'] : ($p['telefone'] ?: ''));
 }
+if ($soVisita) { if ($alertaPrimeira) prosp_alertar($alertaPrimeira); exit; }
 
 // ---------- monta o "site" do prospect ----------
 $seg = null;
@@ -104,5 +129,8 @@ if ($horario) {
     $html = preg_replace('#(<h3 class="pt-h3">Horário de atendimento</h3>).*?(</div></div></div></section>)#s', '$1' . str_replace('$', '\\$', $lista) . '$2', $html, 1);
 }
 $html = str_replace('</body>', '<aside aria-label="Aviso" style="text-align:center;font:13px system-ui,sans-serif;color:var(--suave,#5f5f5f);background:var(--bg,#fff);padding:18px 16px 110px;position:relative;z-index:1">Prévia de demonstração criada por ' . e($marca) . ' para ' . e($p['nome']) . '. Não é o site oficial da empresa.</aside></body>', $html);
-header('X-Robots-Tag: noindex, nofollow');
-echo $html;
+gds_cache_finalizar($gdsCache, $html, 0, ['X-Robots-Tag: noindex, nofollow']);
+if ($alertaPrimeira) {
+    if (empty($GLOBALS['gds_cache_ja_respondeu'])) gds_cache_responder_e_continuar();
+    prosp_alertar($alertaPrimeira);
+}

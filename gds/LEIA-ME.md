@@ -614,6 +614,25 @@ delivery) também pode ligar o módulo "Rastreamento de motoboys" em Configuraç
 - Arquivos: `includes/rastreio.php`, `api/rastreio.php`, `empresa/rastreio.php`, `site/motoboy.php`, `site/rastreio.php`,
   `site/tv.php`, `assets/css/rastreio.css`, `assets/js/rastreio-*.js`; regras `/r/`, `/m/` e `/tv/` no `.htaccess`.
 
+## Desempenho e carga (cache de página, teste com k6)
+Teste de carga feito com k6 numa réplica local (nginx + PHP-FPM + simulador do pooler do Supabase com a latência real e
+o limite de 15 conexões). Antes: erros a partir de ~300 usuários simultâneos (60% de erro com 1.000). Depois: zero erro
+até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms.
+- **Cache de página inteira** (`includes/cache_pagina.php`): site público e prévia saem prontos de um arquivo, sem sessão
+  e sem banco (45 s; até 5 min a cópia é servida e refeita em segundo plano). Mudança no painel, pedido, agendamento,
+  remarcação ou avaliação refaz as páginas da empresa na visita seguinte. Quem acabou de enviar um formulário nunca
+  recebe cache. Banco fora do ar ou lotado → o visitante recebe a última cópia (até 1 dia) em vez do erro 503.
+  Desligar: variável `GDS_CACHE=0`.
+- **Horários da agenda** (`site/horarios.php`) em cache por 20 s. **Estatística de visitas** (`site/evento.php`) vai para
+  uma fila em arquivo e entra no banco em lote (`includes/site_eventos.php`), cerca de 1 vez por minuto, ao abrir o
+  "Desempenho" e pelo cron. **Visitas da prévia** contadas em arquivo; o aviso "abriu a prévia" sai depois da página.
+- **Configurações numa consulta só** (`gds_config_precarregar()` em `includes/migracoes.php`): Prospecção caiu de 78
+  para 35 consultas, Marketing de 60 para 15.
+- Prévia não tenta mais baixar a cada visita a foto que o Google recusou (nova tentativa só após 6 h).
+- **Limite que depende do Supabase:** o site usa o pooler em modo Session (porta 5432), que aceita poucas conexões ao
+  mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
+  Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)

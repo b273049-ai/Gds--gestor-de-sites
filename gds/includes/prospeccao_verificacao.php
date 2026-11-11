@@ -321,13 +321,16 @@ function prosp_cor_marca($p) {
     // 2) Nome
     if (!$cor && ($cor = prosp_cor_do_nome($p['nome'] ?? ''))) $fonte = 'nome';
     // 3) Fotos reais do Google (fachada, placa, ambiente)
-    if (!$cor && function_exists('prosp_fotos_previa')) {
+    // (se as fotos já foram analisadas e não deram cor, não repete a análise a cada visita da prévia — só depois de 6 h)
+    $semCor = __DIR__ . '/../uploads/prospects/' . (int)($p['id'] ?? 0) . '/sem_cor';
+    if (!$cor && function_exists('prosp_fotos_previa') && !(is_file($semCor) && time() - (int)filemtime($semCor) < 21600)) {
         $contagem = [];
         foreach (array_slice(prosp_fotos_previa($p), 0, 3) as $u) {
             $arq = __DIR__ . '/..' . $u;
             if (is_file($arq) && ($c = prosp_cor_da_imagem(file_get_contents($arq)))) $contagem[] = $c;
         }
         if ($contagem) { $cor = $contagem[0]; $fonte = 'fotos'; }
+        elseif (is_dir(dirname($semCor))) @touch($semCor);
     }
     if ($cor && !empty($p['id'])) $pdo->prepare("UPDATE prospects SET cor=?, cor_fonte=? WHERE id=?")->execute([$cor, $fonte, $p['id']]);
     return $cor;

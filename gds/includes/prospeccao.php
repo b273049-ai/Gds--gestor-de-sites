@@ -9,6 +9,8 @@
 // Fontes: Google Places API (New) ou OpenStreetMap (grátis, sem chave).
 // ============================================================
 
+require_once __DIR__ . '/cache_pagina.php';
+
 function prosp_chave_google() {
     return get_config('google_places_key', '') ?: get_config('google_maps_key', '');
 }
@@ -383,23 +385,46 @@ function prosp_link_previa($p) {
 
 // Baixa (uma vez) as fotos reais do Google para a prévia
 function prosp_fotos_previa($p) {
+    static $memoria = [];                       // a prévia pede as fotos duas vezes (galeria e cor da marca)
+    $id = (int)($p['id'] ?? 0);
+    if (isset($memoria[$id])) return $memoria[$id];
     $nomes = array_values(array_filter((array)json_decode((string)($p['fotos'] ?? ''), true)));
-    if (!$nomes || prosp_chave_google() === '') return [];
-    $pasta = __DIR__ . '/../uploads/prospects/' . (int)$p['id'];
+    if (!$nomes || prosp_chave_google() === '') return $memoria[$id] = [];
+    $pasta = __DIR__ . '/../uploads/prospects/' . $id;
     $urls = [];
     foreach (array_slice($nomes, 0, 4) as $i => $nome) {
         $arq = "$pasta/$i.jpg";
         if (!is_file($arq)) {
             if (!is_dir($pasta) && !@mkdir($pasta, 0755, true)) break;
+            // Foto que o Google recusou (referência vencida, cota): não tenta de novo a cada visita da prévia —
+            // isso segurava a página por mais de 1 segundo. Nova tentativa só depois de 6 horas.
+            $falhou = "$pasta/$i.falhou";
+            if (is_file($falhou) && time() - (int)filemtime($falhou) < 21600) continue;
             $base = getenv('GDS_PLACES_BASE_URL') ?: 'https://places.googleapis.com';
-            [$code, $bytes, , $tipo] = prosp_http(rtrim($base, '/') . '/v1/' . $nome . '/media?' . http_build_query(['maxWidthPx' => 1600, 'key' => prosp_chave_google()]), null, [], 20);
-            if ($code !== 200 || !$bytes || !str_starts_with($tipo, 'image/')) continue;
+            [$code, $bytes, , $tipo] = prosp_http(rtrim($base, '/') . '/v1/' . $nome . '/media?' . http_build_query(['maxWidthPx' => 1600, 'key' => prosp_chave_google()]), null, [], 8);
+            if ($code !== 200 || !$bytes || !str_starts_with($tipo, 'image/')) { @touch($falhou); continue; }
             file_put_contents($arq, $bytes);
         }
-        $urls[] = '/uploads/prospects/' . (int)$p['id'] . "/$i.jpg";
+        $urls[] = '/uploads/prospects/' . $id . "/$i.jpg";
     }
     if (!is_file(__DIR__ . '/../uploads/.htaccess') && function_exists('img_ia_pasta')) img_ia_pasta('prospects');
-    return $urls;
+    return $memoria[$id] = $urls;
+}
+
+// Visitas das prévias contadas em arquivo (página servida do cache) → banco. Chamado pelo cron.
+function prosp_previa_descarregar_visitas() {
+    global $pdo;
+    $pasta = gds_cache_pasta();
+    if (!$pasta) return 0;
+    $total = 0;
+    foreach ((array)glob($pasta . '/pv_*.n') as $f) {
+        if (!preg_match('/pv_([a-f0-9]+)\.n$/', $f, $m)) continue;
+        $n = gds_cache_contador_pegar('pv_' . $m[1]);
+        if ($n < 1) continue;
+        $pdo->prepare("UPDATE prospects SET previa_visitas=previa_visitas+?, previa_aberta_em=COALESCE(previa_aberta_em, NOW()), atualizado_em=NOW() WHERE token=?")->execute([$n, $m[1]]);
+        $total += $n;
+    }
+    return $total;
 }
 
 // Serviços de exemplo do segmento (do cadastro de segmentos), sem preço inventado
