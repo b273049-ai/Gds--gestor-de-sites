@@ -55,7 +55,7 @@ async function versaoAtual(forcar = false) {
     return versaoWa || undefined;
 }
 
-const VERSAO = '1.3.1';
+const VERSAO = '1.3.2';
 const INICIO = Date.now();
 const NO_ANDROID = String(process.env.PREFIX || '').includes('com.termux') || fs.existsSync('/data/data/com.termux');
 
@@ -125,9 +125,18 @@ async function iniciar(nome, numeroPareamento = '') {
     inst.numeroPareamento = numeroPareamento || null;
     let sock;
     try {
+        const logado = jaLogado(nome);
+        // Login que ficou pela metade (código pedido e não digitado, QR não lido): começa do zero. Com o número
+        // já gravado e sem a conta, o WhatsApp recusa a entrada e nenhum QR/código novo aparece.
+        if (!logado && fs.existsSync(path.join(pastaDe(nome), 'creds.json'))) fs.rmSync(pastaDe(nome), { recursive: true, force: true });
         const { state, saveCreds } = await useMultiFileAuthState(pastaDe(nome));
         sock = makeWASocket({
-            auth: state, version: await versaoAtual(), logger: silencioso, browser: Browsers.ubuntu('GDS'),
+            auth: state, version: await versaoAtual(), logger: silencioso,
+            // Login novo se apresenta como Chrome (o pareamento por código é recusado com nome de navegador próprio);
+            // quem já estava conectado continua como estava.
+            browser: logado ? Browsers.ubuntu('GDS') : Browsers.ubuntu('Chrome'),
+            // Por código: cada rodada dura 90 s (em vez de 20 s) para dar tempo de digitar os 8 caracteres
+            ...(inst.numeroPareamento ? { qrTimeout: 90000 } : {}),
             printQRInTerminal: false, markOnlineOnConnect: false, syncFullHistory: false,
             connectTimeoutMs: 60000, keepAliveIntervalMs: 25000, defaultQueryTimeoutMs: 60000, retryRequestDelayMs: 500,
             getMessage: async () => undefined,
@@ -157,7 +166,13 @@ async function iniciar(nome, numeroPareamento = '') {
             inst.qrBase64 = await QRCode.toDataURL(u.qr, { margin: 1, width: 360 });
             // Pareamento por código (sem câmera): pede quando o socket está pronto para receber o QR
             if (inst.numeroPareamento && !inst.pareamento) {
-                try { inst.pareamento = await sock.requestPairingCode(inst.numeroPareamento); } catch (e) { log(nome, 'pareamento falhou:', e.message); }
+                try {
+                    inst.pareamento = await sock.requestPairingCode(inst.numeroPareamento);
+                    log(nome, `código de pareamento gerado para ${inst.numeroPareamento}`);
+                } catch (e) {
+                    log(nome, 'pareamento falhou:', e.message);
+                    registrar({ tipo: 'pareamento_falhou', inst: nome, det: String(e.message || '').slice(0, 120) });
+                }
             }
         }
         if (u.connection === 'open') {
@@ -219,9 +234,10 @@ function agendarReligar(inst, codigo) {
     if (codigo === DisconnectReason.connectionReplaced) atraso = Math.max(atraso, 30000);
     if (codigo === 403) atraso = Math.max(atraso, 300000);   // número recusado: insistir rápido só piora
     log(inst.nome, `conexão caiu (código ${codigo ?? '?'}), religando em ${Math.round(atraso / 1000)}s`);
+    const numero = inst.numeroPareamento || '';       // conexão por código ainda não concluída: continua por código
     inst.religar = setTimeout(() => {
         inst.religar = null;
-        if (!inst.parado) iniciar(inst.nome).catch((e) => log(inst.nome, 'erro ao religar:', e.message));
+        if (!inst.parado) iniciar(inst.nome, jaLogado(inst.nome) ? '' : numero).catch((e) => log(inst.nome, 'erro ao religar:', e.message));
     }, atraso);
 }
 
@@ -410,7 +426,7 @@ const servidor = http.createServer(async (req, res) => {
         if (grupo === 'instance' && acao === 'connect' && req.method === 'GET') {
             const numero = String(url.searchParams.get('number') || '').replace(/\D/g, '');
             let inst = instancias.get(nomeUrl);
-            if (numero && inst && inst.estado !== 'open' && inst.numeroPareamento !== numero) { await encerrar(nomeUrl, false); inst = null; }
+            if (numero && inst && inst.estado !== 'open' && inst.numeroPareamento !== numero && !jaLogado(nomeUrl)) { await encerrar(nomeUrl, false); inst = null; }
             if (!inst || inst.estado === 'close') inst = await iniciar(nomeUrl, numero);
             await aguardarQr(inst);
             return responder(res, 200, { base64: inst.qrBase64, code: inst.qr, pairingCode: inst.pareamento, instance: respostaInstancia(inst) });
@@ -443,7 +459,10 @@ const servidor = http.createServer(async (req, res) => {
 
 // Reconecta sozinho os números que já estavam logados (só os que chegaram a ler o QR)
 function jaLogado(nome) {
-    try { return !!JSON.parse(fs.readFileSync(path.join(pastaDe(nome), 'creds.json'), 'utf8')).me; } catch { return false; }
+    // Ao pedir o código de pareamento, a biblioteca já grava o número em "me" — antes de o celular confirmar.
+    // Só está logado de verdade quando o WhatsApp devolveu a conta (account), depois de ler o QR ou digitar o código.
+    // (pairingCode sem account = código pedido e ainda não confirmado; quem leu QR nunca tem pairingCode)
+    try { const c = JSON.parse(fs.readFileSync(path.join(pastaDe(nome), 'creds.json'), 'utf8')); return !!c.me && !(c.pairingCode && !c.account); } catch { return false; }
 }
 for (const nome of fs.readdirSync(SESSOES)) {
     if (nomeValido(nome) && jaLogado(nome)) iniciar(nome).catch((e) => log(nome, 'não reconectou:', e.message));
@@ -526,7 +545,7 @@ async function voltaPonte(p) {
         const inst = instancias.get(it.nome);
         if (it.acao === 'conectar') {
             const num = String(it.numero_pareamento || '').replace(/\D/g, '');
-            if (inst && inst.estado !== 'open' && num && inst.numeroPareamento !== num) await encerrar(it.nome, false);
+            if (inst && inst.estado !== 'open' && num && inst.numeroPareamento !== num && !jaLogado(it.nome)) await encerrar(it.nome, false);
             const atual = instancias.get(it.nome);
             if (!atual || atual.estado === 'close' || atual.parado) iniciar(it.nome, num).catch((e) => log(it.nome, 'erro:', e.message));
         } else if (it.acao === 'manter') {

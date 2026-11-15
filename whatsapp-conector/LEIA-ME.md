@@ -57,6 +57,12 @@ E não fica mais "travado" achando que já tem outro conector rodando depois que
 cada 15 min), `desligar.sh` para desligar de vez, trava para nunca rodar dois e registro (`conector.log`) que não enche
 o celular.
 
+**Versão 1.3.2 (conectar pelo número):** corrigido o "Conectar com o número de telefone (código)". Antes, depois do
+primeiro pedido de código o conector tratava o chip como já conectado; na religação seguinte (ou numa segunda tentativa)
+o WhatsApp recusava a entrada e nenhum código novo aparecia. Agora o login pela metade é descartado, o código vale
+90 s por rodada (antes 20 s), o pedido continua por código se a conexão cair antes de você digitar, e quem acabou de
+digitar o código não é derrubado no meio da entrada. Falha ao gerar o código aparece em "Saúde da conexão".
+
 **Para atualizar** (o login do WhatsApp continua, não precisa ler o QR de novo): no celular, rode de novo o comando
 pronto do painel. No computador: feche a janela, troque os arquivos pelos novos e abra o `ligar-windows.bat`.
 **Não apague a pasta `dados`.**
