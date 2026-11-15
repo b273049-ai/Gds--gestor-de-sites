@@ -11,7 +11,7 @@
 const WA_PONTE_ONLINE_SEG = 75;     // sem notícia do conector por mais que isso = desligado (45 s piscava à toa)
 const WA_PONTE_SUMIU_SEG = 90;      // lacuna maior que isso entra no histórico como "o conector sumiu"
 const WA_PONTE_PEDIDO_MIN = 4;      // um pedido de QR vale por 4 minutos
-const WA_CONECTOR_VERSAO = '1.3.1'; // versão atual do whatsapp-conector (o painel avisa quem está atrás)
+const WA_CONECTOR_VERSAO = '1.3.2'; // versão atual do whatsapp-conector (o painel avisa quem está atrás)
 
 // ---------- Histórico da conexão (Admin → WhatsApp → Saúde da conexão) ----------
 // Guardado em configuracoes (sem tabela nova): últimos 7 dias, no máximo 150 eventos.
@@ -30,7 +30,7 @@ function wa_ponte_registrar(array $novos) {
 
 // Evento que o conector conta (só os campos e tipos conhecidos)
 function wa_ponte_evento_limpo($e) {
-    $tipos = ['caiu', 'conectou', 'deslogado', 'substituido', 'bloqueado', 'morto', 'travado', 'reiniciou', 'site_falhou'];
+    $tipos = ['caiu', 'conectou', 'deslogado', 'substituido', 'bloqueado', 'morto', 'travado', 'reiniciou', 'site_falhou', 'pareamento_falhou'];
     if (!is_array($e) || !in_array($e['tipo'] ?? '', $tipos, true)) return null;
     $em = (int)($e['em'] ?? 0);
     if ($em < time() - 7 * 86400 || $em > time() + 120) $em = time();
@@ -59,6 +59,7 @@ function wa_ponte_motivo($e) {
         case 'reiniciou': return !empty($e['forcado'])
             ? ['O conector foi fechado à força', 'O programa parou sem se despedir' . (!empty($e['seg']) ? ' e ficou ' . wa_ponte_duracao($e['seg']) . ' parado' : '') . ': quase sempre é o Android encerrando o Termux para economizar bateria (ou o aparelho desligou).', $termux, 'grave']
             : ['O conector foi reiniciado', 'O programa foi ligado de novo (atualização ou reinício do aparelho).', '', 'info'];
+        case 'pareamento_falhou': return ['O código de pareamento não foi gerado', 'O WhatsApp não aceitou o pedido de código para o número informado.', 'Confira o número com DDD (o do chip que vai conectar) e toque em "Receber código" de novo. Se continuar, conecte pelo QR code.'];
         case 'deslogado': return ['O WhatsApp desconectou o aparelho', 'O WhatsApp confirmou duas vezes que este aparelho saiu (removido em "Aparelhos conectados", celular do chip sem internet por muitos dias, ou o WhatsApp desconfiou do uso).', 'Gere o QR code de novo e leia com o celular do chip. Se acontecer sempre, diminua o volume de mensagens da prospecção.', 'grave'];
         case 'substituido': return ['Outro conector abriu o mesmo número', 'Dois conectores (ou dois Termux) com o mesmo login ficam se derrubando.', 'Deixe só um conector ligado: feche o outro celular/computador ou a outra janela do Termux.', 'grave'];
         case 'bloqueado': return ['O WhatsApp recusou o número', 'O WhatsApp respondeu "proibido" (403): o número pode estar restrito ou banido.', 'Abra o WhatsApp no celular do chip e veja se há aviso de restrição. Pause a prospecção por alguns dias.', 'grave'];
