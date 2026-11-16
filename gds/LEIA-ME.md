@@ -341,6 +341,13 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - Para volume grande e oficial: API da Meta (WhatsApp Cloud) com modelo aprovado — cerca de R$ 0,30 a R$ 0,40 por
   mensagem de marketing no Brasil.
 
+### Mandar a 1ª mensagem para quem nunca recebeu
+Na Prospecção → aba "⚡ Fila de hoje", o botão **"✉ Só quem nunca recebeu mensagem"** mostra (com o total) só os leads
+com WhatsApp que ainda não receberam nenhuma mensagem — inclusive quem você só ligou —, sem os retornos do dia 2 e do
+dia 5, até 300 por vez: quem clicou em "Quero este site" e quem abriu a prévia primeiro, depois os mais quentes. É o
+mesmo "Enviar e próximo" de sempre (a 1ª mensagem sem link, com o teste A/B). Na aba Leads há o filtro
+"Nunca recebeu mensagem". Para mandar sozinho, com intervalo e limite por dia, use o Piloto automático.
+
 ## Ligações de prospecção (Admin → 📞 Ligações, migração 36)
 Tela para ligar para os leads com o roteiro na frente (`admin/ligacoes.php`, regras em `includes/prospeccao_ligacoes.php`).
 Também abre pelo botão "📞 Ligar com roteiro" em cada lead e na Fila de hoje da Prospecção.

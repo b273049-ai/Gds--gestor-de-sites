@@ -267,8 +267,15 @@ $f = $um("SELECT COUNT(*) FILTER (WHERE NOT tem_site) leads, COUNT(*) FILTER (WH
     COUNT(*) FILTER (WHERE NOT tem_site AND pontuacao >= 70 AND passo = 0 AND status='novo') quentes
     FROM prospects");
 $enviadosHoje = (int)$um("SELECT COUNT(*) c FROM prospects WHERE ultimo_envio_em::date = CURRENT_DATE")['c'];
+const PROSP_NUNCA_MSG = "COALESCE(passo,0) = 0 AND ultimo_envio_em IS NULL AND optout_em IS NULL AND COALESCE(whatsapp,'') <> '' AND NOT tem_site AND status NOT IN ('fechado','descartado')";
+$nuncaMsg = (int)$um("SELECT COUNT(*) c FROM prospects WHERE " . PROSP_NUNCA_MSG)['c'];
+$soNunca = ($_GET['fila'] ?? '') === 'nunca';
 // Fila do dia: quem abriu a prévia primeiro, depois quem tem retorno marcado para hoje, depois os novos mais quentes
-$fila = $pdo->query("SELECT * FROM prospects WHERE NOT tem_site AND status NOT IN ('fechado','descartado','negociando') AND COALESCE(whatsapp,'') <> ''
+// "Só quem nunca recebeu mensagem": a 1ª mensagem para todos os leads novos (inclusive quem você só ligou), sem os retornos
+$fila = $soNunca
+    ? $pdo->query("SELECT * FROM prospects WHERE " . PROSP_NUNCA_MSG . "
+        ORDER BY (quer_site_em IS NOT NULL) DESC, (previa_aberta_em IS NOT NULL) DESC, (verificado_em IS NOT NULL) DESC, pontuacao DESC, avaliacoes DESC, id LIMIT 300")->fetchAll()
+    : $pdo->query("SELECT * FROM prospects WHERE NOT tem_site AND status NOT IN ('fechado','descartado','negociando') AND COALESCE(whatsapp,'') <> ''
     AND ((passo = 0 AND status='novo') OR (passo BETWEEN 1 AND 2 AND proximo_contato <= CURRENT_DATE))
     ORDER BY (previa_aberta_em IS NOT NULL AND passo < 3) DESC, (proximo_contato <= CURRENT_DATE) DESC, (verificado_em IS NOT NULL) DESC, pontuacao DESC, avaliacoes DESC LIMIT 60")->fetchAll();
 $cacadas = $pdo->query("SELECT * FROM prospect_cacadas ORDER BY id DESC LIMIT 12")->fetchAll();
@@ -286,6 +293,7 @@ $fTemp = $_GET['temp'] ?? '';
 if ($fTemp === 'quente') $where[] = 'pontuacao >= 70'; elseif ($fTemp === 'morno') $where[] = 'pontuacao BETWEEN 45 AND 69'; elseif ($fTemp === 'frio') $where[] = 'pontuacao < 45';
 if (isset($_GET['abriu'])) $where[] = 'previa_aberta_em IS NOT NULL';
 if (isset($_GET['whats'])) $where[] = "COALESCE(whatsapp,'') <> ''";
+if (isset($_GET['nunca'])) $where[] = "COALESCE(passo,0) = 0 AND ultimo_envio_em IS NULL AND optout_em IS NULL";
 if (($fSeg = $_GET['seg'] ?? '') !== '') { $where[] = '(segmento_slug=? OR categoria=?)'; $par[] = $fSeg; $par[] = $fSeg; }
 if (($fCid = trim($_GET['cidade'] ?? '')) !== '') { $where[] = 'cidade ILIKE ?'; $par[] = "%$fCid%"; }
 if (($q = trim($_GET['q'] ?? '')) !== '') { $where[] = '(nome ILIKE ? OR categoria ILIKE ? OR bairro ILIKE ? OR busca ILIKE ?)'; array_push($par, "%$q%", "%$q%", "%$q%", "%$q%"); }
@@ -333,6 +341,11 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 .abas-p a.ativa { color: var(--text); border-color: var(--primary); }
 .abas-p a b { background: var(--primary-btn, #4a63e8); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 11px; margin-left: 4px; }
 .aba-p { display: none; } .aba-p.ativa { display: block; }
+.fila-modo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.fila-modo a { display: grid; gap: 1px; padding: 10px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-weight: 700; font-size: 14px; }
+.fila-modo a small { font-weight: 500; font-size: 12px; color: var(--text-dim); }
+.fila-modo a b { background: var(--primary-btn, #4a63e8); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 11px; margin-left: 4px; }
+.fila-modo a[aria-current] { border-color: var(--primary); background: var(--info-bg); box-shadow: 0 0 0 1px var(--primary) inset; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .kpis div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
 .kpis strong { display: block; font-size: 24px; } .kpis span { font-size: 12px; color: var(--text-dim); }
@@ -643,6 +656,10 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
 
     <!-- ================= FILA DE HOJE ================= -->
     <section class="aba-p" id="aba-fila">
+        <nav class="fila-modo" aria-label="Quem aparece na fila">
+            <a href="?aba=fila"<?= $soNunca ? '' : ' aria-current="page"' ?>>⚡ Fila de hoje <small>1ª mensagem + retornos do dia 2 e do dia 5</small></a>
+            <a href="?fila=nunca&amp;aba=fila"<?= $soNunca ? ' aria-current="page"' : '' ?>>✉ Só quem nunca recebeu mensagem <b><?= $nuncaMsg ?></b> <small>a 1ª mensagem para todos os leads novos</small></a>
+        </nav>
         <div class="form-box largo" style="margin-bottom:14px">
             <div class="barra-linha"><div class="rotulo"><span>Meta do dia: <strong id="feitosHoje"><?= $enviadosHoje ?></strong> de <?= $limiteDia ?> mensagens</span><span class="muted">acima disso o WhatsApp pode bloquear o número</span></div>
             <div class="barra-meta"><div id="barraMeta" style="width:<?= min(100, $pct($enviadosHoje, $limiteDia)) ?>%"></div></div></div>
@@ -670,7 +687,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
             <details class="respostas-prontas"><summary class="link">💬 Ele respondeu? Respostas prontas</summary>
                 <div class="chips-resp" data-alvo="sprint"><?php foreach ($respostas as $k => $r): ?><button type="button" class="btn btn-ghost btn-sm" data-chave="<?= e($k) ?>" onclick="PR.responder(this)"><?= e($r['rotulo']) ?></button><?php endforeach; ?></div></details>
         </div>
-        <div class="vazio-box" id="filaVazia" <?= $fila ? 'hidden' : '' ?>><?= icone('olho', 28) ?><p>Nada na fila agora. Rode uma <a class="link" href="#cacada" onclick="PR.aba('cacada')">caçada</a> para encher a base de empresas sem site.</p></div>
+        <div class="vazio-box" id="filaVazia" <?= $fila ? 'hidden' : '' ?>><?= icone('olho', 28) ?><p><?= $soNunca ? 'Todos os leads com WhatsApp já receberam a 1ª mensagem.' : 'Nada na fila agora.' ?> Rode uma <a class="link" href="#cacada" onclick="PR.aba('cacada')">caçada</a> para encher a base de empresas sem site.</p></div>
     </section>
 
     <!-- ================= CAÇADA ================= -->
@@ -740,6 +757,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
             <select name="temp"><option value="">Toda temperatura</option><option value="quente" <?= $fTemp === 'quente' ? 'selected' : '' ?>>🔥 Quentes</option><option value="morno" <?= $fTemp === 'morno' ? 'selected' : '' ?>>🌤 Mornos</option><option value="frio" <?= $fTemp === 'frio' ? 'selected' : '' ?>>❄ Frios</option></select>
             <label class="check"><input type="checkbox" name="abriu" <?= isset($_GET['abriu']) ? 'checked' : '' ?>> Abriu a prévia</label>
             <label class="check"><input type="checkbox" name="whats" <?= isset($_GET['whats']) ? 'checked' : '' ?>> Com WhatsApp</label>
+            <label class="check"><input type="checkbox" name="nunca" <?= isset($_GET['nunca']) ? 'checked' : '' ?>> Nunca recebeu mensagem</label>
             <button class="btn btn-ghost">Filtrar</button>
         </form>
         <p class="dica"><?= count($leads) ?> empresa(s) nesta lista<?= count($leads) >= 200 ? ' (mostrando as 200 melhores)' : '' ?>.</p>
