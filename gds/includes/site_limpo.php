@@ -134,6 +134,17 @@ function site_limpo_painel_vivo($empresa, $dados, $modo, $ctaHref) {
     return $link ? '<a class="lp-vivo" href="' . e(!empty($dados['imoveis']) && $modo !== 'agendamento' ? '#servicos' : $ctaHref) . '" data-ev="painel">' . $h . '</a>' : '<div class="lp-vivo">' . $h . '</div>';
 }
 
+// Matiz (0–359) de uma cor — usado no acabamento "Na cor da marca" (a sépia do CSS fica perto de 38°)
+function site_limpo_matiz($hex) {
+    $c = sscanf(ltrim((string)$hex, '#'), '%02x%02x%02x');
+    if (count(array_filter((array)$c, 'is_int')) < 3) return 38;
+    [$r, $g, $b] = array_map(fn($x) => $x / 255, $c);
+    $max = max($r, $g, $b); $min = min($r, $g, $b); $d = $max - $min;
+    if ($d < 0.0001) return 38;
+    $h = $max === $r ? fmod(($g - $b) / $d, 6) : ($max === $g ? ($b - $r) / $d + 2 : ($r - $g) / $d + 4);
+    return (int)round(fmod($h * 60 + 360, 360));
+}
+
 // Mistura duas cores (para o fundo levar um tiquinho da cor da marca)
 function site_limpo_misturar($a, $b, $p) {
     $c1 = sscanf(ltrim($a, '#'), '%02x%02x%02x'); $c2 = sscanf(ltrim($b, '#'), '%02x%02x%02x');
@@ -149,16 +160,27 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     // Lista de serviços compacta (cardápio de delivery continua em cartões, por causa do carrinho)
     $f = site_fragmentos_marcadores($empresa, $dados, $estado, ['variante' => $modo === 'catalogo' ? $N['servicos'] : 'menu']);
 
-    // Fotos: as da empresa primeiro; banco de fotos só para não deixar o topo vazio
+    // Fotos: as da empresa primeiro; depois fotos reais de banco; IA só no estilo novo (fotos.php).
+    // O dono escolhe de onde vêm (sites.fotos_fonte) — "Sem fotos no topo" deixa o topo tipográfico.
+    $fonteFotos = (string)($empresa['fotos_fonte'] ?? '');
     $galeria = $dados['galeria'];
     $fotosBanco = (empty($empresa['banner_imagem']) && count($galeria) < 2) ? fotos_do_site($empresa) : [];
-    $fotoHero = $empresa['banner_imagem'] ?: ($galeria[0] ?? ($fotosBanco[0]['url'] ?? ''));
-    $fotoSobre = array_values(array_filter(array_merge(array_slice($galeria, $empresa['banner_imagem'] ? 0 : 1), array_map(fn($x) => $x['medio'], array_slice($fotosBanco, 1))), fn($u) => $u && $u !== $fotoHero))[0] ?? '';
+    $fotoHero = $fonteFotos === 'nenhuma' ? '' : ($empresa['banner_imagem'] ?: ($galeria[0] ?? ($fotosBanco[0]['url'] ?? '')));
+    // Foto pequena demais não vai para o topo (esticada, ela fica borrada e entrega o amadorismo)
+    if ($fotoHero && !fotos_boa_para_topo($fotoHero, 600)) $fotoHero = '';
+    $fotoSobre = $fonteFotos === 'nenhuma' ? '' : (array_values(array_filter(array_merge(array_slice($galeria, $empresa['banner_imagem'] ? 0 : 1), array_map(fn($x) => $x['medio'], array_slice($fotosBanco, 1))), fn($u) => $u && $u !== $fotoHero))[0] ?? '');
     $creditos = array_values(array_unique(array_filter(array_map(fn($x) => in_array($x['url'], [$fotoHero], true) || in_array($x['medio'], [$fotoSobre], true) ? ($x['autor'] ?? '') : '', $fotosBanco))));
+    $urlsIa = array_column(array_filter($fotosBanco, fn($x) => !empty($x['ia'])), 'url');
 
     $V = site_limpo_escolhas($empresa, (bool)$fotoHero);
     $T = $V['T'];
     $comp = $V['comp'];
+    // "Foto inteira no topo" só com foto grande e bem exposta; senão a foto vai ao lado do título
+    if ($comp === 'foto' && !fotos_boa_para_topo($fotoHero)) $comp = 'lado';
+    // Acabamento único das fotos (como um fotógrafo entrega um ensaio): automático = natural nas
+    // fotos reais e "filme" nas feitas por IA, que tira o brilho de plástico que denuncia a IA.
+    $trat = (string)($empresa['foto_tratamento'] ?? '');
+    if (!isset(FOTOS_TRATAMENTOS[$trat]) || $trat === '') $trat = in_array($fotoHero, $urlsIa, true) || in_array($fotoSobre, $urlsIa, true) ? 'filme' : 'natural';
     // Cor da marca (a escolhida ou a do ramo), legível no fundo
     $corEmpresa = cor_hex_valida_site($empresa['cor_primaria'] ?? '', '');
     $accent = in_array(strtolower($corEmpresa), ['', '#4f7cff', '#1a1a2e', '#2563eb'], true) ? $E['accent'] : $corEmpresa;
@@ -238,7 +260,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     $menu = array_slice(array_intersect_key($nav, array_flip(['servicos', 'agendar', 'sobre', 'avaliacoes', 'contato'])), 0, 4, true);
 
     $fonteUrl = 'https://fonts.googleapis.com/css2?family=' . $V['fonte'][0] . '&display=swap';
-    $classes = 'lp lp-tom-' . $V['tom'] . ' lp-comp-' . $comp . ($comp === 'tipografia' && (($V['h'] >> 5) % 2) ? ' lp-tipo-b' : '') . ($T['escuro'] ? ' lp-escuro' : '') . (!empty($V['fonte'][4]) ? ' lp-condensado' : '');
+    $classes = 'lp lp-tom-' . $V['tom'] . ' lp-comp-' . $comp . ' lp-foto-' . $trat . ($comp === 'tipografia' && (($V['h'] >> 5) % 2) ? ' lp-tipo-b' : '') . ($T['escuro'] ? ' lp-escuro' : '') . (!empty($V['fonte'][4]) ? ' lp-condensado' : '');
     $painel = site_limpo_painel_vivo($empresa, $dados, $modo, $ctaHref);
     $logo = $empresa['logo'] ? '<img src="' . e($empresa['logo']) . '" alt="">' : '';
     ob_start(); ?>
@@ -258,9 +280,9 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
-<link rel="stylesheet" href="/assets/css/site-limpo.css?v=2">
+<link rel="stylesheet" href="/assets/css/site-limpo.css?v=3">
 <script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
-<style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
+<style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;--duo-giro:<?= site_limpo_matiz($accent) - 38 ?>deg;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
 <?= frag_css_apoio(['accent' => $accent, 'fundos' => $fundos]) ?>
 <?= site_json_ld($empresa, $dados) ?>
 <?= $preview ? '' : site_script_analytics($dados['analytics_id']) . site_script_eventos($empresa) ?>

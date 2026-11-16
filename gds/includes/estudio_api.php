@@ -304,7 +304,7 @@ switch ($acao) {
         $url = (string)($_POST['url'] ?? '');
         $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?"); $st->execute([$empresaId]);
         $salvo = json_decode((string)$st->fetchColumn(), true) ?: [];
-        $salvo['ia'] = array_values(array_filter((array)($salvo['ia'] ?? []), fn($u) => $u !== $url));
+        foreach (['ia', 'ia2'] as $k) $salvo[$k] = array_values(array_filter((array)($salvo[$k] ?? []), fn($u) => $u !== $url));
         $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES), $empresaId]);
         if (str_starts_with($url, '/uploads/ia/empresa-' . $empresaId . '/')) @unlink(__DIR__ . '/..' . $url);
         responder_json(['ok' => true]);

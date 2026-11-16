@@ -614,7 +614,7 @@ function frag_agendamento_confirmado($estado, $empresa) {
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
     $fundos = $tema['fundos'] ?? ['#ffffff', '#f4f5f8'];
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=16">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=17">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';--gds-tema-accent-txt:' . frag_cor_legivel($accent, $fundos) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
          . '<script src="/assets/js/gds-site.js?v=13" defer></script>'

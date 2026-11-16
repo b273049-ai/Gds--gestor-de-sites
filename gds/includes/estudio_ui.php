@@ -135,7 +135,7 @@ $sugestoes = [
                 <label>Fotos exclusivas com IA</label>
                 <div class="fotos-ia" id="fotosIa">
                     <?php foreach (fotos_ia_do_site(['fotos_banco' => $site['fotos_banco'] ?? null]) as $fi): ?>
-                    <figure><img src="<?= e($fi['url']) ?>" alt="Foto gerada" loading="lazy"><button type="button" title="Remover" onclick="Estudio.removerFoto(this, <?= e(json_encode($fi['url'])) ?>)">×</button></figure>
+                    <figure<?= !empty($fi['antiga']) ? ' title="Estilo antigo: não vai para o site (pode remover)" style="opacity:.5"' : '' ?>><img src="<?= e($fi['url']) ?>" alt="<?= !empty($fi['antiga']) ? 'Foto gerada no estilo antigo, fora do site' : 'Foto gerada' ?>" loading="lazy"><button type="button" title="Remover" onclick="Estudio.removerFoto(this, <?= e(json_encode($fi['url'])) ?>)">×</button></figure>
                     <?php endforeach; ?>
                 </div>
                 <?php if (img_ia_disponivel()): ?>

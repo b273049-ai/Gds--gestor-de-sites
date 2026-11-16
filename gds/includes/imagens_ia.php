@@ -80,11 +80,17 @@ function img_ia_pasta($sub) {
     return is_writable($dir) ? $dir : null;
 }
 
-// Monta um prompt de foto profissional (sem texto, sem logo)
+// Monta um prompt de foto com cara de fotógrafo de verdade, não de "IA".
+// O que entrega uma foto de IA: rosto de modelo perfeito olhando de lado, pele de plástico, fundo
+// todo desfocado com bolinhas de luz, brilho e cor saturada demais, tudo simétrico e limpo demais.
+// Por isso: foto documental, luz do lugar, detalhes e mãos no trabalho, gente só de costas/fora de foco.
 function img_ia_prompt_foto($cena, $estilo = '') {
-    return "Professional editorial photograph: $cena. " . ($estilo ? "$estilo. " : '')
-         . 'Shot on a full-frame camera, natural cinematic light, shallow depth of field, rich detail, authentic Brazilian small business atmosphere, '
-         . 'magazine quality. No text, no letters, no watermark, no logos.';
+    return "Candid documentary photograph taken by a professional photographer for a real small business in Brazil: $cena. " . ($estilo ? "$estilo. " : '')
+         . 'Available natural light from windows or the room lights, true-to-life muted colors, realistic textures with small everyday imperfections, '
+         . 'shot at eye level with a 35mm lens at f/4 so the background stays recognisable, subtle film grain, slightly off-center composition. '
+         . 'People only as hands at work, from behind or naturally out of focus; nobody posing or looking at the camera. '
+         . 'Avoid: model faces, glamour retouching, plastic skin, bokeh orbs, glow, lens flare, HDR, oversaturated colors, perfect symmetry, stock-photo look. '
+         . 'No text, no letters, no watermark, no logos.';
 }
 
 // Gera UMA imagem. $formato: 16:9 | 4:5 | 1:1 | 9:16. Retorna ['ok'=>true,'url'=>'/uploads/...'] ou ['ok'=>false,'erro'=>...]
@@ -249,26 +255,28 @@ function img_ia_salvar($bytes, $semExtensao, $tam) {
     return file_put_contents("$semExtensao.$ext", $bytes) ? "$semExtensao.$ext" : null;
 }
 
-// Cenas certeiras por tipo de negócio (o que mostrar nas fotos)
+// Cenas certeiras por tipo de negócio (o que mostrar nas fotos): o trabalho, o lugar e o detalhe —
+// como num ensaio de fotógrafo de verdade para pequeno negócio. Sem rosto de modelo.
+// A 1ª vira a foto do topo (larga), as outras vão para o "Sobre" (em pé).
 function img_ia_cenas($slug, $nome, $descricao = '') {
     $c = [
-        'barbearia' => ['a skilled barber giving a sharp fade haircut in a moody vintage barbershop with leather chairs, warm tungsten light', 'close-up of a straight razor beard shave with hot towel, barbershop details', 'stylish barbershop interior with wooden shelves, mirrors and classic barber chairs, dusk light'],
-        'salao' => ['hairstylist styling glossy long hair in a bright modern beauty salon', 'close-up of hair coloring brush and foils, elegant salon', 'chic minimalist hair salon interior with plants and soft daylight'],
-        'estetica' => ['serene aesthetic clinic treatment room with a woman receiving a facial treatment, soft light', 'skincare products on marble with towels, spa mood', 'calm clinic reception with neutral tones'],
-        'hamburgueria' => ['juicy smash burger with melted cheese and crispy fries on a dark wooden board, dramatic food photography', 'burger being assembled in an urban burger joint kitchen, flames', 'neon-lit casual burger restaurant with friends eating'],
-        'pizzaria' => ['wood-fired pizza with bubbling mozzarella coming out of the oven', 'pizza slice cheese pull close-up', 'cozy pizzeria with brick oven'],
-        'dj' => ['DJ performing at a wedding party with crowd dancing, colorful stage lights and haze', 'close-up of DJ hands on a mixer with neon lights', 'elegant event venue dance floor with moving head lights'],
-        'fotografia' => ['photographer capturing a couple at golden hour', 'professional camera and lenses on a table', 'photo studio with softboxes'],
-        'clinica' => ['friendly doctor talking with a patient in a modern bright clinic', 'clean modern medical reception', 'medical team smiling in a bright corridor'],
-        'odontologia' => ['dentist with smiling patient in a modern dental office', 'bright modern dental chair room', 'close-up of a perfect healthy smile'],
-        'academia' => ['athlete training with dumbbells in a modern gym with dramatic light', 'group functional training class', 'modern gym interior'],
-        'petshop' => ['happy dog after grooming with a bow, pet salon', 'groomer brushing a fluffy dog', 'colorful pet shop interior'],
-        'mecanica' => ['mechanic working on a car engine in a clean modern workshop', 'car on a lift in a professional garage', 'mechanic shaking hands with a customer'],
-        'restaurante' => ['beautifully plated Brazilian dish on a rustic table, restaurant ambience', 'chef plating food in a busy kitchen', 'warm restaurant interior at night'],
-        'acai' => ['acai bowl with fruits and granola, vibrant colors, top view', 'acai shop counter with toppings', 'friends enjoying acai on a sunny day'],
-        'construcao' => ['renovated modern living room interior, finished construction', 'construction team working on a house renovation', 'architect reviewing plans on site'],
+        'barbearia' => ['interior of a lived-in neighbourhood barbershop in late afternoon light, empty vintage barber chair, worn wooden counter with clippers, combs and a towel, mirror reflections', "barber's hands trimming a beard with scissors, seen over the client's shoulder, client's face out of frame", 'detail of barber tools laid on a used leather tray: straight razor, brushes, clippers with cables'],
+        'salao' => ['small independent hair salon on a sunny morning, styling station with round brushes, hair dryer and products in use, a chair turned toward the mirror, plants by the window', "hairstylist's hands blow-drying long brown hair with a round brush, seen from behind, client's face not visible", 'detail of a salon trolley with colour bowls, brushes, foils and clips, some product stains, natural window light'],
+        'estetica' => ['calm treatment room of a small aesthetics clinic, made-up treatment bed with folded towels, soft daylight through a linen curtain', 'aesthetician hands applying a cream mask with a brush, close crop, no face visible', 'skincare bottles and folded towels on a wooden shelf, real labels blurred'],
+        'hamburgueria' => ['smash burger with melted cheese and fries in a paper-lined basket on a steel counter of a small burger joint, kitchen in the background', 'cook pressing burger patties on a hot griddle with steam, hands and spatula only', 'counter of a casual burger place at night with sauce bottles and order tickets'],
+        'pizzaria' => ['pizza with bubbling mozzarella just out of a wood-fired oven on a floured wooden peel', "pizzaiolo's hands stretching dough on a floured marble counter", 'brick oven with burning wood in a small family pizzeria'],
+        'dj' => ['wedding dance floor at night seen from behind the DJ booth, guests dancing out of focus, coloured stage lights and light haze', "DJ's hands on a mixer and controller with cables and headphones", 'empty event hall being set up with speakers on stands and moving head lights'],
+        'fotografia' => ['camera with a worn strap on a wooden table next to printed photos and a laptop', "photographer seen from behind shooting a couple walking at golden hour, couple out of focus", 'small photo studio with a paper backdrop and softboxes'],
+        'clinica' => ['bright tidy reception of a small medical clinic with chairs and plants, nobody posing', 'doctor writing on a clipboard at a desk, only hands and white coat sleeve visible', 'clean consultation room with examination bed and natural light'],
+        'odontologia' => ['modern dental chair room with natural light, instruments tray ready', "dentist's gloved hands arranging instruments on a tray", 'clean reception of a small dental office'],
+        'academia' => ['weights area of a neighbourhood gym in morning light, dumbbells on the rack, chalk marks', 'person seen from behind lifting a barbell, motion slightly blurred', 'detail of kettlebells and ropes on a rubber floor'],
+        'petshop' => ['small dog sitting calmly on a grooming table after a bath, fluffy coat, real pet salon in the background', "groomer's hands brushing a fluffy dog, groomer's face out of frame", 'pet shop shelf with leashes, toys and bags of food'],
+        'mecanica' => ['clean independent auto repair shop with a car on a lift, tools on the wall', "mechanic's hands with a wrench on an engine, a little grease", 'organised tool cart with sockets and wrenches'],
+        'restaurante' => ['plated Brazilian home-style dish on a rustic table by the window of a small restaurant', "cook's hands plating food in a busy small kitchen, steam", 'restaurant dining room before opening, tables set, warm lamps'],
+        'acai' => ['acai bowl with banana, strawberries and granola on a wooden counter, top-down, natural light', 'hands adding granola to an acai cup at the shop counter', 'colourful toppings containers at the counter of a small acai shop'],
+        'construcao' => ['recently renovated living room with natural light, finished floor and walls, a few tools still in a corner', "builder's hands laying tiles with a trowel", 'architectural plans, tape measure and pencil on a work table on site'],
     ];
     if (isset($c[$slug])) return $c[$slug];
     $t = trim($descricao ?: $nome) ?: 'a local small business';
-    return ["$t — main scene showing the service being provided, welcoming", "$t — detail close-up of the work or product", "$t — the place / environment, inviting and premium"];
+    return ["$t — the real workplace, tidy and in use, nobody posing", "$t — hands doing the work, close crop, no faces", "$t — detail of the tools or products on a real surface"];
 }

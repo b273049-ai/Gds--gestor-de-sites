@@ -408,6 +408,23 @@ function prosp_fotos_previa($p) {
         $urls[] = '/uploads/prospects/' . $id . "/$i.jpg";
     }
     if (!is_file(__DIR__ . '/../uploads/.htaccess') && function_exists('img_ia_pasta')) img_ia_pasta('prospects');
+    // Olhar de designer: tira as fotos pequenas, escuras ou estouradas (cardápio fotografado de noite,
+    // fachada contra o sol) e põe a melhor — larga e bem exposta — no topo da prévia.
+    if (count($urls) > 1 && function_exists('fotos_medir')) {
+        $nota = function ($u) {
+            $m = fotos_medir($u);
+            if (!$m) return 1;
+            $luz = $m['luz'] ?? 128;
+            if ($m['w'] < 500 || $luz < 28 || $luz > 235) return 0;
+            return 2 + ($m['w'] >= $m['h'] ? 2 : 0) + min(2, $m['w'] / 800) - abs($luz - 130) / 100;
+        };
+        $notas = array_map($nota, $urls);
+        $boas = array_values(array_filter($urls, fn($u, $i) => $notas[$i] > 0, ARRAY_FILTER_USE_BOTH));
+        if ($boas) {
+            usort($boas, fn($a, $b) => $nota($b) <=> $nota($a));
+            $urls = $boas;
+        }
+    }
     return $memoria[$id] = $urls;
 }
 

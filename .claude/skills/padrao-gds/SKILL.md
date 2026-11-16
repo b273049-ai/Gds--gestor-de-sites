@@ -59,6 +59,9 @@ Completo só recebe correção de defeito, salvo pedido.
 - A cor da marca vem do cliente (logo/Instagram/escolha); se for "do meio" (sem contraste com branco nem preto),
   escureça só o necessário (`frag_cor_legivel`), sem trocar a identidade.
 - Tipografia como personalidade (pares do `site_limpo_tons()`), escala clara, linhas com menos de ~80 caracteres.
+- Fotos sem "cara de IA": nada de modelo de rosto perfeito, pele de plástico ou desfoque com bolinhas de luz. Foto de
+  IA só no estilo documental (`img_ia_prompt_foto`), um acabamento único em todas (`sites.foto_tratamento`), foto
+  pequena nunca esticada no topo (`fotos_boa_para_topo`). O dono escolhe a origem em `sites.fotos_fonte`.
 - Imagens: só as da empresa, do Google da empresa, por IA coerente com o ramo, ou de banco **que combinem com o
   negócio** (`fotos_combina()`). Sem foto boa → composição "tipografia" (nome grande), nunca foto aleatória.
 

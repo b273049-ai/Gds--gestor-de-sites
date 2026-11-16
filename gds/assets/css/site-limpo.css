@@ -289,3 +289,28 @@ a.lp-vivo:hover { transform: translateY(-3px); }
 .lp-rodape { position: relative; z-index: 1; background: var(--bg); }
 .lp .gds-c .gds-btn-wa { background: #0b7a4b; border-color: #0b7a4b; color: #fff; }
 .lp-secao { position: relative; z-index: 1; }
+
+/* ---------- acabamento das fotos (sites.foto_tratamento) ----------
+   Um só tratamento em todas as fotos, como um fotógrafo entrega um ensaio. É o que faz fotos de
+   origens diferentes (celular do dono, banco, IA) parecerem do mesmo site. "Filme" tira o brilho de
+   plástico das fotos de IA com cor contida e grão; "Na cor da marca" é um duotom com a cor do site. */
+.lp-hero-fig, .lp-sobre figure, .lp-hero-foto { position: relative; }
+.lp-hero-fig .lp-vivo { z-index: 2; }
+.lp-foto-natural :is(.lp-hero-foto img, .lp-hero-fig > img, .lp-sobre figure img, .gds-galeria img) { filter: saturate(.94) contrast(1.03); }
+.lp-foto-filme :is(.lp-hero-foto img, .lp-hero-fig > img, .lp-sobre figure img) { filter: saturate(.72) contrast(.94) brightness(1.03) sepia(.08); }
+.lp-foto-quente :is(.lp-hero-foto img, .lp-hero-fig > img, .lp-sobre figure img, .gds-galeria img) { filter: sepia(.2) saturate(.92) contrast(1.02) brightness(1.02); }
+.lp-foto-pb :is(.lp-hero-foto img, .lp-hero-fig > img, .lp-sobre figure img, .gds-galeria img) { filter: grayscale(1) contrast(1.08) brightness(1.02); }
+.lp-foto-marca :is(.lp-hero-foto img, .lp-hero-fig > img, .lp-sobre figure img) { filter: grayscale(1) sepia(.6) hue-rotate(var(--duo-giro, 0deg)) saturate(1.5) contrast(1.06); }
+/* grão de filme por cima da foto (só nela: a moldura do grão tem a mesma proporção da imagem) */
+:is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca) :is(.lp-hero-fig, .lp-sobre figure, .lp-hero-foto)::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; z-index: 1; pointer-events: none; border-radius: var(--raio); opacity: .2; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E"); }
+:is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca) .lp-hero-foto::before { bottom: 0; border-radius: 0; }
+:is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca) .lp-sobre figure::before { aspect-ratio: 4 / 3; }
+:is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca).lp-comp-lado .lp-hero-fig::before { aspect-ratio: 4 / 5; }
+:is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca).lp-comp-moldura .lp-hero-fig::before { aspect-ratio: 21 / 9; }
+@media (max-width: 860px) { :is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca).lp-comp-lado .lp-hero-fig::before { aspect-ratio: 4 / 3; } }
+@media (max-width: 640px) { :is(.lp-foto-filme, .lp-foto-pb, .lp-foto-marca).lp-comp-moldura .lp-hero-fig::before { aspect-ratio: 4 / 3; } }
+/* com a entrada animada, o grão aparece junto com a foto */
+.lp-js .lp-hero-fig::before { opacity: 0; transition: opacity .9s .6s; }
+.lp-js .lp-hero.lp-no-ar .lp-hero-fig::before { opacity: .2; }
