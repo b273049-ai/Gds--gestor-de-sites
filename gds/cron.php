@@ -40,7 +40,7 @@ try { require_once __DIR__ . '/includes/mp_assinaturas.php'; $res += mp_rotina()
 // Caçadas de prospecção continuam mesmo com a tela fechada
 try { $res += prosp_rotina(); } catch (Throwable $e) { $res['prospeccao'] = 'erro'; }
 // Ligações de prospecção: avisa no WhatsApp quando chega a hora de um retorno combinado
-try { require_once __DIR__ . '/includes/prospeccao_ligacoes.php'; $res['retornos_ligacao'] = lig_avisar_retornos(); } catch (Throwable $e) { $res['retornos_ligacao'] = 'erro'; }
+try { require_once __DIR__ . '/includes/prospeccao_ligacoes.php'; $res['retornos_ligacao'] = lig_avisar_retornos(); require_once __DIR__ . '/includes/clientes_ligacoes.php'; $res['retornos_ligacao_clientes'] = cli_avisar_retornos(); } catch (Throwable $e) { $res['retornos_ligacao'] = 'erro'; }
 // Visitas e cliques dos sites que estão na fila vão para o banco
 try { require_once __DIR__ . '/includes/site_eventos.php'; $res['site_eventos'] = site_eventos_descarregar(); } catch (Throwable $e) { $res['site_eventos'] = 'erro'; }
 // Visitas das prévias que foram contadas em arquivo (página servida do cache) vão para o banco

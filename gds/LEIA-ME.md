@@ -364,6 +364,16 @@ Também abre pelo botão "📞 Ligar com roteiro" em cada lead e na Fila de hoje
 - **Números:** meta do dia por botões (10/20/30/50), quantos atenderam, interessados, fechados, tempo ao telefone e, com
   o tempo, o horário em que mais gente atende.
 - Regras do roteiro: nunca dizer que o negócio não tem site e nunca inventar números ou resultados.
+- **Para quem ligar: "Clientes novos" ou "Já clientes"** (botões no topo da tela; migração 37). A fila de quem já é
+  cliente (`includes/clientes_ligacoes.php`) segue esta ordem: retorno combinado → mensalidade em atraso → mensalidade
+  vencendo em até 5 dias → cliente novo (até 30 dias) que ainda não publicou o site ou não entra no painel → sumido do
+  painel há 21+ dias → relacionamento (60 dias sem ligação). Quem já recebeu ligação hoje volta só amanhã.
+  O roteiro muda por motivo (cobrança gentil com valor e data, renovação, boas-vindas para configurar junto, ajuda
+  para quem sumiu, pedido de indicação) e usa os números reais do cliente: visitas, agendamentos, pedidos e contatos
+  dos últimos 30 dias. Respostas para "sem dinheiro", "não estou usando", "não chegou cliente", "quero cancelar",
+  "está caro", "esqueci a senha", "já paguei" e "agora não posso". Resultados: tudo certo, combinou o pagamento
+  (a mensagem já sai com o link de pagamento), precisa de ajuda, indicou alguém, quer cancelar (você recebe um aviso
+  no WhatsApp; o cancelamento é feito no Financeiro). Retorno com dia e hora e aviso igual ao dos leads.
 
 ## E-mail e senhas
 - **Admin → Configurações → E-mail (SMTP)**: na Hostinger, crie um e-mail em "E-mails" e use `smtp.hostinger.com`,
