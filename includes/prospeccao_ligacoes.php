@@ -351,13 +351,13 @@ function lig_metricas() {
             COUNT(*) FILTER (WHERE resultado IN ('interessado','negociando','fechou')) interessados,
             COUNT(*) FILTER (WHERE resultado = 'fechou') fechou,
             COALESCE(SUM(duracao_seg), 0) segundos
-        FROM prosp_ligacoes WHERE criado_em::date = CURRENT_DATE")->fetch();
+        FROM prosp_ligacoes WHERE prospect_id IS NOT NULL AND criado_em::date = CURRENT_DATE")->fetch();
     $m = $pdo->query("SELECT COUNT(*) total, COUNT(*) FILTER (WHERE resultado NOT IN $semAtender) atendidas,
             COUNT(*) FILTER (WHERE resultado IN ('interessado','negociando','fechou')) interessados, COUNT(*) FILTER (WHERE resultado = 'fechou') fechou
-        FROM prosp_ligacoes WHERE criado_em > NOW() - INTERVAL '30 days'")->fetch();
+        FROM prosp_ligacoes WHERE prospect_id IS NOT NULL AND criado_em > NOW() - INTERVAL '30 days'")->fetch();
     // Melhor horário para atender (últimos 60 dias, só faixas com 5+ ligações)
     $horas = $pdo->query("SELECT EXTRACT(HOUR FROM criado_em)::int h, COUNT(*) n, COUNT(*) FILTER (WHERE resultado NOT IN $semAtender) a
-        FROM prosp_ligacoes WHERE criado_em > NOW() - INTERVAL '60 days' GROUP BY 1 HAVING COUNT(*) >= 5 ORDER BY 1")->fetchAll();
+        FROM prosp_ligacoes WHERE prospect_id IS NOT NULL AND criado_em > NOW() - INTERVAL '60 days' GROUP BY 1 HAVING COUNT(*) >= 5 ORDER BY 1")->fetchAll();
     $melhor = null;
     foreach ($horas as $x) { $taxa = $x['a'] / max(1, $x['n']); if (!$melhor || $taxa > $melhor['taxa']) $melhor = ['h' => (int)$x['h'], 'taxa' => $taxa, 'n' => (int)$x['n']]; }
     $retornosHoje = (int)$pdo->query("SELECT COUNT(*) FROM prospects WHERE ligar_em::date = CURRENT_DATE AND status NOT IN ('fechado','descartado')")->fetchColumn();
