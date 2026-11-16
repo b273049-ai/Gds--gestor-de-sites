@@ -22,7 +22,9 @@ function prosp_horario_google($lista) {
         foreach ($nomes as $k => $v) if (str_starts_with($nome, $k)) { $dia = $v; break; }
         if ($dia === null) continue;
         $h = $partes[1];
-        if (preg_match('/24\s*horas|aberto 24/iu', $h)) { $dias[] = $dia; $abre = '00:00'; $fecha = '23:59'; continue; }
+        // "Atendimento 24 horas" no Google quase sempre é ficha mal preenchida (salão, clínica…): copiar isso abria a
+        // agenda de madrugada. O dia fica de fora; sem nenhum horário real, a empresa recebe o horário padrão (seg–sáb, 8h–19h).
+        if (preg_match('/24\s*horas|aberto 24/iu', $h)) continue;
         if (!preg_match_all('/(\d{1,2}):(\d{2})\s*[–—-]\s*(\d{1,2}):(\d{2})/u', $h, $m, PREG_SET_ORDER)) continue;
         $dias[] = $dia;
         foreach ($m as $i => $r) {
@@ -63,13 +65,24 @@ function prosp_duracao_servico($nome) {
 }
 
 // Texto "Sobre" de verdade (a prévia diz que é exemplo; o site do cliente não pode dizer isso)
+// "Sao paulo" / "SAO PAULO" (como vem de alguns cadastros) → "São Paulo"
+function prosp_nome_lugar($t) {
+    $t = trim((string)$t);
+    if ($t === '') return '';
+    $t = mb_convert_case(mb_strtolower($t), MB_CASE_TITLE);
+    $t = preg_replace_callback('/\b(Da|De|Do|Das|Dos|E)\b/u', fn($m) => mb_strtolower($m[1]), $t);
+    $t = preg_replace('/^(Sao|São)\b/u', 'São', $t);
+    return strtr($t, ['Sao Paulo' => 'São Paulo', 'Joao' => 'João', 'Goncalo' => 'Gonçalo', 'Jose' => 'José', 'Mae' => 'Mãe']);
+}
+
 function prosp_textos_site($p, $segNome) {
+    $p['bairro'] = prosp_nome_lugar($p['bairro'] ?? ''); $p['cidade'] = prosp_nome_lugar($p['cidade'] ?? '');
     $bairro = trim((string)($p['bairro'] ?: $p['cidade']));
     $local = $bairro . ($p['cidade'] && $p['cidade'] !== $bairro ? ', ' . $p['cidade'] : '');
     $prova = $p['nota'] && $p['avaliacoes'] ? ' Nossos clientes nos dão nota ' . number_format((float)$p['nota'], 1, ',', '') . ' no Google, em ' . (int)$p['avaliacoes'] . ' avaliações.' : '';
     $base = [
         'subtitulo' => 'Agende online em menos de 1 minuto e receba a confirmação no WhatsApp.',
-        'sobre' => "A {$p['nome']} é " . ($segNome ? 'referência em ' . mb_strtolower($segNome) : 'um negócio local') . ($local ? " em $local" : '') . ", com atendimento feito com cuidado e atenção a cada detalhe.$prova\n\n"
+        'sobre' => "{$p['nome']} é " . ($segNome ? 'referência em ' . mb_strtolower($segNome) : 'um negócio local') . ($local ? " em $local" : '') . ", com atendimento feito com cuidado e atenção a cada detalhe.$prova\n\n"
                  . "Aqui você escolhe o serviço, o dia e o horário direto pelo site, sem esperar resposta, e recebe a confirmação e o lembrete no seu WhatsApp.",
     ];
     if (!function_exists('ia_configurada') || !ia_configurada()) return $base;
