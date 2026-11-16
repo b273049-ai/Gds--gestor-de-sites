@@ -74,4 +74,7 @@ if (session_status() === PHP_SESSION_ACTIVE) {
 $html = pg_bool($empresa['ia_modo_total'] ?? false) && !empty($empresa['html_gerado'])
     ? site_render_ia($empresa, $dados, $estado)
     : site_render_template($empresa, $dados, $estado);
+// Tema de época e código personalizado do site (includes/site_extras.php)
+require_once __DIR__ . '/../includes/site_extras.php';
+$html = site_extras_aplicar($html, $empresa, $dados['modo'] ?? '');
 gds_cache_finalizar($gdsCache, $html, (int)$empresa['id'], ['X-Content-Type-Options: nosniff', 'Referrer-Policy: strict-origin-when-cross-origin']);

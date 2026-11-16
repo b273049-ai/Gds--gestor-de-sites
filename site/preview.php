@@ -19,12 +19,13 @@ if (!$empresa) { echo 'Empresa não encontrada.'; exit; }
 $dados = site_carregar_dados($empresa);
 $estado = site_estado_vazio();
 
+require_once __DIR__ . '/../includes/site_extras.php';
 if ($modo === 'ia') {
     if (empty($empresa['html_gerado'])) {
         echo '<p style="font-family:sans-serif;padding:40px;text-align:center;color:#666;">Nenhum site gerado por IA ainda. Abra o Estúdio IA, descreva o negócio e clique em "Gerar meu site".</p>';
         exit;
     }
-    echo site_render_ia($empresa, $dados, $estado, true);
+    echo site_extras_aplicar(site_render_ia($empresa, $dados, $estado, true), $empresa, $dados['modo'] ?? '');
 } else {
-    echo site_render_template($empresa, $dados, $estado, true);
+    echo site_extras_aplicar(site_render_template($empresa, $dados, $estado, true), $empresa, $dados['modo'] ?? '');
 }

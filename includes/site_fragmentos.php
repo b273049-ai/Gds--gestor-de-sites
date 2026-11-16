@@ -306,11 +306,15 @@ function frag_cupons($cupons) {
 // ------------------------------------------------------------
 // MAPA — com botões "Como chegar" (Google Maps e Waze)
 // ------------------------------------------------------------
+// Endereço do mapa embutido. Sempre o mapa grátis do Google, sem chave: com a chave da plataforma, se a
+// "Maps Embed API" não estiver ligada no Google Cloud, o site mostrava a mensagem de erro do Google no lugar do mapa.
+function frag_mapa_src($endereco, $mapsKey = '') {
+    return 'https://maps.google.com/maps?q=' . urlencode((string)$endereco) . '&output=embed';
+}
+
 function frag_mapa($endereco, $mapsKey) {
     if (!$endereco) return '';
-    $src = $mapsKey
-        ? 'https://www.google.com/maps/embed/v1/place?key=' . rawurlencode($mapsKey) . '&q=' . urlencode($endereco)
-        : 'https://maps.google.com/maps?q=' . urlencode($endereco) . '&output=embed';
+    $src = frag_mapa_src($endereco, $mapsKey);
     return '<div class="gds-c"><div class="gds-mapa-box"><iframe title="Mapa: ' . e($endereco) . '" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="' . e($src) . '"></iframe>'
          . '<div class="gds-mapa-info"><span style="display:flex;gap:8px;align-items:center">' . frag_icone('pin') . e($endereco) . '</span><div style="display:flex;gap:8px;flex-wrap:wrap">'
          . '<a class="gds-btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=' . urlencode($endereco) . '">' . frag_icone('rota') . ' Como chegar</a>'
@@ -610,7 +614,7 @@ function frag_agendamento_confirmado($estado, $empresa) {
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
     $fundos = $tema['fundos'] ?? ['#ffffff', '#f4f5f8'];
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=15">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=16">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';--gds-tema-accent-txt:' . frag_cor_legivel($accent, $fundos) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
          . '<script src="/assets/js/gds-site.js?v=13" defer></script>'

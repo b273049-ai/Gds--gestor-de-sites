@@ -197,9 +197,10 @@ a.gds-info:hover { border-color: var(--gds-accent) !important; }
 /* ---------- AGENDAMENTO (passo a passo) ---------- */
 .gds-c.gds-agendamento { max-width: 760px; }
 .gds-c .gds-passos { display: flex; gap: 6px; margin-bottom: 22px; counter-reset: passo; }
-.gds-c .gds-passo-ind { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: .78rem; font-weight: 600; opacity: .5; }
+.gds-c .gds-passo-ind { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: .78rem; font-weight: 500; }
 .gds-c .gds-passo-ind::before { content: ''; height: 4px; border-radius: 4px; background: var(--gds-soft-2); }
-.gds-c .gds-passo-ind.feito, .gds-c .gds-passo-ind.atual { opacity: 1; }
+/* Etapa ainda não feita: só a barra fica apagada (o texto apagado com opacidade ficava abaixo do contraste mínimo) */
+.gds-c .gds-passo-ind.feito, .gds-c .gds-passo-ind.atual { font-weight: 700; }
 .gds-c .gds-passo-ind.feito::before, .gds-c .gds-passo-ind.atual::before { background: var(--gds-accent); }
 .gds-c .gds-passo h3 { margin-bottom: 14px; font-size: 1.15rem; }
 .gds-js .gds-c .gds-passo:not(.ativo) { display: none; }
