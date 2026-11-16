@@ -119,6 +119,9 @@ function agenda_turma_ocupadas($empresaId, $dataYmd, $servicoId) {
 // Todos os horários do dia, com a situação de cada um. $servico com vagas > 1 = turma.
 function agenda_horarios_do_dia($empresa, $dataYmd, $duracao, $profissionalId = null, $servico = null) {
     $cfg = agenda_config($empresa);
+    // dia da semana em que não abre (o calendário já desativa e o envio já recusa; a lista de horários também diz "fechado")
+    $ts = strtotime($dataYmd);
+    if ($ts && !in_array((int)date('w', $ts), array_map('intval', explode(',', $cfg['dias'])), true)) return ['fechado' => true, 'livres' => [], 'ocupados' => []];
     if (in_array($dataYmd, agenda_dias_fechados($empresa['id'], $dataYmd, $dataYmd), true)) return ['fechado' => true, 'livres' => [], 'ocupados' => []];
     if ($servico && (int)($servico['vagas'] ?? 1) > 1) {
         $vagas = (int)$servico['vagas'];
