@@ -493,6 +493,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
         <a href="#piloto" data-aba="piloto">🤖 Piloto automático<?= $piloto['ligado'] && !$piloto['pausa'] ? ' <b>ligado</b>' : '' ?></a>
         <a href="#conversas" data-aba="conversas">💬 Conversas<?= $naoLidas ? ' <b>' . $naoLidas . '</b>' : '' ?></a>
         <a href="#fila" data-aba="fila">⚡ Fila de hoje <b><?= count($fila) ?></b></a>
+        <a href="/admin/ligacoes.php">📞 Ligações</a>
         <a href="#cacada" data-aba="cacada">🎯 Caçada em massa</a>
         <a href="#leads" data-aba="leads">📋 Leads</a>
         <a href="#mapa-aba" data-aba="mapa-aba">🗺 Mapa</a>
@@ -662,6 +663,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                 <button type="button" class="btn <?= $canalPlat ? 'btn-ghost' : 'btn-wa' ?>" id="spEnviar" onclick="PR.spEnviar()"><?= icone('chat', 16) ?> <?= $canalPlat ? 'Abrir no meu WhatsApp' : 'Enviar e próximo' ?></button>
                 <button type="button" class="btn btn-ghost" onclick="PR.spIa()"><?= icone('brilho', 14) ?> Reescrever com IA</button>
                 <a class="btn btn-ghost" id="spPrevia" target="_blank" rel="noopener">👁 Ver a prévia</a>
+                <a class="btn btn-ghost" id="spLigar" href="/admin/ligacoes.php">📞 Ligar com roteiro</a>
                 <button type="button" class="btn btn-ghost" onclick="PR.spPular()">Pular</button>
                 <button type="button" class="btn btn-ghost" onclick="PR.spDescartar()">Descartar</button>
             </div>
@@ -784,6 +786,7 @@ $webhookUrl = $aWa['tipo'] !== 'ponte' ? prosp_url_base() . '/api/whatsapp_receb
                     </div>
                 </details>
                 <div class="prosp-acoes">
+                    <?php if ($p['telefone'] || $p['whatsapp']): ?><a class="btn btn-sm btn-ghost" href="/admin/ligacoes.php?id=<?= (int)$p['id'] ?>" title="Abrir com o roteiro da ligação">📞 Ligar com roteiro</a><?php endif; ?>
                     <?php if ($p['whatsapp']): ?><button type="button" class="btn btn-sm btn-wa" onclick="PR.whats(this)"><?= icone('chat', 14) ?> Chamar no WhatsApp</button>
                     <?php elseif ($p['telefone']): ?><a class="btn btn-sm btn-ghost" href="tel:<?= e(preg_replace('/\D/', '', $p['telefone'])) ?>">📞 Ligar (fixo)</a><?php endif; ?>
                     <?php if ($p['maps_url']): ?><a class="btn btn-sm btn-ghost" href="<?= e($p['maps_url']) ?>" target="_blank" rel="noopener">Ver no Maps</a><?php endif; ?>
@@ -923,7 +926,7 @@ const PR = (() => {
         document.querySelectorAll('.aba-p').forEach(s => s.classList.toggle('ativa', s.id === 'aba-' + nome));
         if (nome === 'mapa-aba' && !mapaPronto) { mapaPronto = true; setTimeout(montarMapa, 50); }
     }
-    document.querySelectorAll('.abas-p a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); history.replaceState(null, '', '#' + a.dataset.aba); aba(a.dataset.aba); }));
+    document.querySelectorAll('.abas-p a[data-aba]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); history.replaceState(null, '', '#' + a.dataset.aba); aba(a.dataset.aba); }));
     window.addEventListener('hashchange', () => { const n = location.hash.slice(1); if (document.getElementById('aba-' + n)) aba(n); });
     const pedida = new URLSearchParams(location.search).get('aba');
     aba(pedida || (location.hash.slice(1) || (<?= $naoLidas ? "'conversas'" : "(FILA.length ? 'fila' : 'cacada')" ?>)));
@@ -933,7 +936,7 @@ const PR = (() => {
         if (idx >= FILA.length) { $('sprint').hidden = true; $('filaVazia').hidden = false; return; }
         const p = FILA[idx];
         $('spPos').textContent = (idx + 1) + ' de ' + FILA.length + ' na fila · ' + (p.passo + 1) + 'ª mensagem';
-        $('spNome').textContent = p.nome;
+        $('spNome').textContent = p.nome; $('spLigar').href = '/admin/ligacoes.php?id=' + p.id;
         $('spInfo').textContent = [p.categoria, p.bairro, p.nota ? '⭐ ' + String(p.nota).replace('.', ',') + ' (' + p.avaliacoes + ')' : ''].filter(Boolean).join(' · ');
         $('spPts').textContent = p.pontuacao; $('spPts').className = p.abriu || p.pontuacao >= 70 ? 'temp-quente' : (p.pontuacao >= 45 ? 'temp-morno' : 'temp-frio');
         $('spTemp').textContent = p.abriu ? '👀 Abriu a prévia ' + p.visitas + 'x' : (p.pontuacao >= 70 ? '🔥 Quente' : p.pontuacao >= 45 ? '🌤 Morno' : '❄ Frio');

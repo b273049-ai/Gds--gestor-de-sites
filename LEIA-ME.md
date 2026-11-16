@@ -341,6 +341,30 @@ A IA escreve o post (título, legenda, hashtags, roteiro) e já sugere a foto e 
 - Para volume grande e oficial: API da Meta (WhatsApp Cloud) com modelo aprovado — cerca de R$ 0,30 a R$ 0,40 por
   mensagem de marketing no Brasil.
 
+## Ligações de prospecção (Admin → 📞 Ligações, migração 36)
+Tela para ligar para os leads com o roteiro na frente (`admin/ligacoes.php`, regras em `includes/prospeccao_ligacoes.php`).
+Também abre pelo botão "📞 Ligar com roteiro" em cada lead e na Fila de hoje da Prospecção.
+- **Fila de quem ligar:** retorno combinado na hora → clicou em "Quero este site" → abriu a prévia → respondeu no WhatsApp →
+  leads quentes (pontuação 45+) sem ligação → nova tentativa de quem não atendeu (no máximo 4 tentativas, com 20 h entre elas).
+  Quem disse "sem interesse", número errado ou pediu para não receber mensagens não volta.
+- **Ligar:** "Ligar pelo WhatsApp" abre a conversa dele (toque no 📞 do WhatsApp para chamar) e "Ligar" usa o telefone.
+  O cronômetro começa sozinho. A tela mostra se é um bom horário para o ramo e o horário de funcionamento do dia (Google).
+- **Roteiro pronto para cada lead:** abertura, gancho com dado real (nota, avaliações, bairro, o que os clientes elogiam),
+  perguntas do ramo (agenda, pedido ou orçamento), apresentação da prévia, fechamento com pergunta de escolha fácil e o
+  que falar se ele não puder agora. Muda se ele já recebeu mensagem, se abriu a prévia, se tem só Instagram, se já tem site
+  ou se é um retorno combinado. Toque em cada etapa ao terminar. "Personalizar com IA" escreve um roteiro só daquele lead.
+- **Se ele disser…:** respostas para 11 objeções (preço, já tenho site, tenho Instagram, agora não, manda no WhatsApp,
+  vou pensar, sócio, cliente demais, como achou meu número, já tentei, não tenho interesse) e o **copiloto ao vivo**:
+  escreva o que ele falou e a IA diz o que responder e o que perguntar.
+- **Resultado em 1 toque:** não atendeu, ocupado, número errado, sem interesse, ligar depois (dia e hora por botões),
+  interessado, negociando, fechou. Grava duração, canal e anotação, avança a situação do lead e já deixa pronta a
+  mensagem do WhatsApp (com a prévia para quem se interessou; sem link para quem não atendeu). Fechou → atalho para
+  "Virar cliente".
+- **Retorno avisado:** o cron manda no seu WhatsApp "📞 Hora de ligar para…" na hora combinada e o lead volta ao topo da fila.
+- **Números:** meta do dia por botões (10/20/30/50), quantos atenderam, interessados, fechados, tempo ao telefone e, com
+  o tempo, o horário em que mais gente atende.
+- Regras do roteiro: nunca dizer que o negócio não tem site e nunca inventar números ou resultados.
+
 ## E-mail e senhas
 - **Admin → Configurações → E-mail (SMTP)**: na Hostinger, crie um e-mail em "E-mails" e use `smtp.hostinger.com`,
   porta 465, o e-mail completo e a senha dele. Use **Enviar teste**. Sem isso, a recuperação de senha e os avisos por
