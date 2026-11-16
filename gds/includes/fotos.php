@@ -34,6 +34,17 @@ function fotos_termo_segmento($slug, $nome = '', $descricao = '') {
     return trim($descricao ?: $nome) ?: 'small business';
 }
 
+// No Openverse, só os acervos de fotógrafos (o resto é Flickr de qualquer pessoa: vinha foto pessoal
+// e até sem relação com o negócio). rawpixel e StockSnap são fotos de estúdio com uso livre.
+const FOTOS_OPENVERSE_CURADAS = 'rawpixel,stocksnap';
+
+// Foto de banco que pode ir para o site: dos bancos selecionados, ou do Openverse só dos acervos curados
+function fotos_banco_confiavel($x) {
+    if (($x['fonte'] ?? '') !== 'openverse') return true;
+    $host = strtolower((string)parse_url((string)($x['url'] ?? ''), PHP_URL_HOST));
+    return (bool)preg_match('/(^|\.)(rawpixel\.com|stocksnap\.io)$/', $host);
+}
+
 // Bancos de fotos grátis, na ordem em que são tentados. O Pexels pausou as chaves novas
 // (set/2026): quem já tem continua usando; os outros entram como alternativa.
 //   pixabay   → chave grátis em pixabay.com/api/docs (as fotos precisam ser baixadas para o servidor)
@@ -102,14 +113,14 @@ function fotos_buscar_em($fonte, $termo, $qtd, $orientacao) {
         }
     } elseif ($fonte === 'openverse') {
         $base = getenv('GDS_OPENVERSE_BASE_URL') ?: 'https://api.openverse.org';
-        $d = fotos_http($base . '/v1/images/?' . http_build_query(['q' => $termo, 'license' => 'cc0,pdm', 'category' => 'photograph', 'page_size' => $qtd,
+        $d = fotos_http($base . '/v1/images/?' . http_build_query(['q' => $termo, 'license' => 'cc0,pdm', 'category' => 'photograph', 'source' => FOTOS_OPENVERSE_CURADAS, 'page_size' => $qtd,
             'aspect_ratio' => $orientacao === 'portrait' ? 'tall' : 'wide', 'mature' => 'false']), ['Accept: application/json'], 8);
         foreach ((array)($d['results'] ?? []) as $f) {
             if (empty($f['url']) || (int)($f['width'] ?? 0) && (int)$f['width'] < 900) continue; // descarta foto pequena
             // O Openverse não é selecionado (ex.: "spa" trazia festa em asilo): só fica a foto cujo título/etiquetas
             // têm as palavras da busca — sem foto o site usa o topo "Só o nome", melhor que foto errada
             if (!fotos_combina($termo, ($f['title'] ?? '') . ' ' . implode(' ', array_map(fn($t) => $t['name'] ?? '', (array)($f['tags'] ?? []))))) continue;
-            $fotos[] = ['url' => $f['url'], 'medio' => $f['url'], 'autor' => $f['creator'] ?? '', 'link' => $f['foreign_landing_url'] ?? '', 'alt' => $f['title'] ?? '', 'fonte' => 'openverse', 'conferida' => 1];
+            $fotos[] = ['url' => $f['url'], 'medio' => $f['url'], 'autor' => $f['creator'] ?? '', 'link' => $f['foreign_landing_url'] ?? '', 'alt' => $f['title'] ?? '', 'fonte' => 'openverse', 'conferida' => 1, 'curada' => 1];
         }
     }
     return $fotos;
@@ -204,7 +215,7 @@ const FOTOS_TRATAMENTOS = [
 function fotos_do_site($empresa, $forcar = false) {
     $fonte = (string)($empresa['fotos_fonte'] ?? '');
     if ($fonte === 'nenhuma') return [];
-    $banco = fotos_banco_pexels($empresa, $forcar);
+    $banco = array_values(array_filter(fotos_banco_pexels($empresa, $forcar), 'fotos_banco_confiavel'));
     if ($fonte === 'reais') return $banco;
     $ia = array_values(array_filter(fotos_ia_do_site($empresa), fn($x) => $fonte === 'todas' || empty($x['antiga'])));
     return array_merge($banco, $ia);
@@ -247,7 +258,7 @@ function fotos_banco_pexels($empresa, $forcar = false) {
     global $pdo;
     $salvo = json_decode((string)($empresa['fotos_banco'] ?? ''), true);
     // Fotos do Openverse guardadas antes do filtro de assunto são buscadas de novo (uma vez)
-    $antigas = is_array($salvo) && array_filter((array)($salvo['fotos'] ?? []), fn($x) => ($x['fonte'] ?? '') === 'openverse' && empty($x['conferida']));
+    $antigas = is_array($salvo) && array_filter((array)($salvo['fotos'] ?? []), fn($x) => ($x['fonte'] ?? '') === 'openverse' && (empty($x['conferida']) || empty($x['curada'])));
     if (!$forcar && !$antigas && is_array($salvo) && isset($salvo['fotos'])) return $salvo['fotos'];
     if ($antigas) $forcar = true;
     if (!fotos_configurado()) return [];

@@ -692,6 +692,8 @@ fundo todo desfocado com bolinhas de luz. Agora:
 - **Onde escolher**: Admin → Empresas → Site → "📷 Fotos do site", ou a própria empresa em Configurações →
   "Visual do meu site": *De onde vêm as fotos* (Automático, Só fotos de verdade, Sem fotos no topo, Incluir as
   fotos antigas de IA) e *Acabamento das fotos*. No Estúdio IA, as fotos antigas aparecem apagadas ("fora do site").
+- **Banco aberto (Openverse) só com acervos de fotógrafos** (rawpixel e StockSnap): fotos pessoais do Flickr
+  não entram mais — vinha foto sem relação nenhuma com o negócio.
 - Calendário do agendamento cabe em celular de 320 px.
 
 ## Tema de época e código personalizado do site (migração 38)
