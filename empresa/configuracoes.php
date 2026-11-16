@@ -100,6 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cor'])) {
     $comp = isset(site_limpo_composicoes()[$_POST['composicao'] ?? '']) ? $_POST['composicao'] : null;
     $tom = isset(site_limpo_tons()[$_POST['tom'] ?? '']) ? $_POST['tom'] : null;
     try { $pdo->prepare("UPDATE sites SET visual=?, composicao=?, tom=? WHERE empresa_id=?")->execute([$vis, $comp, $tom, $empresaId]); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
+    require_once __DIR__ . '/../includes/fotos.php';
+    try { fotos_opcoes_salvar($empresaId, $_POST); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
     $anim = $_POST['animacoes'] ?? '';
     try { $pdo->prepare("UPDATE sites SET animacoes=? WHERE empresa_id=?")->execute([in_array($anim, ['cinema', 'suave', 'leve'], true) ? $anim : null, $empresaId]); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
     flash('sucesso', 'Visual salvo!'); $voltar('cor'); exit;
@@ -302,6 +304,8 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
             <div><label for="tomSite">Personalidade <small class="muted">(fontes e fundo)</small></label>
                 <select name="tom" id="tomSite"><option value="">Automática: a do meu ramo</option><?php foreach (site_limpo_tons() as $k => $t): ?><option value="<?= $k ?>" <?= ($site['tom'] ?? '') === $k ? 'selected' : '' ?>><?= e($t['nome']) ?><?= $t['escuro'] ? ' (fundo escuro)' : '' ?></option><?php endforeach; ?></select></div>
         </div>
+        <?php require_once __DIR__ . '/../includes/fotos.php'; echo fotos_opcoes_html($site); ?>
+        <p class="dica">Dica de designer: fotos de verdade do seu espaço e do seu trabalho (suba em Galeria) valem mais que qualquer foto pronta.</p>
         <label>Estilo <small class="muted">(visual Completo)</small></label>
         <select name="estilo"><option value="">Identidade do meu tipo de negócio (recomendado) — cores, fontes e textura feitas para o seu ramo</option>
             <?php foreach (site_estilos() as $k => $est): ?><option value="<?= $k ?>" <?= ($site['estilo'] ?? '') === $k ? 'selected' : '' ?>><?= e($est['nome']) ?> — <?= e($est['desc']) ?></option><?php endforeach; ?></select>

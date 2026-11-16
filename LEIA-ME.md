@@ -674,6 +674,26 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Fotos com cara de profissional, não de IA (migração 39)
+O que entregava os sites como "feitos por IA" eram as fotos: modelo de rosto perfeito, pele de plástico,
+fundo todo desfocado com bolinhas de luz. Agora:
+- **Ordem de um designer** para o topo e o "Sobre": fotos da empresa → fotos reais de banco (fotógrafos) →
+  fotos de IA no **estilo novo**. As fotos de IA antigas (com pessoas) **saem do site sozinhas** e a rotina
+  automática gera novas no estilo novo (uma a cada 30 min por site, até 3). Sem foto boa, o topo fica
+  tipográfico (o nome em letras grandes), que é limpo e profissional.
+- **Estilo novo das fotos de IA** (`img_ia_prompt_foto`/`img_ia_cenas`): foto documental, luz do lugar, mãos no
+  trabalho, o espaço e os detalhes; nada de gente posando, rosto de modelo, brilho ou desfoque exagerado.
+- **Acabamento único em todas as fotos** (como um fotógrafo entrega um ensaio): Natural, Filme (cor suave e grão
+  leve — o automático para fotos de IA), Quente, Preto e branco ou Na cor da marca (duotom).
+- **Foto pequena não é esticada**: abaixo de 600 px não vai para o topo; "Foto inteira no topo" só com foto de
+  1100 px ou mais (senão vira "foto ao lado"). Fotos muito escuras ou estouradas também não vão para o topo.
+- **Prévias**: as fotos do Google passam pelo mesmo filtro (tira as pequenas/escuras) e a melhor — larga e bem
+  exposta — vira a do topo.
+- **Onde escolher**: Admin → Empresas → Site → "📷 Fotos do site", ou a própria empresa em Configurações →
+  "Visual do meu site": *De onde vêm as fotos* (Automático, Só fotos de verdade, Sem fotos no topo, Incluir as
+  fotos antigas de IA) e *Acabamento das fotos*. No Estúdio IA, as fotos antigas aparecem apagadas ("fora do site").
+- Calendário do agendamento cabe em celular de 320 px.
+
 ## Tema de época e código personalizado do site (migração 38)
 Admin → Empresas → (empresa) → Site → **Conteúdo e SEO**, seção "🎄 Tema de época" e "🧩 Código personalizado"
 (`includes/site_extras.php`). Vale para qualquer visual (Limpo, Completo, design da IA) e entra por cima do design:

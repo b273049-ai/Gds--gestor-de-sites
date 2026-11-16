@@ -555,3 +555,9 @@ html.gds-sem-rolagem-prod { overflow: hidden; }
 .gds-c .gds-im-sim-res strong { font-size: 1.3rem; color: var(--gds-accent-txt); font-variant-numeric: tabular-nums; }
 .gds-c .gds-im-sim-nota { font-size: .75rem; margin: 0; }
 .gds-c .gds-im-acoes2 { display: flex; gap: 8px; margin: 10px 0 0; }
+/* celular pequeno (320px): o calendário cabe sem rolagem lateral */
+@media (max-width: 360px) {
+    .gds-c .gds-cal { padding: 8px; }
+    .gds-c .gds-cal-grade { gap: 2px; }
+    .gds-c .gds-dia { aspect-ratio: auto; min-height: 38px; }
+}

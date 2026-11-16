@@ -159,10 +159,15 @@ function fotos_localizar(array $fotos, $sub = 'fotos-banco', $max = 6) {
     return $out;
 }
 
-// Fotos geradas por IA para o site (guardadas junto, em fotos_banco.ia)
+// Fotos geradas por IA para o site (guardadas junto, em fotos_banco).
+//   • ia2 → estilo novo (documental, sem rosto de modelo, luz natural): podem ir para o site.
+//   • ia  → as antigas (gente "perfeita" de IA, desfoque de estúdio): ficam no Estúdio para o dono
+//           decidir, mas só vão para o site se ele escolher "Incluir as fotos antigas de IA".
 function fotos_ia_do_site($empresa) {
     $salvo = json_decode((string)($empresa['fotos_banco'] ?? ''), true);
-    return array_map(fn($u) => ['url' => $u, 'medio' => $u, 'autor' => '', 'link' => '', 'alt' => 'Foto exclusiva', 'ia' => true], array_values((array)($salvo['ia'] ?? [])));
+    $f = fn($u, $antiga) => ['url' => $u, 'medio' => $u, 'autor' => '', 'link' => '', 'alt' => 'Foto exclusiva', 'ia' => true, 'antiga' => $antiga];
+    return array_merge(array_map(fn($u) => $f($u, false), array_values((array)($salvo['ia2'] ?? []))),
+                       array_map(fn($u) => $f($u, true), array_values((array)($salvo['ia'] ?? []))));
 }
 
 function fotos_ia_adicionar($empresaId, $url) {
@@ -170,15 +175,72 @@ function fotos_ia_adicionar($empresaId, $url) {
     $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?");
     $st->execute([$empresaId]);
     $salvo = json_decode((string)$st->fetchColumn(), true) ?: [];
-    $salvo['ia'] = array_slice(array_values(array_unique(array_merge([$url], (array)($salvo['ia'] ?? [])))), 0, 9);
+    $salvo['ia2'] = array_slice(array_values(array_unique(array_merge([$url], (array)($salvo['ia2'] ?? [])))), 0, 9);
     $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresaId]);
-    return $salvo['ia'];
+    return $salvo['ia2'];
 }
 
-// Fotos do site: as exclusivas (IA) primeiro, depois as do banco de imagens (busca na primeira vez)
+// De onde vêm as fotos do topo e do "Sobre" (sites.fotos_fonte). As fotos que a empresa sobe
+// (banner e galeria) valem sempre, menos em "nenhuma".
+const FOTOS_FONTES = [
+    ''        => ['Automático (recomendado)', 'Fotos da empresa; sem elas, fotos reais de banco; IA só no estilo novo, sem rosto de modelo.'],
+    'reais'   => ['Só fotos de verdade', 'Nunca usar foto feita por IA. Sem foto real, o topo fica só com o nome em letras grandes.'],
+    'nenhuma' => ['Sem fotos no topo', 'Topo tipográfico, elegante e rápido. A galeria com as fotos da empresa continua aparecendo.'],
+    'todas'   => ['Incluir as fotos antigas de IA', 'Usa também as fotos de IA do estilo antigo, com pessoas de cara artificial (não recomendado).'],
+];
+
+// Acabamento das fotos (sites.foto_tratamento): o mesmo em todas, como faz um fotógrafo ao entregar um ensaio
+const FOTOS_TRATAMENTOS = [
+    ''        => ['Automático', 'Natural nas fotos reais; "Filme" nas feitas por IA (tira o brilho artificial).'],
+    'natural' => ['Natural', 'Cores fiéis, só um ajuste fino de contraste.'],
+    'filme'   => ['Filme', 'Cores suaves e grão leve de fotografia analógica.'],
+    'quente'  => ['Quente', 'Tons dourados, clima acolhedor.'],
+    'pb'      => ['Preto e branco', 'Clássico e sofisticado; a cor fica por conta da marca.'],
+    'marca'   => ['Na cor da marca', 'Fotos monocromáticas tingidas com a cor do site (duotom).'],
+];
+
+// Fotos do site para o topo e o "Sobre", na ordem de preferência de um designer:
+// fotos reais de banco (feitas por fotógrafos) → IA no estilo novo → (opcional) IA antiga.
 function fotos_do_site($empresa, $forcar = false) {
-    $ia = fotos_ia_do_site($empresa);
-    return array_merge($ia, fotos_banco_pexels($empresa, $forcar));
+    $fonte = (string)($empresa['fotos_fonte'] ?? '');
+    if ($fonte === 'nenhuma') return [];
+    $banco = fotos_banco_pexels($empresa, $forcar);
+    if ($fonte === 'reais') return $banco;
+    $ia = array_values(array_filter(fotos_ia_do_site($empresa), fn($x) => $fonte === 'todas' || empty($x['antiga'])));
+    return array_merge($banco, $ia);
+}
+
+// Medidas e luz de uma foto guardada no servidor (para não esticar foto pequena nem usar foto escura).
+// Resultado guardado num arquivo ao lado, para medir uma vez só.
+function fotos_medir($url) {
+    static $mem = [];
+    if (isset($mem[$url])) return $mem[$url];
+    if (!is_string($url) || !preg_match('#^/uploads/[A-Za-z0-9/_.-]+\.(jpe?g|png|webp)$#i', $url) || str_contains($url, '..')) return $mem[$url] = null;
+    $arq = __DIR__ . '/..' . $url;
+    if (!is_file($arq)) return $mem[$url] = null;
+    $cache = $arq . '.medida';
+    if (is_file($cache) && filemtime($cache) >= filemtime($arq) && ($m = json_decode((string)@file_get_contents($cache), true))) return $mem[$url] = $m;
+    $info = @getimagesize($arq);
+    if (!$info) return $mem[$url] = null;
+    $m = ['w' => (int)$info[0], 'h' => (int)$info[1], 'luz' => null];
+    // Luz média numa miniatura 24x24 (barato) — 0 = preto, 255 = branco
+    if (function_exists('imagecreatefromstring') && filesize($arq) < 12 * 1024 * 1024 && ($im = @imagecreatefromstring((string)file_get_contents($arq)))) {
+        $p = imagecreatetruecolor(24, 24);
+        imagecopyresampled($p, $im, 0, 0, 0, 0, 24, 24, imagesx($im), imagesy($im));
+        $soma = 0;
+        for ($x = 0; $x < 24; $x++) for ($y = 0; $y < 24; $y++) { $c = imagecolorat($p, $x, $y); $soma += 0.299 * (($c >> 16) & 255) + 0.587 * (($c >> 8) & 255) + 0.114 * ($c & 255); }
+        $m['luz'] = (int)round($soma / 576);
+        imagedestroy($p); imagedestroy($im);
+    }
+    @file_put_contents($cache, json_encode($m));
+    return $mem[$url] = $m;
+}
+
+// A foto aguenta ocupar o topo inteiro? (larga o bastante e nem escura nem estourada demais)
+function fotos_boa_para_topo($url, $larguraMin = 1100) {
+    $m = fotos_medir($url);
+    if (!$m) return true;   // foto externa (link) ou sem como medir: confia
+    return $m['w'] >= $larguraMin && ($m['luz'] === null || ($m['luz'] >= 28 && $m['luz'] <= 235));
 }
 
 function fotos_banco_pexels($empresa, $forcar = false) {
@@ -203,7 +265,7 @@ function fotos_banco_pexels($empresa, $forcar = false) {
     }
     $fotos = fotos_localizar(fotos_buscar($termo, 12), 'fotos-banco', 6);
     try {
-        $novo = ['termo' => $termo, 'em' => time(), 'fotos' => $fotos] + (is_array($salvo) && isset($salvo['ia']) ? ['ia' => $salvo['ia']] : []);
+        $novo = ['termo' => $termo, 'em' => time(), 'fotos' => $fotos] + array_intersect_key(is_array($salvo) ? $salvo : [], ['ia' => 1, 'ia2' => 1, 'ia_tentativa' => 1]);
         $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($novo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $empresa['id']]);
     } catch (PDOException $e) { /* coluna ainda não existe */ }
     return $fotos;
@@ -223,7 +285,7 @@ function fotos_ia_rotina() {
     foreach ($sites as $s) {
         if (count(array_filter(explode(',', (string)$s['galeria_imagens']))) >= 2) continue;
         $salvo = json_decode((string)$s['fotos_banco'], true) ?: [];
-        $ia = (array)($salvo['ia'] ?? []);
+        $ia = (array)($salvo['ia2'] ?? []);     // conta só as do estilo novo (as antigas não vão mais para o site)
         if (count($ia) >= 3 || time() - (int)($salvo['ia_tentativa'] ?? 0) < 1800) continue;
         $salvo['ia_tentativa'] = time();
         $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($salvo, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $s['id']]);
@@ -234,9 +296,32 @@ function fotos_ia_rotina() {
         // Junta com a lista atual (a 1ª gerada vira a foto do topo)
         $st = $pdo->prepare("SELECT fotos_banco FROM sites WHERE empresa_id=?"); $st->execute([$s['id']]);
         $atual = json_decode((string)$st->fetchColumn(), true) ?: [];
-        $atual['ia'] = array_slice(array_values(array_unique(array_merge((array)($atual['ia'] ?? []), [$r['url']]))), 0, 9);
+        $atual['ia2'] = array_slice(array_values(array_unique(array_merge((array)($atual['ia2'] ?? []), [$r['url']]))), 0, 9);
         $pdo->prepare("UPDATE sites SET fotos_banco=? WHERE empresa_id=?")->execute([json_encode($atual, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $s['id']]);
-        return ['fotos_ia' => 'empresa ' . $s['id'] . ': ' . count($atual['ia']) . ' foto(s)'];
+        return ['fotos_ia' => 'empresa ' . $s['id'] . ': ' . count($atual['ia2']) . ' foto(s)'];
     }
     return ['fotos_ia' => 'nada a fazer'];
+}
+
+// Botões do painel "De onde vêm as fotos" e "Acabamento das fotos" (empresa → Configurações e admin → Site)
+function fotos_opcoes_html($site) {
+    $grupo = function ($campo, $opcoes, $atual, $titulo) {
+        $h = '<div class="fotos-op"><label>' . e($titulo) . '</label><input type="hidden" name="' . $campo . '" value="' . e($atual) . '">'
+           . '<div class="ed-presets" data-preset-alvo="' . $campo . '" style="display:flex;flex-wrap:wrap;gap:6px">';
+        foreach ($opcoes as $k => [$nome]) $h .= '<button type="button" class="btn btn-sm ' . ($k === $atual ? 'btn-ligado' : 'btn-ghost') . '" data-preset="' . e($k) . '">' . e($nome) . '</button>';
+        $h .= '</div><ul class="dica" style="margin:6px 0 0;padding-left:18px">';
+        foreach ($opcoes as [$nome, $desc]) $h .= '<li><b>' . e($nome) . ':</b> ' . e($desc) . '</li>';
+        return $h . '</ul></div>';
+    };
+    $fonte = (string)($site['fotos_fonte'] ?? ''); $trat = (string)($site['foto_tratamento'] ?? '');
+    return $grupo('fotos_fonte', FOTOS_FONTES, isset(FOTOS_FONTES[$fonte]) ? $fonte : '', 'De onde vêm as fotos do topo')
+         . $grupo('foto_tratamento', FOTOS_TRATAMENTOS, isset(FOTOS_TRATAMENTOS[$trat]) ? $trat : '', 'Acabamento das fotos');
+}
+
+// Grava a escolha (valida contra as listas; vazio = automático)
+function fotos_opcoes_salvar($empresaId, $post) {
+    global $pdo;
+    $fonte = (string)($post['fotos_fonte'] ?? ''); $trat = (string)($post['foto_tratamento'] ?? '');
+    $pdo->prepare("UPDATE sites SET fotos_fonte=?, foto_tratamento=? WHERE empresa_id=?")
+        ->execute([isset(FOTOS_FONTES[$fonte]) && $fonte !== '' ? $fonte : null, isset(FOTOS_TRATAMENTOS[$trat]) && $trat !== '' ? $trat : null, (int)$empresaId]);
 }

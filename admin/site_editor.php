@@ -20,6 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_extras'])) {
     } catch (PDOException $e) { flash('erro', 'O banco ainda está sendo atualizado. Recarregue a página e tente de novo.'); }
     header("Location: site_editor.php?empresa_id=$empresaId#epoca"); exit;
 }
+// Fotos do site: de onde vêm e o acabamento
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_fotos'])) {
+    require_once __DIR__ . '/../includes/fotos.php';
+    try { fotos_opcoes_salvar($empresaId, $_POST); flash('sucesso', 'Fotos do site salvas.'); }
+    catch (PDOException $e) { flash('erro', 'O banco ainda está sendo atualizado. Recarregue a página e tente de novo.'); }
+    header("Location: site_editor.php?empresa_id=$empresaId#fotos"); exit;
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $urls = array_values(array_filter(array_map('url_valida_ou_vazia', preg_split('/[\r\n,]+/', $_POST['galeria_imagens'] ?? ''))));
     $pdo->prepare("UPDATE sites SET titulo=?, subtitulo=?, sobre=?, diferenciais=?, objetivo=?, galeria_imagens=?, seo_titulo=?, seo_descricao=?, publicado=?, atualizado_em=NOW() WHERE empresa_id=?")
@@ -80,6 +87,14 @@ $modoIa = pg_bool($site['ia_modo_total'] ?? false) && !empty($site['html_gerado'
         <button type="submit">Salvar</button>
     </form>
     <?php if (!ia_configurada()): ?><p class="dica">Os botões de IA precisam de uma chave em Configurações.</p><?php endif; ?>
+
+    <form method="post" class="form-box" id="fotos">
+        <?= csrf_campo() ?>
+        <h3>📷 Fotos do site</h3>
+        <p class="dica" style="margin-top:0">Para o site não ter "cara de IA": fotos reais primeiro e um acabamento único em todas. Vale para o visual Limpo (o padrão).</p>
+        <?php require_once __DIR__ . '/../includes/fotos.php'; echo fotos_opcoes_html($site ?: []); ?>
+        <button type="submit" name="salvar_fotos" value="1">Salvar fotos</button>
+    </form>
 
     <?php $x = site_extras_dados($empresaId); $epAtiva = site_epoca_ativa($x); ?>
     <form method="post" class="form-box" id="epoca">
