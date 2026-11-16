@@ -231,7 +231,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
         . (!$linkWhats && $tel ? '<a class="lp-btn" href="tel:' . e($tel) . '" data-ev="ligar">Ligar</a>' : '') . '</div>'
         . '<h3>Horário</h3>' . $horas
         . (!empty($empresa['instagram']) ? '<p><a class="lp-link" href="https://instagram.com/' . e(ltrim($empresa['instagram'], '@')) . '" target="_blank" rel="noopener" data-ev="instagram">Instagram @' . e(ltrim($empresa['instagram'], '@')) . '</a></p>' : '')
-        . '</div>' . ($empresa['endereco'] ? '<div class="lp-mapa"><iframe title="Mapa: ' . e($empresa['endereco']) . '" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="' . e($dados['maps_key'] !== '' ? 'https://www.google.com/maps/embed/v1/place?key=' . rawurlencode($dados['maps_key']) . '&q=' . urlencode($empresa['endereco']) : 'https://maps.google.com/maps?q=' . urlencode($empresa['endereco']) . '&output=embed') . '"></iframe></div>' : '') . '</div>'
+        . '</div>' . ($empresa['endereco'] ? '<div class="lp-mapa"><iframe title="Mapa: ' . e($empresa['endereco']) . '" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="' . e(frag_mapa_src($empresa['endereco'], $dados['maps_key'])) . '"></iframe></div>' : '') . '</div>'
         . ($modo === 'contato' || !$linkWhats ? '<div class="lp-form">' . $f['{{CONTATO}}'] . '</div>' : '');
     $secao('contato', $empresa['endereco'] ? 'Onde estamos' : 'Fale com a gente', $visite, '', 'Contato');
     $ordem = ['servicos', 'agendar', 'sobre', 'equipe', 'galeria', 'clube', 'cupons', 'avaliacoes', 'contato'];

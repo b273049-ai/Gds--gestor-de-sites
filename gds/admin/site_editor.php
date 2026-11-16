@@ -7,6 +7,19 @@ $empresa = $pdo->prepare("SELECT * FROM empresas WHERE id=?");
 $empresa->execute([$empresaId]); $empresa = $empresa->fetch();
 if (!$empresa) { header('Location: empresas.php'); exit; }
 
+require_once __DIR__ . '/../includes/site_extras.php';
+// Tema de época e código personalizado (salvos à parte do conteúdo)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_extras'])) {
+    $ep = array_key_exists($_POST['tema_epoca'] ?? '', SITE_EPOCAS) ? $_POST['tema_epoca'] : null;
+    $ate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['tema_epoca_ate'] ?? '') ? $_POST['tema_epoca_ate'] : ($ep ? site_epoca_fim_padrao($ep) : null);
+    try {
+        $pdo->prepare("UPDATE sites SET tema_epoca=?, tema_epoca_ate=?, tema_epoca_msg=?, codigo_css=?, codigo_html=?, atualizado_em=NOW() WHERE empresa_id=?")
+            ->execute([$ep, $ep ? $ate : null, mb_substr(trim(strip_tags($_POST['tema_epoca_msg'] ?? '')), 0, 160) ?: null,
+                mb_substr(trim((string)($_POST['codigo_css'] ?? '')), 0, 60000) ?: null, mb_substr(trim((string)($_POST['codigo_html'] ?? '')), 0, 60000) ?: null, $empresaId]);
+        flash('sucesso', $ep ? SITE_EPOCAS[$ep][1] . ' ' . SITE_EPOCAS[$ep][0] . ' ligado no site até ' . date('d/m/Y', strtotime($ate)) . '.' : 'Época e código salvos.');
+    } catch (PDOException $e) { flash('erro', 'O banco ainda está sendo atualizado. Recarregue a página e tente de novo.'); }
+    header("Location: site_editor.php?empresa_id=$empresaId#epoca"); exit;
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $urls = array_values(array_filter(array_map('url_valida_ou_vazia', preg_split('/[\r\n,]+/', $_POST['galeria_imagens'] ?? ''))));
     $pdo->prepare("UPDATE sites SET titulo=?, subtitulo=?, sobre=?, diferenciais=?, objetivo=?, galeria_imagens=?, seo_titulo=?, seo_descricao=?, publicado=?, atualizado_em=NOW() WHERE empresa_id=?")
@@ -67,6 +80,32 @@ $modoIa = pg_bool($site['ia_modo_total'] ?? false) && !empty($site['html_gerado'
         <button type="submit">Salvar</button>
     </form>
     <?php if (!ia_configurada()): ?><p class="dica">Os botões de IA precisam de uma chave em Configurações.</p><?php endif; ?>
+
+    <?php $x = site_extras_dados($empresaId); $epAtiva = site_epoca_ativa($x); ?>
+    <form method="post" class="form-box" id="epoca">
+        <?= csrf_campo() ?>
+        <h3>🎄 Tema de época</h3>
+        <p class="dica" style="margin-top:0">Uma faixa no topo com a mensagem e o botão principal do site, e um enfeite discreto (no Natal, neve e luzinhas). Entra por cima do design atual e sai sozinho na data escolhida.</p>
+        <input type="hidden" name="tema_epoca" value="<?= e($x['tema_epoca'] ?? '') ?>">
+        <div class="ed-presets" data-preset-alvo="tema_epoca" style="display:flex;flex-wrap:wrap;gap:6px">
+            <button type="button" class="btn btn-ghost btn-sm" data-preset="">Nenhum</button>
+            <?php foreach (SITE_EPOCAS as $k => $ep): ?><button type="button" class="btn btn-ghost btn-sm" data-preset="<?= e($k) ?>"><?= $ep[1] ?> <?= e($ep[0]) ?></button><?php endforeach; ?>
+        </div>
+        <?php if (!empty($x['tema_epoca']) && !$epAtiva): ?><p class="dica">⏰ A época escolhida já passou da data e não aparece mais. Escolha de novo ou mude a data.</p><?php endif; ?>
+        <label>Mensagem da faixa (opcional)</label>
+        <input type="text" name="tema_epoca_msg" maxlength="160" value="<?= e($x['tema_epoca_msg'] ?? '') ?>" placeholder="Em branco = mensagem pronta da época, de acordo com o tipo de negócio">
+        <label>Mostrar até</label>
+        <input type="date" name="tema_epoca_ate" value="<?= e($x['tema_epoca_ate'] ?? '') ?>" style="max-width:220px">
+        <p class="dica">Em branco: até o fim da data (Natal até 26/12, Ano Novo até 02/01…).</p>
+
+        <h3 style="margin-top:22px">🧩 Código personalizado</h3>
+        <p class="dica" style="margin-top:0">Para pedidos do cliente que os campos acima não cobrem. O código é somado ao site (agendamento, carrinho e formulários continuam funcionando). Use as cores do site: <code>var(--accent)</code>, <code>var(--bg)</code>, <code>var(--txt)</code>.</p>
+        <label for="codigo_css">CSS</label>
+        <textarea name="codigo_css" id="codigo_css" rows="8" spellcheck="false" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px" placeholder=".lp-hero h1 { color: var(--accent); }"><?= e($x['codigo_css'] ?? '') ?></textarea>
+        <label for="codigo_html">HTML (entra no fim da página)</label>
+        <textarea name="codigo_html" id="codigo_html" rows="5" spellcheck="false" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px" placeholder="<div class=&quot;aviso&quot;>…</div>"><?= e($x['codigo_html'] ?? '') ?></textarea>
+        <button type="submit" name="salvar_extras" value="1">Salvar época e código</button>
+    </form>
     </div>
 
     <div class="col-preview">

@@ -674,6 +674,19 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Tema de época e código personalizado do site (migração 38)
+Admin → Empresas → (empresa) → Site → **Conteúdo e SEO**, seção "🎄 Tema de época" e "🧩 Código personalizado"
+(`includes/site_extras.php`). Vale para qualquer visual (Limpo, Completo, design da IA) e entra por cima do design:
+agendamento, carrinho e formulários continuam funcionando.
+- **Época por botão:** Natal, Ano Novo, Black Friday, Dia das Mães, Dia dos Namorados. Faixa no topo com a mensagem
+  pronta do tipo de negócio (ou a sua) e o botão principal do site; no Natal, luzinhas e neve leve (não atrapalha
+  cliques e some com "reduzir movimento"). Sai sozinha na data (Natal até 26/12, Ano Novo até 02/01…) ou na que você
+  escolher.
+- **Código personalizado:** CSS e HTML próprios do site (o HTML entra no fim da página), para atender pedidos do
+  cliente que os campos não cobrem. Cores do site em `var(--accent)`, `var(--bg)`, `var(--txt)`.
+- O mapa dos sites passou a usar o mapa grátis do Google (sem chave): com a chave da plataforma sem a "Maps Embed
+  API" ligada, aparecia a mensagem de erro do Google no lugar do mapa.
+
 ## Domínio próprio do cliente
 1. **Admin → Domínios**: confira o **IP do servidor** (na Hostinger: Sites → Painel → Detalhes do plano) e o endereço da plataforma.
 2. A empresa (em **Meu domínio**) ou o admin cadastra o domínio. A tela mostra os registros **A** (`@` e `www`)
