@@ -58,9 +58,11 @@ async function carregarAxe() {
 async function rolarTudo(p) {
     await p.evaluate(async () => {
         const passo = Math.max(300, innerHeight * 0.8);
-        for (let y = 0; y < document.documentElement.scrollHeight; y += passo) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 90)); }
-        scrollTo(0, document.documentElement.scrollHeight); await new Promise((r) => setTimeout(r, 600));
-        scrollTo(0, 0); await new Promise((r) => setTimeout(r, 300));
+        // "instant": sites com scroll-behavior: smooth ainda estariam rolando na hora de medir
+        const ir = (y) => scrollTo({ top: y, left: 0, behavior: 'instant' });
+        for (let y = 0; y < document.documentElement.scrollHeight; y += passo) { ir(y); await new Promise((r) => setTimeout(r, 90)); }
+        ir(document.documentElement.scrollHeight); await new Promise((r) => setTimeout(r, 600));
+        ir(0); await new Promise((r) => setTimeout(r, 300));
     });
 }
 

@@ -5,7 +5,7 @@
 // de repetir). Assim ninguém precisa lembrar de colar SQL no Supabase
 // depois de atualizar os arquivos da plataforma.
 // ============================================================
-const GDS_SCHEMA_VERSAO = 40;
+const GDS_SCHEMA_VERSAO = 41;
 
 // versão => [arquivo, consulta que diz se ela já está aplicada]
 function gds_migracoes() {
@@ -41,6 +41,7 @@ function gds_migracoes() {
         38 => ['adicional_38_site_extras.sql', $coluna('sites', 'tema_epoca') . " AND " . $coluna('sites', 'codigo_css') . " AND " . $coluna('sites', 'codigo_html')],
         39 => ['adicional_39_fotos_profissionais.sql', $coluna('sites', 'fotos_fonte') . " AND " . $coluna('sites', 'foto_tratamento')],
         40 => ['adicional_40_previa_vende.sql', $coluna('prospects', 'teste_wa_em')],
+        41 => ['adicional_41_recursos_site.sql', $coluna('sites', 'recursos') . " AND to_regclass('public.fidelidade_mov') IS NOT NULL AND to_regclass('public.aniversario_envios') IS NOT NULL"],
     ];
 }
 

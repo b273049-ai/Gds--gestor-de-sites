@@ -15,6 +15,7 @@
 // sem "01/02/03" onde não é sequência, sem setas em todo botão, um único momento de animação.
 // ============================================================
 require_once __DIR__ . '/site_template.php';
+require_once __DIR__ . '/recursos_site.php';
 
 function site_limpo_tons() {
     // fontes: [url do Google Fonts, família do título, família do texto, peso do título]
@@ -172,11 +173,13 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     $creditos = array_values(array_unique(array_filter(array_map(fn($x) => in_array($x['url'], [$fotoHero], true) || in_array($x['medio'], [$fotoSobre], true) ? ($x['autor'] ?? '') : '', $fotosBanco))));
     $urlsIa = array_column(array_filter($fotosBanco, fn($x) => !empty($x['ia'])), 'url');
 
-    $V = site_limpo_escolhas($empresa, (bool)$fotoHero);
+    $REC = rec_ler($empresa);
+    $temVideo = rec_ativo($REC, 'video');
+    $V = site_limpo_escolhas($empresa, (bool)$fotoHero || $temVideo);
     $T = $V['T'];
     $comp = $V['comp'];
     // "Foto inteira no topo" só com foto grande e bem exposta; senão a foto vai ao lado do título
-    if ($comp === 'foto' && !fotos_boa_para_topo($fotoHero)) $comp = 'lado';
+    if ($comp === 'foto' && !$temVideo && !fotos_boa_para_topo($fotoHero)) $comp = 'lado';
     // Acabamento único das fotos (como um fotógrafo entrega um ensaio): automático = natural nas
     // fotos reais e "filme" nas feitas por IA, que tira o brilho de plástico que denuncia a IA.
     $trat = (string)($empresa['foto_tratamento'] ?? '');
@@ -239,6 +242,8 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     }
     if (count($dados['profissionais']) > 1 && in_array('equipe', $modulos ?: ['equipe'], true)) $secao('equipe', $chaveNicho === 'barbearia' ? 'Nossos barbeiros' : 'Quem atende você', $f['{{EQUIPE}}']);
     if (count($galeria) >= 3) $secao('galeria', $N['galeria_titulo'] ?? 'Fotos', $f['{{GALERIA}}']);
+    if (($ad = rec_antes_depois($REC)) !== '') $secao('antes-depois', 'Antes e depois', $ad, 'Arraste a barra para comparar.');
+    if (($vant = rec_vantagens($empresa, $REC, $modo)) !== '') $secao('vantagens', 'Vantagens de cliente', $vant);
     if (!empty($dados['planos'])) $secao('clube', 'Planos', $f['{{CLUBE}}'], 'Um valor fixo por mês e você vem quando quiser.');
     if (!empty($dados['cupons'])) $secao('cupons', 'Promoções', $f['{{CUPONS}}']);
     if (in_array('avaliacoes', $modulos ?: ['avaliacoes'], true) && ($nota['total'] > 0 || $dados['avaliacoes'])) $secao('avaliacoes', 'O que dizem os clientes', $f['{{AVALIACOES}}'], '', 'Avaliações');
@@ -256,7 +261,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
         . '</div>' . ($empresa['endereco'] ? '<div class="lp-mapa"><iframe title="Mapa: ' . e($empresa['endereco']) . '" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="' . e(frag_mapa_src($empresa['endereco'], $dados['maps_key'])) . '"></iframe></div>' : '') . '</div>'
         . ($modo === 'contato' || !$linkWhats ? '<div class="lp-form">' . $f['{{CONTATO}}'] . '</div>' : '');
     $secao('contato', $empresa['endereco'] ? 'Onde estamos' : 'Fale com a gente', $visite, '', 'Contato');
-    $ordem = ['servicos', 'agendar', 'sobre', 'equipe', 'galeria', 'clube', 'cupons', 'avaliacoes', 'contato'];
+    $ordem = ['servicos', 'agendar', 'antes-depois', 'sobre', 'equipe', 'galeria', 'vantagens', 'clube', 'cupons', 'avaliacoes', 'contato'];
     $menu = array_slice(array_intersect_key($nav, array_flip(['servicos', 'agendar', 'sobre', 'avaliacoes', 'contato'])), 0, 4, true);
 
     $fonteUrl = 'https://fonts.googleapis.com/css2?family=' . $V['fonte'][0] . '&display=swap';
@@ -280,7 +285,8 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
-<link rel="stylesheet" href="/assets/css/site-limpo.css?v=3">
+<link rel="stylesheet" href="/assets/css/site-limpo.css?v=4">
+<?= rec_head($empresa, $REC) ?>
 <script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
 <style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;--duo-giro:<?= site_limpo_matiz($accent) - 38 ?>deg;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
 <?= frag_css_apoio(['accent' => $accent, 'fundos' => $fundos]) ?>
@@ -302,9 +308,10 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <main id="conteudo">
 <section id="inicio" class="lp-hero" data-luz>
     <div class="lp-luz" aria-hidden="true"><span></span><span></span><span></span></div>
-    <?php if ($comp === 'foto'): ?><div class="lp-hero-foto"><img src="<?= e($fotoHero) ?>" alt="" fetchpriority="high"></div><?php endif; ?>
+    <?php if ($comp === 'foto'): ?><div class="lp-hero-foto"><?= $temVideo ? rec_video_html($REC, $fotoHero, 'Vídeo da ' . $nome) : '<img src="' . e($fotoHero) . '" alt="" fetchpriority="high">' ?></div><?php endif; ?>
     <div class="lp-larg lp-hero-in">
         <div class="lp-hero-texto">
+            <?= rec_stories($REC) ?>
             <?php if ($comp !== 'tipografia' && $headline !== $nome): ?><p class="lp-hero-nome lp-entra"><?= e($nome) ?></p><?php endif; ?>
             <h1 data-palavras><?= e($headline) ?></h1>
             <p class="lp-hero-sub lp-entra"><?= e($sub) ?></p>
@@ -313,7 +320,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
                 <?php if ($linkWhats): ?><a class="lp-link-wa" href="<?= e($linkWhats) ?>" target="_blank" rel="noopener" data-ev="whatsapp"><?= frag_icone('whats') ?> WhatsApp</a><?php endif; ?>
             </div>
         </div>
-        <?php if ($comp === 'lado' || $comp === 'moldura'): ?><figure class="lp-hero-fig"><img src="<?= e($fotoHero) ?>" alt="<?= e($nome) ?>" fetchpriority="high"><?= $painel ?></figure>
+        <?php if ($comp === 'lado' || $comp === 'moldura'): ?><figure class="lp-hero-fig"><?= $temVideo ? rec_video_html($REC, $fotoHero, 'Vídeo da ' . $nome) : '<img src="' . e($fotoHero) . '" alt="' . e($nome) . '" fetchpriority="high">' ?><?= $painel ?></figure>
         <?php else: ?><div class="lp-hero-painel"><?= $painel ?></div><?php endif; ?>
     </div>
 </section>
@@ -331,7 +338,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <footer class="lp-rodape">
     <div class="lp-larg lp-rodape-in">
         <span>© <?= date('Y') ?> <?= e($nome) ?></span>
-        <span><?= $creditos ? 'Fotos: ' . e(implode(', ', $creditos)) . ' · ' : '' ?>Site feito com GDS</span>
+        <span><?= rec_botao_app($REC) ?><?= $creditos ? 'Fotos: ' . e(implode(', ', $creditos)) . ' · ' : '' ?>Site feito com GDS</span>
     </div>
 </footer>
 
@@ -354,6 +361,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 })();
 </script>
 <script src="/assets/js/site-vivo.js?v=1" defer></script>
+<?php if (array_filter(['stories', 'antes_depois', 'fidelidade', 'aniversario', 'app', 'video'], fn($k) => rec_ativo($REC, $k))): ?><script src="/assets/js/site-recursos.js?v=1" defer></script><?php endif; ?>
 <?= $preview ? site_script_preview() : '' ?>
 </body>
 </html>
