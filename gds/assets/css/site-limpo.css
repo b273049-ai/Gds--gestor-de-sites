@@ -396,3 +396,38 @@ a.lp-vivo:hover { transform: translateY(-3px); }
 .lp-garcom-res { flex-basis: 100%; text-align: center; margin: 0; font-weight: 600; pointer-events: none; background: var(--txt); color: var(--bg); border-radius: 14px; padding: 8px 14px; box-shadow: 0 10px 26px -12px rgba(0,0,0,.45); }
 .lp-garcom-res:empty { display: none; }
 @media (min-width: 861px) { .lp-garcom { left: auto; right: 24px; bottom: 24px; flex-direction: column; align-items: stretch; width: 220px; } }
+/* serviços: grade de aulas, quiz, calculadora e tour 360 */
+.lp-grade-dias { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; }
+.lp-grade-dias button { flex: none; min-height: 44px; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--linha); background: var(--sup); color: var(--txt); font: 600 .95rem var(--f-txt); cursor: pointer; }
+.lp-grade-dias button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.lp-grade-painel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.lp-grade-painel li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; background: var(--sup); border: 1px solid var(--linha); border-radius: calc(var(--raio) + 4px); padding: 12px 14px; }
+.lp-grade-hora { font: 700 1.1rem var(--f-txt); color: var(--accent-txt); }
+.lp-grade-nome { font-weight: 600; overflow-wrap: anywhere; } .lp-grade-nome small { display: block; color: var(--suave); font-weight: 500; }
+.lp-grade-vazio { color: var(--suave); }
+.lp-quiz { background: var(--sup); border: 1px solid var(--linha); border-radius: calc(var(--raio) + 6px); padding: clamp(20px, 3vw, 32px); max-width: 760px; }
+.lp-quiz-n { color: var(--suave); margin: 0 0 4px; font-size: .9rem; }
+.lp-quiz h3 { font: var(--peso-tit) clamp(1.3rem, 2.4vw, 1.7rem)/1.2 var(--f-tit); margin: 0 0 16px; outline: none; }
+.lp-quiz-op { display: flex; flex-wrap: wrap; gap: 10px; }
+.lp-quiz-res { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 10px; }
+.lp-quiz-res li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border: 1px solid var(--linha); border-radius: calc(var(--raio) + 4px); padding: 12px 14px; background: var(--bg); }
+.lp-quiz-res small { display: block; color: var(--suave); margin-top: 2px; }
+.lp-quiz-de-novo { background: none; border: 0; cursor: pointer; font: 600 .95rem var(--f-txt); color: var(--accent-txt); text-decoration: underline; padding: 8px 0; min-height: 40px; }
+.lp-calc { background: var(--sup); border: 1px solid var(--linha); border-radius: calc(var(--raio) + 6px); padding: clamp(18px, 3vw, 28px); max-width: 760px; }
+.lp-calc ul { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
+.lp-calc li { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid var(--linha); padding: 8px 0; }
+.lp-calc-item { display: flex; align-items: center; gap: 12px; cursor: pointer; flex: 1; min-width: 0; }
+.lp-calc-item input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.lp-calc-item small { display: block; color: var(--suave); }
+.lp-calc-qtd input { width: 76px; min-height: 44px; padding: 8px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--txt) 22%, transparent); background: var(--bg); color: var(--txt); font: 1rem var(--f-txt); }
+.lp-calc-qtd input:disabled { opacity: .45; }
+.lp-calc-total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 1.1rem; }
+.lp-calc-total strong { font: 800 clamp(1.5rem, 3vw, 2rem) var(--f-txt); color: var(--accent-txt); }
+.lp-calc-nota { color: var(--suave); font-size: .9rem; margin: 4px 0 14px; }
+.lp-tour-tela { width: 100%; aspect-ratio: 16 / 9; border-radius: calc(var(--raio) + 6px); overflow: hidden; background: var(--sup); }
+@media (max-width: 640px) { .lp-tour-tela { aspect-ratio: 4 / 5; } .lp-grade-painel li { grid-template-columns: 56px minmax(0, 1fr); } .lp-grade-painel li .lp-btn { grid-column: 1 / -1; } }
+.lp-tour-lista { display: flex; gap: 10px; overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+.lp-tour-lista button { flex: none; display: grid; gap: 6px; justify-items: center; background: none; border: 2px solid transparent; border-radius: 12px; padding: 4px; color: var(--txt); font: 600 .9rem var(--f-txt); cursor: pointer; }
+.lp-tour-lista button[aria-pressed="true"] { border-color: var(--accent); }
+.lp-tour-lista img { width: 120px; height: 60px; object-fit: cover; border-radius: 8px; }
+.lp-tour-dica { color: var(--suave); font-size: .9rem; margin: 8px 0 0; }

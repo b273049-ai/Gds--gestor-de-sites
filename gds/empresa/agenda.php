@@ -5,6 +5,9 @@ require_once __DIR__ . '/../includes/espera.php';
 exigir_login('empresa');
 exigir_modulo('agenda');
 $empresaId = (int)empresa_id_atual();
+// "Acompanhe o atendimento" ligado em Recursos do site
+$acompAtivo = false;
+try { require_once __DIR__ . '/../includes/recursos_site.php'; $rs = $pdo->prepare("SELECT recursos FROM sites WHERE empresa_id=?"); $rs->execute([(int)empresa_id_atual()]); $acompAtivo = rec_ativo(rec_ler(['recursos' => $rs->fetchColumn()]), 'acompanhar'); } catch (PDOException $e) {}
 $statusAg = ['agendado' => 'Agendado', 'confirmado' => 'Confirmado', 'concluido' => 'Concluído', 'faltou' => 'Faltou', 'cancelado' => 'Cancelado'];
 
 $empresa = $pdo->prepare("SELECT * FROM empresas WHERE id=?");
@@ -240,6 +243,7 @@ $diasSemana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
                 <?php elseif ($temComandas && !in_array($a['status'], ['cancelado', 'faltou'], true) && $ts < strtotime('tomorrow')): ?>
                 <a class="btn btn-sm" href="/empresa/caixa.php?agendamento=<?= (int)$a['id'] ?>" title="Fechar a conta deste atendimento"><?= icone('dinheiro', 14) ?> Fechar comanda</a>
                 <?php endif; ?>
+                <?php if ($acompAtivo && !in_array($a['status'], ['cancelado', 'faltou'], true) && date('Y-m-d', $ts) === date('Y-m-d')): ?><a class="btn btn-ghost btn-sm" href="/empresa/acompanhar.php?ag=<?= (int)$a['id'] ?>" title="Etapas e fotos para o cliente acompanhar">📍 Acompanhar<?= (int)($a['etapa'] ?? 0) > 0 ? ' (' . (int)$a['etapa'] . ')' : '' ?></a><?php endif; ?>
                 <?php if ($a['cliente_id'] && $ts < time() + 7200): ?><a class="btn btn-ghost btn-sm" href="/empresa/clientes.php?ficha=<?= (int)$a['cliente_id'] ?>&nota=<?= (int)$a['id'] ?>#notas" title="Anotar o atendimento na ficha">📝</a><?php endif; ?>
                 <?php if ($a['telefone'] && $ts > time() && $a['status'] !== 'cancelado'): ?>
                 <a class="btn btn-ghost btn-sm" target="_blank" href="<?= e(link_whatsapp($a['telefone'], 'Olá, ' . explode(' ', (string)$a['cliente_nome'])[0] . '! Passando para lembrar do seu horário' . ($a['servico_nome'] ? ' de ' . $a['servico_nome'] : '') . ' em ' . date('d/m \à\s H:i', $ts) . ' na ' . $empresa['nome'] . '. Podemos confirmar?')) ?>" title="Lembrar pelo WhatsApp"><?= icone('chat', 14) ?> Lembrar</a>

@@ -139,3 +139,120 @@
     });
   });
 })();
+
+// ---------- serviços: grade de aulas, quiz, calculadora e tour 360 (includes/recursos_servicos.php) ----------
+(function () {
+  'use strict';
+  var moeda = function (v) { return 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+
+  // grade: abas dos dias (setas do teclado também)
+  document.querySelectorAll('[data-grade]').forEach(function (g) {
+    var abas = [].slice.call(g.querySelectorAll('[role=tab]'));
+    var abrir = function (a, foco) {
+      abas.forEach(function (x) { var on = x === a; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; document.getElementById(x.getAttribute('aria-controls')).hidden = !on; });
+      if (foco) a.focus();
+    };
+    abas.forEach(function (a, i) {
+      a.addEventListener('click', function () { abrir(a); });
+      a.addEventListener('keydown', function (e) { var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (d) { e.preventDefault(); abrir(abas[(i + d + abas.length) % abas.length], true); } });
+    });
+  });
+
+  // quiz: categoria → tempo → preço → sugestão
+  document.querySelectorAll('[data-quiz]').forEach(function (q) {
+    var dados = []; try { dados = JSON.parse(q.querySelector('.lp-quiz-dados').textContent); } catch (e) { return; }
+    var passo = q.querySelector('.lp-quiz-passo'), acao = q.getAttribute('data-acao'), esc = {};
+    var cats = dados.map(function (d) { return d.cat; }).filter(function (c, i, a) { return c && a.indexOf(c) === i; });
+    var precos = dados.map(function (d) { return d.preco; }).filter(function (p) { return p > 0; }).sort(function (a, b) { return a - b; });
+    var temTempo = dados.some(function (d) { return d.min > 0; });
+    var perguntas = [];
+    if (cats.length >= 2) perguntas.push({ k: 'cat', t: 'O que você procura?', o: cats.slice(0, 6).map(function (c) { return [c, c]; }).concat([['', 'Ainda não sei']]) });
+    if (temTempo) perguntas.push({ k: 'tempo', t: 'Quanto tempo você tem?', o: [['30', 'Até 30 minutos'], ['60', 'Até 1 hora'], ['999', 'Tenho tempo']] });
+    if (precos.length >= 3) { var m = precos[Math.floor(precos.length / 2)]; perguntas.push({ k: 'preco', t: 'Quanto quer investir?', o: [[String(m), 'Até ' + moeda(m)], ['999999', 'O melhor resultado']] }); }
+    if (!perguntas.length) perguntas.push({ k: 'cat', t: 'Vamos começar?', o: [['', 'Ver sugestões']] });
+    var mostrar = function (i) {
+      if (i >= perguntas.length) return resultado();
+      var p = perguntas[i];
+      passo.innerHTML = '<p class="lp-quiz-n">Pergunta ' + (i + 1) + ' de ' + perguntas.length + '</p><h3 tabindex="-1"></h3><div class="lp-quiz-op"></div>';
+      passo.querySelector('h3').textContent = p.t;
+      p.o.forEach(function (o) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'lp-btn lp-btn-2'; b.textContent = o[1];
+        b.onclick = function () { esc[p.k] = o[0]; mostrar(i + 1); };
+        passo.querySelector('.lp-quiz-op').appendChild(b);
+      });
+      if (i > 0) passo.querySelector('h3').focus();
+    };
+    var resultado = function () {
+      var lim = function (v, d) { return v === undefined || v === '' ? d : Number(v); };
+      var nota = function (d) {
+        var n = 0;
+        if (esc.cat && d.cat === esc.cat) n += 3;
+        if (d.min && d.min <= lim(esc.tempo, 999)) n += 2; else if (!d.min) n += 1;
+        if (!d.preco || d.preco <= lim(esc.preco, 999999)) n += 2;
+        return n;
+      };
+      var top = dados.slice().sort(function (a, b) { return nota(b) - nota(a); }).slice(0, 3);
+      passo.innerHTML = '<h3 tabindex="-1">Nossa sugestão para você</h3><ul class="lp-quiz-res"></ul><button type="button" class="lp-link lp-quiz-de-novo">Responder de novo</button>';
+      top.forEach(function (d) {
+        var li = document.createElement('li');
+        li.innerHTML = '<div><strong></strong><small></small></div>';
+        li.querySelector('strong').textContent = d.nome;
+        li.querySelector('small').textContent = [d.preco ? moeda(d.preco) : '', d.min ? d.min + ' min' : '', d.desc].filter(Boolean).join(' · ');
+        var a = document.createElement('a'); a.className = 'lp-btn';
+        if (acao === 'agendar') { a.href = '#gds-agendamento'; a.setAttribute('data-gds-agendar-servico', d.id); a.textContent = 'Agendar'; }
+        else if (acao === 'orcar') { a.href = '#agendar'; a.setAttribute('data-gds-orcar-servico', d.id); a.textContent = 'Pedir orçamento'; }
+        else { a.href = '#servicos'; a.textContent = 'Ver no cardápio'; }
+        li.appendChild(a); passo.querySelector('.lp-quiz-res').appendChild(li);
+      });
+      passo.querySelector('.lp-quiz-de-novo').onclick = function () { esc = {}; mostrar(0); };
+      passo.querySelector('h3').focus();
+    };
+    mostrar(0);
+  });
+
+  // calculadora
+  document.querySelectorAll('[data-calc]').forEach(function (f) {
+    var total = f.querySelector('.lp-calc-total strong');
+    var conta = function () {
+      var t = 0;
+      f.querySelectorAll('input[type=checkbox]').forEach(function (c) {
+        var q = f.querySelector('[data-qtd="' + c.name + '"]');
+        q.disabled = !c.checked;
+        if (c.checked) t += Number(c.value) * Math.max(1, parseInt(q.value, 10) || 1);
+      });
+      total.textContent = moeda(t);
+    };
+    f.addEventListener('input', conta); f.addEventListener('change', conta); conta();
+    var pedir = f.querySelector('[data-calc-pedir]');
+    if (pedir) pedir.addEventListener('click', function () {
+      var itens = [];
+      f.querySelectorAll('input[type=checkbox]:checked').forEach(function (c) { var q = f.querySelector('[data-qtd="' + c.name + '"]'); itens.push((parseInt(q.value, 10) || 1) + '× ' + c.getAttribute('data-nome')); });
+      var campo = document.querySelector('#agendar textarea');
+      if (campo && itens.length) { campo.value = (campo.value ? campo.value + '\n' : '') + 'Simulei no site: ' + itens.join(', ') + ' (estimativa ' + total.textContent + ').'; }
+    });
+  });
+
+  // tour 360 (Pannellum, carregado só quando a seção aparece)
+  var tour = document.querySelector('[data-tour]');
+  if (tour) {
+    var tela = tour.querySelector('#lpTour360'), visor = null, carregado = false;
+    var abrir = function (img) {
+      if (!window.pannellum) return;
+      if (visor) visor.destroy();
+      visor = pannellum.viewer(tela, { type: 'equirectangular', panorama: img, autoLoad: true, showControls: true, compass: false, autoRotate: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : -2, haov: 360, vaov: 180 });
+    };
+    var carregar = function () {
+      if (carregado) return; carregado = true;
+      var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css'; document.head.appendChild(css);
+      var js = document.createElement('script'); js.src = 'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js';
+      js.onload = function () { var b = tour.querySelector('[data-tour-img]'); if (b) abrir(b.getAttribute('data-tour-img')); };
+      document.head.appendChild(js);
+    };
+    if ('IntersectionObserver' in window) new IntersectionObserver(function (es, o) { if (es[0].isIntersecting) { carregar(); o.disconnect(); } }, { rootMargin: '200px' }).observe(tour); else carregar();
+    tour.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-tour-img]'); if (!b) return;
+      tour.querySelectorAll('[data-tour-img]').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      abrir(b.getAttribute('data-tour-img'));
+    });
+  }
+})();
