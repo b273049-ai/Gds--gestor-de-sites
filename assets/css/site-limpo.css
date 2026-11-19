@@ -314,3 +314,72 @@ a.lp-vivo:hover { transform: translateY(-3px); }
 /* com a entrada animada, o grão aparece junto com a foto */
 .lp-js .lp-hero-fig::before { opacity: 0; transition: opacity .9s .6s; }
 .lp-js .lp-hero.lp-no-ar .lp-hero-fig::before { opacity: .2; }
+
+/* ---------- recursos do site (includes/recursos_site.php) ---------- */
+.lp-sr { position: absolute !important; width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* vídeo no topo: mesmo enquadramento da foto */
+.lp-video { display: block; width: 100%; object-fit: cover; background: var(--sup); }
+.lp-comp-foto .lp-hero-foto .lp-video { height: 100%; }
+.lp-comp-lado .lp-hero-fig .lp-video { aspect-ratio: 4 / 5; border-radius: var(--raio); }
+.lp-comp-moldura .lp-hero-fig .lp-video { aspect-ratio: 21 / 9; border-radius: var(--raio); }
+@media (max-width: 860px) { .lp-comp-lado .lp-hero-fig .lp-video { aspect-ratio: 4 / 3; } }
+@media (max-width: 640px) { .lp-comp-moldura .lp-hero-fig .lp-video { aspect-ratio: 4 / 3; } }
+/* stories: bolinhas com anel na cor da marca */
+.lp-stories { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 14px; margin-bottom: 6px; scrollbar-width: none; }
+.lp-stories::-webkit-scrollbar { display: none; }
+.lp-comp-tipografia .lp-stories { justify-content: center; }
+.lp-stories { position: relative; z-index: 3; }
+@media (max-width: 860px) { .lp-comp-lado .lp-stories, .lp-comp-moldura .lp-stories { margin-top: 18px; } }
+.lp-story { flex: none; width: 64px; height: 64px; border-radius: 50%; padding: 3px; border: 0; cursor: pointer;
+    background: conic-gradient(from 210deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #fff), var(--accent)); }
+.lp-story img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 3px solid var(--bg); display: block; }
+.lp-story:focus-visible { outline: 3px solid var(--txt); outline-offset: 3px; }
+.lp-sv { position: fixed; inset: 0; z-index: 10080; background: #000; display: grid; place-items: center; }
+.lp-sv img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.lp-sv-barras { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; gap: 4px; z-index: 2; }
+.lp-sv-barras i { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.35); overflow: hidden; position: relative; }
+.lp-sv-barras i.cheia { background: #fff; }
+.lp-sv-barras i.atual::after { content: ""; position: absolute; inset: 0; background: #fff; transform-origin: left; animation: lp-sv-anda 5s linear forwards; }
+.lp-sv.calmo .lp-sv-barras i.atual::after { animation: none; transform: none; }
+@keyframes lp-sv-anda { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.lp-sv-x { position: absolute; top: 24px; right: 14px; z-index: 3; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(0,0,0,.45); color: #fff; font: 700 26px/1 system-ui; cursor: pointer; }
+.lp-sv-txt { position: absolute; left: 16px; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); margin: 0; z-index: 2; color: #fff; font: 600 17px/1.4 var(--f-txt); text-align: center; text-shadow: 0 1px 8px rgba(0,0,0,.7); }
+.lp-sv-ant, .lp-sv-prox { position: absolute; top: 70px; bottom: 90px; width: 35%; border: 0; background: transparent; cursor: pointer; z-index: 1; }
+.lp-sv-ant { left: 0; } .lp-sv-prox { right: 0; width: 65%; }
+.lp-sv-x:focus-visible, .lp-sv-ant:focus-visible, .lp-sv-prox:focus-visible { outline: 3px solid #fff; outline-offset: -3px; }
+/* antes e depois */
+.lp-ad-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 20px; }
+.lp-ad { margin: 0; }
+.lp-ad figcaption { margin-top: 10px; color: var(--suave); font-size: .95rem; }
+.lp-ad-box { position: relative; aspect-ratio: 4 / 5; border-radius: var(--raio); overflow: hidden; background: var(--sup); }
+.lp-ad-box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.lp-ad-antes { clip-path: inset(0 calc(100% - var(--pos, 50%)) 0 0); }
+.lp-ad-linha { position: absolute; top: 0; bottom: 0; left: var(--pos, 50%); width: 3px; margin-left: -1.5px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); pointer-events: none; }
+.lp-ad-linha::after { content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #111; display: grid; place-items: center; font: 700 18px/1 system-ui; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.lp-ad-rot { position: absolute; top: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font: 600 13px/1.2 var(--f-txt); pointer-events: none; }
+.lp-ad-a { left: 12px; } .lp-ad-d { right: 12px; }
+.lp-ad-box input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
+.lp-ad-box:has(input:focus-visible) { outline: 3px solid var(--accent-txt); outline-offset: 3px; }
+/* vantagens: cartão fidelidade e aniversário */
+.lp-vant { display: grid; gap: 20px; }
+.lp-vant.duas { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.lp-fid, .lp-aniv { background: var(--sup); border: 1px solid var(--linha); border-radius: calc(var(--raio) + 6px); padding: clamp(20px, 3vw, 30px); }
+.lp-fid h3, .lp-aniv h3 { font: var(--peso-tit) clamp(1.3rem, 2.2vw, 1.6rem)/1.2 var(--f-tit); margin: 0 0 8px; }
+.lp-fid > p, .lp-aniv > p { color: var(--suave); margin: 0 0 16px; }
+.lp-selos { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 8px; margin-bottom: 18px; }
+.lp-selo { aspect-ratio: 1; border-radius: 50%; border: 2px dashed color-mix(in srgb, var(--txt) 28%, transparent); display: grid; place-items: center; font: 700 .85rem/1 var(--f-txt); color: var(--suave); transition: background .3s, transform .3s; }
+.lp-selo.premio { border-style: solid; border-color: var(--accent-txt); color: var(--accent-txt); font-size: 1.1rem; }
+.lp-selo.marcado { background: var(--accent); border: 2px solid var(--accent); color: var(--on-accent); }
+@media (prefers-reduced-motion: no-preference) { .lp-selo.marcado { transform: scale(1.06); } }
+.lp-fid-form label, .lp-aniv-form label, .lp-aniv-form legend { display: block; font-weight: 600; margin: 10px 0 6px; }
+.lp-aniv-form fieldset { border: 0; padding: 0; margin: 0; }
+.lp-fid-linha { display: flex; gap: 8px; flex-wrap: wrap; }
+.lp-fid-linha input, .lp-fid-linha select { flex: 1 1 160px; }
+.lp-fid input, .lp-aniv input, .lp-aniv select { min-height: 48px; padding: 10px 14px; border-radius: calc(var(--raio) * .7 + 4px); border: 1px solid color-mix(in srgb, var(--txt) 22%, transparent); background: var(--bg); color: var(--txt); font: 1rem var(--f-txt); width: 100%; box-sizing: border-box; }
+.lp-aniv-form > .lp-btn { margin-top: 14px; }
+.lp-fid-res, .lp-aniv-res { margin: 12px 0 0; font-weight: 600; min-height: 1.4em; }
+/* instalar o app */
+.lp-app-b { margin-right: 12px; background: none; border: 1px solid color-mix(in srgb, var(--txt) 25%, transparent); color: var(--txt); border-radius: 999px; padding: 8px 14px; font: 600 .9rem var(--f-txt); cursor: pointer; min-height: 40px; }
+.lp-app-ios { position: fixed; left: 12px; right: 12px; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); z-index: 10040; background: var(--sup); color: var(--txt); border: 1px solid var(--linha); border-radius: 16px; padding: 16px; box-shadow: 0 20px 50px -14px rgba(0,0,0,.45); }
+.lp-app-ios p { margin: 0 0 10px; }
+.lp-app-ios button { min-height: 40px; padding: 8px 16px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 700 .95rem var(--f-txt); cursor: pointer; }

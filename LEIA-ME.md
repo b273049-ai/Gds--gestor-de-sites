@@ -674,6 +674,24 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Recursos do site (migração 41)
+Painel da empresa → **Recursos do site** (ou Admin → Site da empresa → Recursos do site). Tudo com botões
+Ligado/Desligado; cada recurso só aparece no site quando tem conteúdo. Custo zero (PHP, CSS e JS próprios).
+- **Cartão fidelidade:** a cada N atendimentos/pedidos (5, 6, 8, 10, 12 ou 15) o cliente ganha o prêmio escrito
+  pelo dono. Os selos **entram sozinhos**: cada agendamento ou pedido **concluído** desde o dia em que o recurso
+  foi ligado. Atendimento feito fora do site: "+1 selo" pelo WhatsApp do cliente. Quem completou aparece com
+  "Entregar prêmio" (o cartão recomeça). No site, o cliente digita o WhatsApp e vê os selos dele.
+- **Cupom de aniversário:** o cliente cadastra o dia no site (vira cliente da empresa com a data). No dia, o cron
+  cria um cupom só dele (NIVERxxxxx, 5–30%, válido por 15 dias) e manda os parabéns no WhatsApp — 1 vez por ano.
+- **App no celular:** botão "Instalar o app" no rodapé (Android instala direto; iPhone mostra o passo a passo).
+  Ícone feito com o logo (ou a inicial na cor da marca); `site/recursos.php?acao=manifest` + `/gds-sw.js`.
+- **Novidades (stories):** bolinhas no topo do site; tocando, abre em tela cheia com barra de tempo (até 10).
+- **Antes e depois:** fotos com barra de arrastar para comparar (até 6).
+- **Vídeo no topo:** um MP4 curto (até 25 MB) no lugar da foto principal, sem som e em repetição; com
+  "reduzir movimento" ligado no celular, fica parado na capa.
+- O teste de qualidade (`qa-site.cjs`) agora rola de forma instantânea (sites com rolagem suave davam falso
+  "botões sobrepostos").
+
 ## Prévia que vende (migração 40)
 A prévia (`/previa/CODIGO`) agora mostra o que o dono vai ganhar, não só o site:
 - **Imagem do link no WhatsApp:** o cartão do link mostra o site do lead dentro de um celular (nome, foto, nota

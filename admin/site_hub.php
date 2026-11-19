@@ -67,6 +67,7 @@ $feitos = count(array_filter($checklist, fn($c) => $c[1]));
     <div class="acoes-grid">
         <div class="card"><div class="label"><?= icone('lapis', 16) ?> Conteúdo e SEO</div><p>Título, sobre, diferenciais, galeria, SEO e publicação.</p><a class="btn btn-ghost btn-sm" href="site_editor.php?empresa_id=<?= $empresaId ?>">Abrir</a></div>
         <div class="card"><div class="label"><?= icone('layout', 16) ?> Layout do template</div><p>Estilo, banner e ordem das seções (quando não usa o design da IA).</p><a class="btn btn-ghost btn-sm" href="site_layout.php?empresa_id=<?= $empresaId ?>">Abrir</a></div>
+        <div class="card"><div class="label"><?= icone('estrela', 16) ?> Recursos do site</div><p>Cartão fidelidade, app no celular, novidades, antes e depois, aniversário e vídeo.</p><a class="btn btn-ghost btn-sm" href="site_recursos.php?empresa_id=<?= $empresaId ?>">Abrir</a></div>
         <div class="card"><div class="label"><?= icone('prancheta', 16) ?> Blocos de conteúdo</div><p>Seções livres: diferenciais, FAQ, promoções.</p><a class="btn btn-ghost btn-sm" href="site_blocos.php?empresa_id=<?= $empresaId ?>">Abrir</a></div>
     </div>
 

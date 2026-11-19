@@ -32,6 +32,7 @@ $soRastreio = ($mods['empresa']['segmento_slug'] ?? '') === 'rastreio-motoboy';
         <div class="sidebar-grupo">Meu catálogo</div>
         <?= menu_item('/empresa/servicos.php', 'servicos.php', $mods['modo'] === 'catalogo' ? 'pacote' : 'tesoura', modulos_rotulo_catalogo()) ?>
         <?php if (modulo_ativo('equipe')): ?><?= menu_item('/empresa/profissionais.php', 'profissionais.php', 'cracha', 'Equipe') ?><?php endif; ?>
+        <?= menu_item('/empresa/recursos.php', 'recursos.php', 'estrela', 'Recursos do site') ?>
         <?php if (modulo_ativo('cupons')): ?><?= menu_item('/empresa/cupons.php', 'cupons.php', 'cupom', 'Cupons') ?><?php endif; ?>
         <?php if (modulo_ativo('avaliacoes')): ?><?= menu_item('/empresa/avaliacoes.php', 'avaliacoes.php', 'estrela', 'Avaliações') ?><?php endif; ?>
         <?php if (modulo_ativo('rastreio')): ?><?= menu_item('/empresa/rastreio.php', 'rastreio.php', 'mapa', 'Rastreamento de motoboys') ?><?php endif; ?>
