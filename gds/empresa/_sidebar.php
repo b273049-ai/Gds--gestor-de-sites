@@ -23,7 +23,7 @@ $soRastreio = ($mods['empresa']['segmento_slug'] ?? '') === 'rastreio-motoboy';
         <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/gestor.php', 'gestor.php', 'pacote', 'Gestor de pedidos', 'destaque') ?><?php endif; ?>
         <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/pdv.php', 'pdv.php', 'mais', 'Novo pedido (balcão)') ?><?= menu_item('/empresa/entregas.php', 'entregas.php', 'dinheiro', 'Entregas e fechamento') ?><?php endif; ?>
         <?php if (modulo_ativo('delivery') || modulo_ativo('orcamentos')): ?><?= menu_item('/empresa/pedidos.php', 'pedidos.php', modulo_ativo('delivery') ? 'pacote' : 'prancheta', modulos_rotulo_pedidos()) ?><?php endif; ?>
-        <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/mesas.php', 'mesas.php', 'layout', 'QR Code das mesas') ?><?php endif; ?>
+        <?php if (modulo_ativo('delivery')): ?><?= menu_item('/empresa/restaurante.php', 'restaurante.php', 'calendario', 'Reservas, fila e mesas') ?><?= menu_item('/empresa/mesas.php', 'mesas.php', 'layout', 'QR Code das mesas') ?><?php endif; ?>
         <?php if (modulo_ativo('agenda')): ?><?= menu_item('/empresa/clube.php', 'clube.php', 'estrela', 'Clube e pacotes') ?><?php endif; ?>
         <?php if (modulo_ativo('imoveis')): ?><?= menu_item('/empresa/imoveis.php', 'imoveis.php', 'casa', 'Imóveis', 'destaque') ?><?php endif; ?>
         <?= menu_item('/empresa/leads.php', 'leads.php', 'funil', 'Contatos e negociações') ?>

@@ -674,6 +674,18 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Restaurante, bar e café: reserva, fila e chamar garçom (migração 42)
+Ligados em **Recursos do site** (grupo "Restaurante, bar e café"). A equipe acompanha em
+**Reservas, fila e mesas** (painel da empresa), que se atualiza sozinho a cada 10 s e toca um aviso (botão "Ligar som").
+- **Reserva de mesa:** no site, dia (só dias de funcionamento), horário (entre a abertura e 1 h antes de fechar,
+  de 30 em 30 min), pessoas e observação. Chega como "Aguardando confirmação"; ao confirmar ou recusar, o
+  cliente recebe no WhatsApp. Uma reserva por WhatsApp por dia.
+- **Fila de espera:** o cliente entra pelo site (ou a recepção põe quem chegou na porta) e acompanha a posição
+  numa página que se atualiza sozinha (`/site/restaurante.php?fila=…`). "Chamar" manda "sua mesa está pronta"
+  no WhatsApp e a página dele mostra o aviso.
+- **Chamar garçom / pedir a conta:** no cardápio aberto pelo QR Code da mesa (`?mesa=N`), dois botões fixos. O
+  chamado aparece na hora no painel; "Atendido" tira da tela. Repetir o toque não duplica o chamado.
+
 ## Recursos do site (migração 41)
 Painel da empresa → **Recursos do site** (ou Admin → Site da empresa → Recursos do site). Tudo com botões
 Ligado/Desligado; cada recurso só aparece no site quando tem conteúdo. Custo zero (PHP, CSS e JS próprios).

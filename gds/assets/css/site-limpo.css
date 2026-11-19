@@ -383,3 +383,16 @@ a.lp-vivo:hover { transform: translateY(-3px); }
 .lp-app-ios { position: fixed; left: 12px; right: 12px; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); z-index: 10040; background: var(--sup); color: var(--txt); border: 1px solid var(--linha); border-radius: 16px; padding: 16px; box-shadow: 0 20px 50px -14px rgba(0,0,0,.45); }
 .lp-app-ios p { margin: 0 0 10px; }
 .lp-app-ios button { min-height: 40px; padding: 8px 16px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 700 .95rem var(--f-txt); cursor: pointer; }
+/* restaurante: reserva, fila e chamar garçom */
+.lp-rest-form { background: var(--sup); border: 1px solid var(--linha); border-radius: calc(var(--raio) + 6px); padding: clamp(18px, 3vw, 28px); }
+.lp-rest-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 14px; margin-bottom: 16px; }
+.lp-rest-largo { grid-column: 1 / -1; }
+.lp-rest-form label { display: block; font-weight: 600; margin-bottom: 6px; }
+.lp-rest-form input, .lp-rest-form select { width: 100%; box-sizing: border-box; min-height: 48px; padding: 10px 14px; border-radius: calc(var(--raio) * .7 + 4px); border: 1px solid color-mix(in srgb, var(--txt) 22%, transparent); background: var(--bg); color: var(--txt); font: 1rem var(--f-txt); }
+.lp-rest-res { margin: 12px 0 0; font-weight: 600; min-height: 1.4em; }
+.lp-garcom { position: fixed; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 45; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; pointer-events: none; }
+.lp-garcom button { pointer-events: auto; min-height: 46px; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--linha); background: var(--sup); color: var(--txt); font: 700 .95rem var(--f-txt); box-shadow: 0 10px 26px -12px rgba(0,0,0,.45); cursor: pointer; }
+.lp-garcom button[disabled] { opacity: .6; }
+.lp-garcom-res { flex-basis: 100%; text-align: center; margin: 0; font-weight: 600; pointer-events: none; background: var(--txt); color: var(--bg); border-radius: 14px; padding: 8px 14px; box-shadow: 0 10px 26px -12px rgba(0,0,0,.45); }
+.lp-garcom-res:empty { display: none; }
+@media (min-width: 861px) { .lp-garcom { left: auto; right: 24px; bottom: 24px; flex-direction: column; align-items: stretch; width: 220px; } }

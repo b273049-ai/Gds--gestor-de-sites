@@ -19,6 +19,10 @@ const REC_PADRAO = [
     'antes_depois' => ['ativo' => false, 'itens' => []],
     'aniversario' => ['ativo' => false, 'desconto' => 10],
     'video' => ['ativo' => false, 'url' => ''],
+    // restaurante e bar (includes/restaurante.php)
+    'reserva' => ['ativo' => false],
+    'fila' => ['ativo' => false],
+    'garcom' => ['ativo' => false],
 ];
 const REC_MAX_VIDEO = 25 * 1024 * 1024;
 
@@ -282,6 +286,9 @@ function rec_salvar_post($empresaId, $site) {
             $r['stories']['ativo'] = $lig('stories_ativo');
             $r['antes_depois']['ativo'] = $lig('ad_ativo');
             $r['video']['ativo'] = $lig('video_ativo');
+            $r['reserva']['ativo'] = $lig('reserva_ativo');
+            $r['fila']['ativo'] = $lig('fila_ativo');
+            $r['garcom']['ativo'] = $lig('garcom_ativo');
             rec_gravar($empresaId, $r);
             return [true, 'Recursos do site salvos.'];
         case 'add_story':
@@ -384,6 +391,10 @@ function rec_form_html($empresa, $site, $modo) {
         . '<div class="rec-card"><h3>🟣 Novidades (stories)</h3><p class="dica">Bolinhas no topo do site com fotos de novidades e promoções, como no Instagram.</p>' . $chave('stories_ativo', !empty($r['stories']['ativo']), 'Novidades no topo') . '</div>'
         . '<div class="rec-card"><h3>↔️ Antes e depois</h3><p class="dica">Fotos com uma barra de arrastar para comparar o resultado.</p>' . $chave('ad_ativo', !empty($r['antes_depois']['ativo']), 'Antes e depois') . '</div>'
         . '<div class="rec-card"><h3>🎬 Vídeo no topo</h3><p class="dica">Um vídeo curto do espaço no lugar da foto principal (sem som, em repetição).</p>' . $chave('video_ativo', !empty($r['video']['ativo']), 'Vídeo no topo') . '</div>'
+        . '</div><h3 style="margin-top:22px">🍽 Restaurante, bar e café</h3><p class="dica">A equipe acompanha tudo ao vivo em <a class="link" href="/empresa/restaurante.php">Reservas, fila e mesas</a> (painel da empresa).</p><div class="rec-grade">'
+        . '<div class="rec-card"><h3>📅 Reserva de mesa</h3><p class="dica">O cliente pede dia, hora e quantas pessoas. Você confirma no painel e ele recebe no WhatsApp.</p>' . $chave('reserva_ativo', !empty($r['reserva']['ativo']), 'Reserva de mesa') . '</div>'
+        . '<div class="rec-card"><h3>⏳ Fila de espera</h3><p class="dica">Casa cheia? O cliente entra na fila pelo celular, vê a posição ao vivo e é avisado no WhatsApp quando a mesa fica pronta.</p>' . $chave('fila_ativo', !empty($r['fila']['ativo']), 'Fila de espera') . '</div>'
+        . '<div class="rec-card"><h3>🙋 Chamar garçom</h3><p class="dica">No cardápio aberto pelo QR Code da mesa, botões "Chamar garçom" e "Pedir a conta". O chamado aparece na hora, com som.</p>' . $chave('garcom_ativo', !empty($r['garcom']['ativo']), 'Chamar garçom e pedir a conta') . '</div>'
         . '</div><button type="submit">Salvar</button></form>';
     // novidades
     $mini = '';
