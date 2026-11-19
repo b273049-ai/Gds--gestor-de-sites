@@ -100,3 +100,42 @@
     document.addEventListener('click', function (e) { if (e.target.closest('[data-fechar-ios]')) { document.getElementById('lpAppIos').hidden = true; bApp.focus(); } });
   }
 })();
+
+// ---------- restaurante: reserva, fila e chamar garçom (includes/restaurante.php) ----------
+(function () {
+  'use strict';
+  var post = function (dados) {
+    var fd = new FormData(); Object.keys(dados).forEach(function (k) { fd.append(k, dados[k]); });
+    return fetch('/site/restaurante.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); });
+  };
+  document.querySelectorAll('form[data-rest]').forEach(function (f) {
+    var dataEl = f.querySelector('input[type=date]'), dias = (f.getAttribute('data-dias') || '').split(',').filter(Boolean).map(Number);
+    if (dataEl && dias.length) dataEl.addEventListener('change', function () {
+      var d = new Date(dataEl.value + 'T12:00:00');
+      dataEl.setCustomValidity(dataEl.value && dias.indexOf(d.getDay()) < 0 ? 'Não abrimos neste dia da semana.' : '');
+    });
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var res = f.querySelector('[role=status]'), bt = f.querySelector('button[type=submit]');
+      var d = { acao: f.getAttribute('data-rest'), e: f.getAttribute('data-e') };
+      new FormData(f).forEach(function (v, k) { d[k] = v; });
+      if (dataEl && dataEl.validationMessage) { res.textContent = dataEl.validationMessage; return; }
+      bt.disabled = true; res.textContent = 'Enviando…';
+      post(d).then(function (j) {
+        res.textContent = j.msg || ''; bt.disabled = false;
+        if (j.ok && j.link) { location.href = j.link; return; }
+        if (j.ok) f.reset();
+      }).catch(function () { res.textContent = 'Não foi possível agora. Tente de novo.'; bt.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.lp-garcom').forEach(function (box) {
+    var res = box.querySelector('[role=status]');
+    box.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-chamar]'); if (!b) return;
+      b.disabled = true; res.textContent = 'Chamando…';
+      post({ acao: 'chamar', e: box.getAttribute('data-e'), mesa: box.getAttribute('data-mesa'), tipo: b.getAttribute('data-chamar') })
+        .then(function (j) { res.textContent = j.msg || ''; setTimeout(function () { b.disabled = false; }, 20000); })
+        .catch(function () { res.textContent = 'Não foi possível chamar agora.'; b.disabled = false; });
+    });
+  });
+})();
