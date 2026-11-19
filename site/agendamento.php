@@ -13,8 +13,9 @@ $ag = false;
 if (strlen($token) === 32) {
     try {
         $st = $pdo->prepare("SELECT a.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, s.nome AS servico_nome, s.duracao_minutos, p.nome AS profissional_nome,
-                e.nome AS empresa_nome, e.slug, e.whatsapp, e.endereco, e.email AS empresa_email, e.notificar_email, si.cor_primaria, si.ia_tema, si.html_gerado, si.ia_modo_total
-            FROM agendamentos a JOIN empresas e ON e.id = a.empresa_id JOIN sites si ON si.empresa_id = e.id
+                e.nome AS empresa_nome, e.slug, e.whatsapp, e.endereco, e.email AS empresa_email, e.notificar_email, si.cor_primaria, si.ia_tema, si.html_gerado, si.ia_modo_total,
+                e.segmento_id, e.segmento_descricao, sg.slug AS segmento_slug, sg.nome AS segmento_nome
+            FROM agendamentos a JOIN empresas e ON e.id = a.empresa_id JOIN sites si ON si.empresa_id = e.id LEFT JOIN segmentos sg ON sg.id = e.segmento_id
             LEFT JOIN clientes c ON c.id = a.cliente_id LEFT JOIN servicos s ON s.id = a.servico_id LEFT JOIN profissionais p ON p.id = a.profissional_id
             WHERE a.token = ? LIMIT 1");
         $st->execute([$token]);
@@ -136,6 +137,7 @@ $podeCancelar = $ag && !in_array($ag['status'], ['cancelado', 'concluido'], true
             <?php if ($ag['endereco']): ?><div><span>Onde</span><span><?= e($ag['endereco']) ?></span></div><?php endif; ?>
             <?php if ($ag['valor'] !== null && (float)$ag['valor'] > 0): ?><div class="gds-total"><span>Valor</span><span>R$ <?= number_format((float)$ag['valor'], 2, ',', '.') ?></span></div><?php endif; ?>
         </div>
+        <?php if (!empty($ag['etapa'])) { require_once __DIR__ . '/../includes/recursos_servicos.php'; echo acomp_html_cliente($ag, site_nicho_da_empresa(['nome' => $ag['empresa_nome'], 'segmento_slug' => $ag['segmento_slug'] ?? '', 'segmento_nome' => $ag['segmento_nome'] ?? '', 'segmento_descricao' => $ag['segmento_descricao'] ?? ''])); } ?>
         <div class="gds-acoes">
             <?php if ($ag['status'] !== 'cancelado' && $ts > time()): ?>
             <a class="gds-btn-2" target="_blank" rel="noopener" href="<?= e(gerar_link_google_calendar(($ag['servico_nome'] ?: 'Agendamento') . ' - ' . $ag['empresa_nome'], $ag['data_hora'], $ag['duracao_minutos'] ?: 30, '', $ag['endereco'] ?? '')) ?>"><?= frag_icone('calend') ?> Google Agenda</a>

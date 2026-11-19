@@ -23,6 +23,12 @@ const REC_PADRAO = [
     'reserva' => ['ativo' => false],
     'fila' => ['ativo' => false],
     'garcom' => ['ativo' => false],
+    // serviços (includes/recursos_servicos.php)
+    'grade' => ['ativo' => false],
+    'acompanhar' => ['ativo' => false],
+    'quiz' => ['ativo' => false],
+    'calculadora' => ['ativo' => false],
+    'tour360' => ['ativo' => false, 'itens' => []],
 ];
 const REC_MAX_VIDEO = 25 * 1024 * 1024;
 
@@ -32,7 +38,7 @@ function rec_ler($empresaOuSite) {
     if (is_array($j)) foreach ($r as $k => $v) if (isset($j[$k]) && is_array($j[$k])) $r[$k] = array_merge($v, $j[$k]);
     $r['fidelidade']['meta'] = max(3, min(30, (int)$r['fidelidade']['meta']));
     $r['aniversario']['desconto'] = max(5, min(50, (int)$r['aniversario']['desconto']));
-    foreach (['stories', 'antes_depois'] as $k) $r[$k]['itens'] = array_values(array_filter((array)$r[$k]['itens'], 'is_array'));
+    foreach (['stories', 'antes_depois', 'tour360'] as $k) $r[$k]['itens'] = array_values(array_filter((array)$r[$k]['itens'], 'is_array'));
     return $r;
 }
 
@@ -45,7 +51,7 @@ function rec_gravar($empresaId, $r) {
 function rec_ativo($r, $k) {
     if (empty($r[$k]['ativo'])) return false;
     return match ($k) {
-        'stories', 'antes_depois' => count($r[$k]['itens']) > 0,
+        'stories', 'antes_depois', 'tour360' => count($r[$k]['itens']) > 0,
         'video' => ($r['video']['url'] ?? '') !== '',
         default => true,
     };
@@ -289,6 +295,7 @@ function rec_salvar_post($empresaId, $site) {
             $r['reserva']['ativo'] = $lig('reserva_ativo');
             $r['fila']['ativo'] = $lig('fila_ativo');
             $r['garcom']['ativo'] = $lig('garcom_ativo');
+            foreach (['grade', 'acompanhar', 'quiz', 'calculadora', 'tour360'] as $k) $r[$k]['ativo'] = $lig($k . '_ativo');
             rec_gravar($empresaId, $r);
             return [true, 'Recursos do site salvos.'];
         case 'add_story':
@@ -335,6 +342,20 @@ function rec_salvar_post($empresaId, $site) {
             $r['video'] = ['ativo' => false, 'url' => ''];
             rec_gravar($empresaId, $r);
             return [true, 'Vídeo removido. O topo volta a mostrar a foto.'];
+        case 'add_tour':
+            if (count($r['tour360']['itens']) >= 8) return [false, 'Já são 8 ambientes. Apague um para pôr outro.'];
+            if (!function_exists('tour_upload')) require_once __DIR__ . '/recursos_servicos.php';
+            [$url, $erro] = tour_upload($empresaId);
+            if (!$url) return [false, $erro];
+            $r['tour360']['itens'][] = ['img' => $url, 'titulo' => mb_substr(trim(strip_tags((string)($_POST['tour_titulo'] ?? ''))), 0, 40)];
+            $r['tour360']['ativo'] = true;
+            rec_gravar($empresaId, $r);
+            return [true, 'Ambiente 360° adicionado ao site.'];
+        case 'rm_tour':
+            $i = (int)($_POST['i'] ?? -1);
+            if (isset($r['tour360']['itens'][$i])) { rec_apagar_arquivo($r['tour360']['itens'][$i]['img'], $empresaId); array_splice($r['tour360']['itens'], $i, 1); }
+            rec_gravar($empresaId, $r);
+            return [true, 'Ambiente apagado.'];
         case 'fid_dar':
             $n = max(-30, min(30, (int)($_POST['selos'] ?? 1)));
             return fid_dar($empresaId, $_POST['tel'] ?? '', $n, 'manual') ? [true, ($n > 0 ? "+$n selo(s)" : "$n selo(s)") . ' para ' . rec_tel($_POST['tel'] ?? '') . '.'] : [false, 'Informe o WhatsApp do cliente com DDD.'];
@@ -395,7 +416,20 @@ function rec_form_html($empresa, $site, $modo) {
         . '<div class="rec-card"><h3>📅 Reserva de mesa</h3><p class="dica">O cliente pede dia, hora e quantas pessoas. Você confirma no painel e ele recebe no WhatsApp.</p>' . $chave('reserva_ativo', !empty($r['reserva']['ativo']), 'Reserva de mesa') . '</div>'
         . '<div class="rec-card"><h3>⏳ Fila de espera</h3><p class="dica">Casa cheia? O cliente entra na fila pelo celular, vê a posição ao vivo e é avisado no WhatsApp quando a mesa fica pronta.</p>' . $chave('fila_ativo', !empty($r['fila']['ativo']), 'Fila de espera') . '</div>'
         . '<div class="rec-card"><h3>🙋 Chamar garçom</h3><p class="dica">No cardápio aberto pelo QR Code da mesa, botões "Chamar garçom" e "Pedir a conta". O chamado aparece na hora, com som.</p>' . $chave('garcom_ativo', !empty($r['garcom']['ativo']), 'Chamar garçom e pedir a conta') . '</div>'
+        . '</div><h3 style="margin-top:22px">🧭 Serviços, aulas e atendimento</h3><div class="rec-grade">'
+        . '<div class="rec-card"><h3>🗓 Grade de aulas</h3><p class="dica">Mostra as turmas da semana com as vagas que sobram (serviços com mais de 1 vaga).</p>' . $chave('grade_ativo', !empty($r['grade']['ativo']), 'Grade de aulas') . '</div>'
+        . '<div class="rec-card"><h3>📍 Acompanhe o atendimento</h3><p class="dica">A equipe marca as etapas (ex.: chegou, no banho, na tosa, pronto) e manda foto. O cliente acompanha pelo link e é avisado quando fica pronto. Botão "Acompanhar" na Agenda.</p>' . $chave('acompanhar_ativo', !empty($r['acompanhar']['ativo']), 'Acompanhe o atendimento') . '</div>'
+        . '<div class="rec-card"><h3>❓ Quiz "qual serviço é para você"</h3><p class="dica">3 perguntas rápidas, montadas sozinhas com os seus serviços, que terminam no agendamento.</p>' . $chave('quiz_ativo', !empty($r['quiz']['ativo']), 'Quiz') . '</div>'
+        . '<div class="rec-card"><h3>🧮 Calculadora de orçamento</h3><p class="dica">O cliente marca os serviços e a quantidade e vê uma estimativa na hora, antes de pedir o orçamento.</p>' . $chave('calculadora_ativo', !empty($r['calculadora']['ativo']), 'Calculadora') . '</div>'
+        . '<div class="rec-card"><h3>🌐 Tour 360°</h3><p class="dica">Fotos panorâmicas do espaço que o cliente gira com o dedo. Tire com o modo "Panorama" do celular.</p>' . $chave('tour360_ativo', !empty($r['tour360']['ativo']), 'Tour 360°') . '</div>'
         . '</div><button type="submit">Salvar</button></form>';
+    // tour 360
+    $mini = '';
+    foreach ($r['tour360']['itens'] as $i => $t) $mini .= '<figure><img src="' . e($t['img']) . '" alt=""><figcaption>' . e($t['titulo'] ?: 'Ambiente ' . ($i + 1)) . '</figcaption><form method="post">' . $csrf . '<input type="hidden" name="rec_acao" value="rm_tour"><input type="hidden" name="i" value="' . $i . '"><button type="submit" class="btn btn-sm" aria-label="Apagar ambiente">×</button></form></figure>';
+    $h .= '<form method="post" enctype="multipart/form-data" class="form-box largo" id="rec-tour">' . $csrf . '<input type="hidden" name="rec_acao" value="add_tour"><h3>🌐 Tour 360°</h3>'
+        . ($mini ? '<div class="rec-miniaturas">' . $mini . '</div>' : '<p class="dica">Nenhum ambiente ainda. No celular, use o modo "Panorama" e gire devagar; a foto sai bem larga.</p>')
+        . '<div class="form-row"><div><label for="tourImg">Foto panorâmica</label><input id="tourImg" type="file" name="tour_img" accept="image/jpeg,image/png,image/webp" required></div>'
+        . '<div><label for="tourTit">Nome do ambiente</label><input id="tourTit" name="tour_titulo" maxlength="40" placeholder="Ex.: Recepção"></div></div><button type="submit">Adicionar ambiente</button></form>';
     // novidades
     $mini = '';
     foreach ($r['stories']['itens'] as $i => $s) $mini .= '<figure><img src="' . e($s['img']) . '" alt=""><figcaption>' . e($s['texto']) . '</figcaption><form method="post">' . $csrf . '<input type="hidden" name="rec_acao" value="rm_story"><input type="hidden" name="i" value="' . $i . '"><button type="submit" class="btn btn-sm" aria-label="Apagar novidade">×</button></form></figure>';

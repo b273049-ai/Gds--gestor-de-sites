@@ -674,6 +674,22 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Serviços: grade de aulas, acompanhe o atendimento, quiz, calculadora e tour 360° (migração 43)
+Ligados em **Recursos do site** (grupo "Serviços, aulas e atendimento"):
+- **Grade de aulas:** as turmas (serviços com mais de 1 vaga) dos próximos 7 dias, por abas de dia, com as vagas
+  que sobram de verdade e "Reservar" que já abre o agendamento daquela turma.
+- **Acompanhe o atendimento:** na Agenda, os atendimentos de hoje ganham "📍 Acompanhar". A equipe toca a etapa
+  (pet: chegou → no banho → na tosa e secagem → pronto para buscar; auto: recebido → em serviço → finalizando →
+  pronto para retirar; demais: recebido → em andamento → finalizando → pronto) e pode mandar foto pela câmera do
+  celular. Na 1ª etapa o cliente recebe o link; na última, o aviso de pronto; foto nova também avisa. O cliente
+  vê as etapas e a foto no link do agendamento (atualiza sozinho).
+- **Quiz "qual serviço é para você":** até 3 perguntas montadas sozinhas (categoria, tempo e faixa de preço) e as
+  3 melhores sugestões com "Agendar" / "Pedir orçamento".
+- **Calculadora de orçamento:** marca serviços e quantidade, vê a estimativa; "Pedir orçamento com estes itens"
+  escreve a simulação no pedido de orçamento.
+- **Tour 360°:** fotos panorâmicas (modo Panorama do celular; foto comum é recusada com a explicação), até 8
+  ambientes, visualizador Pannellum (livre) carregado só quando o cliente chega na seção.
+
 ## Restaurante, bar e café: reserva, fila e chamar garçom (migração 42)
 Ligados em **Recursos do site** (grupo "Restaurante, bar e café"). A equipe acompanha em
 **Reservas, fila e mesas** (painel da empresa), que se atualiza sozinho a cada 10 s e toca um aviso (botão "Ligar som").
