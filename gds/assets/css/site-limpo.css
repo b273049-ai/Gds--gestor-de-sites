@@ -431,3 +431,11 @@ a.lp-vivo:hover { transform: translateY(-3px); }
 .lp-tour-lista button[aria-pressed="true"] { border-color: var(--accent); }
 .lp-tour-lista img { width: 120px; height: 60px; object-fit: cover; border-radius: 8px; }
 .lp-tour-dica { color: var(--suave); font-size: .9rem; margin: 8px 0 0; }
+/* vale-presente */
+.lp-vale-valores { border: 0; padding: 0; margin: 0 0 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+.lp-vale-valores legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+.lp-vale-valor { position: relative; }
+.lp-vale-valor input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.lp-vale-valor span { display: inline-flex; align-items: center; min-height: 48px; padding: 8px 18px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--txt) 22%, transparent); background: var(--bg); font: 700 1rem var(--f-txt); }
+.lp-vale-valor input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.lp-vale-valor input:focus-visible + span { outline: 3px solid var(--accent-txt); outline-offset: 2px; }

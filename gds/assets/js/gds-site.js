@@ -841,6 +841,8 @@
             };
             raiz.appendChild(fundo); raiz.appendChild(box); atualizar();
             document.documentElement.classList.add('gds-sem-rolagem-prod');
+            // "Monte o seu" (recurso do site): passo a passo + montagem visual (assets/js/site-recursos.js)
+            if (window.gdsMonte && grupos.length >= 2) { try { window.gdsMonte(box, grupos); } catch (e) { } }
         }
         function adicionar(b, id, opcoes, preco, nome, obs, qtd) {
             obs = obs || ''; qtd = Math.max(1, qtd || 1);

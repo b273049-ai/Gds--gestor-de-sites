@@ -52,4 +52,11 @@ if ($acao === 'aniversario') {
     [$ok, $msg] = aniv_cadastrar($emp['id'], $_POST['nome'] ?? '', $_POST['tel'] ?? '', $_POST['dia'] ?? 0, $_POST['mes'] ?? 0);
     $json(['ok' => $ok, 'msg' => $msg]);
 }
+if ($acao === 'vale') {
+    if (!rec_ativo($r, 'vale')) $json(['ok' => false, 'msg' => 'Vale-presente desligado.']);
+    require_once __DIR__ . '/../includes/pagamentos.php';
+    require_once __DIR__ . '/../includes/treino_vale.php';
+    [$ok, $msg, $link] = vale_criar($emp, $_POST, $r);
+    $json(['ok' => $ok, 'msg' => $msg, 'link' => $link]);
+}
 $json(['ok' => false, 'msg' => 'Ação desconhecida.'], 400);

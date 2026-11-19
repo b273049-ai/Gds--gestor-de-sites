@@ -561,3 +561,14 @@ html.gds-sem-rolagem-prod { overflow: hidden; }
     .gds-c .gds-cal-grade { gap: 2px; }
     .gds-c .gds-dia { aspect-ratio: auto; min-height: 38px; }
 }
+/* "Monte o seu": montagem em camadas + passo a passo (assets/js/site-recursos.js) */
+.gds-monte-pilha { margin: 0 16px 6px; padding: 12px 14px; border-radius: 14px; background: var(--gds-soft, #f5f5f5); }
+.gds-monte-tit { margin: 0 0 8px; font-weight: 700; font-size: .9rem; }
+.gds-monte-pilha ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.gds-monte-camada { width: 100%; max-width: 280px; text-align: center; padding: 6px 12px; border-radius: 999px; font: 600 .85rem/1.2 inherit; color: #1b1b1b; }
+.gds-monte-camada.c0 { background: #f6d7a7; } .gds-monte-camada.c1 { background: #f2b5a0; } .gds-monte-camada.c2 { background: #c9e4b4; } .gds-monte-camada.c3 { background: #f7e7a1; } .gds-monte-camada.c4 { background: #d8cdf0; }
+@media (prefers-reduced-motion: no-preference) { .gds-monte-camada.nova { animation: gds-camada .25s ease-out; } @keyframes gds-camada { from { opacity: 0; transform: translateY(-6px) scale(.96); } } }
+.gds-monte-vazio { margin: 0; color: var(--gds-mute, #555); font-size: .88rem; text-align: center; }
+.gds-monte-nav { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 16px 10px; }
+.gds-monte-passo { font-weight: 700; font-size: .92rem; }
+.gds-monte-nav [hidden] { display: none !important; }
