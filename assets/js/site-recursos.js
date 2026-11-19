@@ -256,3 +256,81 @@
     });
   }
 })();
+
+// ---------- vale-presente (includes/treino_vale.php) ----------
+(function () {
+  'use strict';
+  document.querySelectorAll('form[data-vale]').forEach(function (f) {
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var res = f.querySelector('[role=status]'), bt = f.querySelector('button[type=submit]');
+      var fd = new FormData(f); fd.append('acao', 'vale'); fd.append('e', f.getAttribute('data-e'));
+      bt.disabled = true; res.textContent = 'Preparando o seu vale…';
+      fetch('/site/recursos.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); })
+        .then(function (j) { res.textContent = j.msg || ''; bt.disabled = false; if (j.ok && j.link) location.href = j.link; })
+        .catch(function () { res.textContent = 'Não foi possível agora. Tente de novo.'; bt.disabled = false; });
+    });
+  });
+})();
+
+// ---------- "Monte o seu" (tela do produto com 2+ grupos de opções) ----------
+(function () {
+  'use strict';
+  if (!window.gdsMonteAtivo) return;
+  window.gdsMonte = function (box, grupos) {
+    var fs = [].slice.call(box.querySelectorAll('.gds-op-grupo'));
+    if (fs.length < 2) return;
+    box.classList.add('gds-monte');
+    // montagem visual: cada escolha vira uma camada (a última escolhida fica em cima)
+    var pilha = document.createElement('div');
+    pilha.className = 'gds-monte-pilha'; pilha.setAttribute('aria-live', 'polite');
+    pilha.innerHTML = '<p class="gds-monte-tit">Sua montagem</p><ol></ol><p class="gds-monte-vazio">Escolha os ingredientes e veja o seu pedido tomando forma.</p>';
+    var cab = box.querySelector('.gds-prod-cab'); cab.parentNode.insertBefore(pilha, cab.nextSibling);
+    var nav = document.createElement('div');
+    nav.className = 'gds-monte-nav';
+    nav.innerHTML = '<span class="gds-monte-passo"></span><span><button type="button" class="gds-btn-2" data-volta>Voltar</button> <button type="button" class="gds-btn" data-segue>Próximo</button></span>';
+    var obs = box.querySelector('.gds-prod-obs'); obs.parentNode.insertBefore(nav, obs);
+    var passo = 0;
+    var escolhidos = function () {
+      var out = [];
+      fs.forEach(function (f, gi) {
+        f.querySelectorAll('input:checked').forEach(function (c) { out.push({ g: gi, nome: grupos[gi].itens[+c.value].nome }); });
+        f.querySelectorAll('.gds-op-qtd').forEach(function (l) { var n = parseInt(l.querySelector('b').textContent, 10) || 0; for (var k = 0; k < n; k++) out.push({ g: gi, nome: grupos[gi].itens[+l.dataset.i].nome }); });
+      });
+      return out;
+    };
+    var ultimo = null;
+    var desenhar = function () {
+      var es = escolhidos(), ol = pilha.querySelector('ol'), chave = JSON.stringify(es);
+      if (chave === ultimo) return;   // só redesenha quando a escolha muda (sem piscar)
+      var antes = ultimo ? JSON.parse(ultimo).map(function (x) { return x.g + ':' + x.nome; }) : [];
+      ultimo = chave;
+      ol.innerHTML = '';
+      es.slice().reverse().forEach(function (x) {
+        var li = document.createElement('li'); li.className = 'gds-monte-camada c' + (x.g % 5) + (antes.indexOf(x.g + ':' + x.nome) < 0 ? ' nova' : ''); li.textContent = x.nome; ol.appendChild(li);
+      });
+      pilha.querySelector('.gds-monte-vazio').hidden = es.length > 0;
+    };
+    var ir = function (p) {
+      passo = Math.max(0, Math.min(fs.length, p));
+      fs.forEach(function (f, i) { f.hidden = i !== passo; });
+      var fim = passo >= fs.length;
+      obs.hidden = !fim;
+      nav.querySelector('.gds-monte-passo').textContent = fim ? 'Tudo certo? Confira e adicione.' : 'Passo ' + (passo + 1) + ' de ' + fs.length;
+      nav.querySelector('[data-volta]').hidden = passo === 0;
+      nav.querySelector('[data-segue]').hidden = fim;
+      var alvo = fim ? obs : fs[passo];
+      if (alvo && alvo.scrollIntoView) alvo.scrollIntoView({ block: 'nearest' });
+    };
+    nav.querySelector('[data-segue]').onclick = function () {
+      var g = grupos[passo], n = escolhidos().filter(function (x) { return x.g === passo; }).length;
+      if (g.min > 0 && n < g.min) { fs[passo].classList.add('gds-op-falta'); var err = box.querySelector('.gds-op-erro'); err.hidden = false; err.textContent = 'Escolha: ' + g.nome + (g.min > 1 ? ' (' + g.min + ')' : ''); return; }
+      ir(passo + 1);
+    };
+    nav.querySelector('[data-volta]').onclick = function () { ir(passo - 1); };
+    // o botão "Adicionar" volta ao grupo que faltou
+    box.querySelector('[data-ok]').addEventListener('click', function () { setTimeout(function () { var f = box.querySelector('.gds-op-falta'); if (f) ir(fs.indexOf(f)); }, 0); }, true);
+    box.addEventListener('change', desenhar); box.addEventListener('click', function () { setTimeout(desenhar, 0); });
+    desenhar(); ir(0);
+  };
+})();

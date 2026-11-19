@@ -33,6 +33,14 @@ $soRastreio = ($mods['empresa']['segmento_slug'] ?? '') === 'rastreio-motoboy';
         <?= menu_item('/empresa/servicos.php', 'servicos.php', $mods['modo'] === 'catalogo' ? 'pacote' : 'tesoura', modulos_rotulo_catalogo()) ?>
         <?php if (modulo_ativo('equipe')): ?><?= menu_item('/empresa/profissionais.php', 'profissionais.php', 'cracha', 'Equipe') ?><?php endif; ?>
         <?= menu_item('/empresa/recursos.php', 'recursos.php', 'estrela', 'Recursos do site') ?>
+        <?php
+        // Telas dos recursos ligados (treino e vale-presente aparecem só para quem usa)
+        $recMenu = [];
+        try { $rq = $GLOBALS['pdo']->prepare("SELECT recursos FROM sites WHERE empresa_id=?"); $rq->execute([(int)empresa_id_atual()]); $recMenu = (array)json_decode((string)$rq->fetchColumn(), true); } catch (Throwable $e) {}
+        if (!empty($recMenu['treino']['ativo'])) echo menu_item('/empresa/treinos.php', 'treinos.php', 'calendario', 'Treinos dos alunos');
+        if (!empty($recMenu['vale']['ativo'])) echo menu_item('/empresa/vales.php', 'vales.php', 'cupom', 'Vales-presente');
+        if (!modulo_ativo('delivery') && array_filter(['reserva', 'fila', 'garcom'], fn($k) => !empty($recMenu[$k]['ativo']))) echo menu_item('/empresa/restaurante.php', 'restaurante.php', 'calendario', 'Reservas, fila e mesas');
+        ?>
         <?php if (modulo_ativo('cupons')): ?><?= menu_item('/empresa/cupons.php', 'cupons.php', 'cupom', 'Cupons') ?><?php endif; ?>
         <?php if (modulo_ativo('avaliacoes')): ?><?= menu_item('/empresa/avaliacoes.php', 'avaliacoes.php', 'estrela', 'Avaliações') ?><?php endif; ?>
         <?php if (modulo_ativo('rastreio')): ?><?= menu_item('/empresa/rastreio.php', 'rastreio.php', 'mapa', 'Rastreamento de motoboys') ?><?php endif; ?>

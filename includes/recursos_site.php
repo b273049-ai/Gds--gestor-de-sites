@@ -29,6 +29,10 @@ const REC_PADRAO = [
     'quiz' => ['ativo' => false],
     'calculadora' => ['ativo' => false],
     'tour360' => ['ativo' => false, 'itens' => []],
+    // treino da semana e vale-presente (includes/treino_vale.php)
+    'treino' => ['ativo' => false],
+    'vale' => ['ativo' => false, 'validade' => 180],
+    'monte' => ['ativo' => false],
 ];
 const REC_MAX_VIDEO = 25 * 1024 * 1024;
 
@@ -295,7 +299,8 @@ function rec_salvar_post($empresaId, $site) {
             $r['reserva']['ativo'] = $lig('reserva_ativo');
             $r['fila']['ativo'] = $lig('fila_ativo');
             $r['garcom']['ativo'] = $lig('garcom_ativo');
-            foreach (['grade', 'acompanhar', 'quiz', 'calculadora', 'tour360'] as $k) $r[$k]['ativo'] = $lig($k . '_ativo');
+            foreach (['grade', 'acompanhar', 'quiz', 'calculadora', 'tour360', 'treino', 'vale', 'monte'] as $k) $r[$k]['ativo'] = $lig($k . '_ativo');
+            $r['vale']['validade'] = in_array((int)($_POST['vale_validade'] ?? 180), [90, 180, 365], true) ? (int)$_POST['vale_validade'] : 180;
             rec_gravar($empresaId, $r);
             return [true, 'Recursos do site salvos.'];
         case 'add_story':
@@ -415,12 +420,15 @@ function rec_form_html($empresa, $site, $modo) {
         . '</div><h3 style="margin-top:22px">🍽 Restaurante, bar e café</h3><p class="dica">A equipe acompanha tudo ao vivo em <a class="link" href="/empresa/restaurante.php">Reservas, fila e mesas</a> (painel da empresa).</p><div class="rec-grade">'
         . '<div class="rec-card"><h3>📅 Reserva de mesa</h3><p class="dica">O cliente pede dia, hora e quantas pessoas. Você confirma no painel e ele recebe no WhatsApp.</p>' . $chave('reserva_ativo', !empty($r['reserva']['ativo']), 'Reserva de mesa') . '</div>'
         . '<div class="rec-card"><h3>⏳ Fila de espera</h3><p class="dica">Casa cheia? O cliente entra na fila pelo celular, vê a posição ao vivo e é avisado no WhatsApp quando a mesa fica pronta.</p>' . $chave('fila_ativo', !empty($r['fila']['ativo']), 'Fila de espera') . '</div>'
+        . '<div class="rec-card"><h3>🍔 Monte o seu</h3><p class="dica">Nos itens com 2 ou mais grupos de opções (pão, carne, molho…), o cliente monta um passo por vez e vê a montagem em camadas.</p>' . $chave('monte_ativo', !empty($r['monte']['ativo']), 'Monte o seu') . '</div>'
         . '<div class="rec-card"><h3>🙋 Chamar garçom</h3><p class="dica">No cardápio aberto pelo QR Code da mesa, botões "Chamar garçom" e "Pedir a conta". O chamado aparece na hora, com som.</p>' . $chave('garcom_ativo', !empty($r['garcom']['ativo']), 'Chamar garçom e pedir a conta') . '</div>'
         . '</div><h3 style="margin-top:22px">🧭 Serviços, aulas e atendimento</h3><div class="rec-grade">'
         . '<div class="rec-card"><h3>🗓 Grade de aulas</h3><p class="dica">Mostra as turmas da semana com as vagas que sobram (serviços com mais de 1 vaga).</p>' . $chave('grade_ativo', !empty($r['grade']['ativo']), 'Grade de aulas') . '</div>'
         . '<div class="rec-card"><h3>📍 Acompanhe o atendimento</h3><p class="dica">A equipe marca as etapas (ex.: chegou, no banho, na tosa, pronto) e manda foto. O cliente acompanha pelo link e é avisado quando fica pronto. Botão "Acompanhar" na Agenda.</p>' . $chave('acompanhar_ativo', !empty($r['acompanhar']['ativo']), 'Acompanhe o atendimento') . '</div>'
         . '<div class="rec-card"><h3>❓ Quiz "qual serviço é para você"</h3><p class="dica">3 perguntas rápidas, montadas sozinhas com os seus serviços, que terminam no agendamento.</p>' . $chave('quiz_ativo', !empty($r['quiz']['ativo']), 'Quiz') . '</div>'
         . '<div class="rec-card"><h3>🧮 Calculadora de orçamento</h3><p class="dica">O cliente marca os serviços e a quantidade e vê uma estimativa na hora, antes de pedir o orçamento.</p>' . $chave('calculadora_ativo', !empty($r['calculadora']['ativo']), 'Calculadora') . '</div>'
+        . '<div class="rec-card"><h3>🏋️ Treino da semana</h3><p class="dica">Para academia e personal: monte a ficha de cada aluno por dia; ele abre no celular, marca os exercícios e faz o check-in. Menu "Treinos dos alunos".</p>' . $chave('treino_ativo', !empty($r['treino']['ativo']), 'Treino da semana') . '</div>'
+        . '<div class="rec-card"><h3>🎁 Vale-presente</h3><p class="dica">O cliente compra pelo site (Pix) e quem ganha recebe o cartão-presente no WhatsApp. No balcão, você abate o valor. Menu "Vales-presente".</p>' . $chave('vale_ativo', !empty($r['vale']['ativo']), 'Vale-presente') . '<label>Validade</label>' . $presets('vale_validade', [90, 180, 365], $r['vale']['validade'], ' dias') . '</div>'
         . '<div class="rec-card"><h3>🌐 Tour 360°</h3><p class="dica">Fotos panorâmicas do espaço que o cliente gira com o dedo. Tire com o modo "Panorama" do celular.</p>' . $chave('tour360_ativo', !empty($r['tour360']['ativo']), 'Tour 360°') . '</div>'
         . '</div><button type="submit">Salvar</button></form>';
     // tour 360

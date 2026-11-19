@@ -90,6 +90,10 @@ function pag_confirmar($id) {
         if ($emp) wa_notificar_empresa($emp, 'pedido', ['nome' => 'Pagamento', 'codigo' => $pag['pedido_id'], 'itens' => "💰 Pix de $valor recebido no pedido nº {$pag['pedido_id']}."], 'pedido', $pag['pedido_id']);
     } elseif ($pag['assinatura_id']) {
         if (function_exists('clube_ativar')) clube_ativar((int)$pag['assinatura_id']);
+    } elseif (($pag['tipo'] ?? '') === 'vale') {
+        // vale-presente pago: ativa e manda o cartão para quem ganhou (includes/treino_vale.php)
+        if (!function_exists('vale_ativar_por_pag')) require_once __DIR__ . '/treino_vale.php';
+        vale_ativar_por_pag($pag['token']);
     }
     return true;
 }

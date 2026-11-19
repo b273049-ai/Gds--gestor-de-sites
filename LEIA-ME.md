@@ -674,6 +674,20 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Treino da semana, vale-presente e "Monte o seu" (migração 44)
+Ligados em **Recursos do site**:
+- **Treino da semana** (academia, personal, pilates…): menu **Treinos dos alunos**. O professor monta a ficha por
+  dia (exercício, séries, observação, link do vídeo; "Copiar do dia anterior"; "Duplicar" para outro aluno) e
+  manda o link pelo WhatsApp. O aluno abre `/site/treino.php?t=…`, vê o treino de hoje, marca os exercícios (fica
+  guardado no celular) e faz o check-in; o professor vê os check-ins da semana.
+- **Vale-presente:** seção "Dê um vale-presente" no site (R$ 50 a 300, para quem, mensagem). Com o Pix da empresa
+  ligado, paga na hora e o cartão vai sozinho para o WhatsApp de quem ganhou; sem Pix, a empresa recebe o aviso,
+  combina o pagamento e toca "Recebi o pagamento" em **Vales-presente**. No balcão, "Abater do vale" pelo código
+  (o saldo fica guardado; não passa do saldo nem da validade de 90/180/365 dias).
+- **Monte o seu:** nos itens do cardápio com 2 ou mais grupos de opções, a tela do produto vira passo a passo
+  ("Passo 1 de 3", não pula grupo obrigatório) com a montagem em camadas mostrando cada escolha.
+- O menu do painel mostra "Treinos dos alunos", "Vales-presente" e "Reservas, fila e mesas" só quando ligados.
+
 ## Serviços: grade de aulas, acompanhe o atendimento, quiz, calculadora e tour 360° (migração 43)
 Ligados em **Recursos do site** (grupo "Serviços, aulas e atendimento"):
 - **Grade de aulas:** as turmas (serviços com mais de 1 vaga) dos próximos 7 dias, por abas de dia, com as vagas

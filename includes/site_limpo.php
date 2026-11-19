@@ -18,6 +18,7 @@ require_once __DIR__ . '/site_template.php';
 require_once __DIR__ . '/recursos_site.php';
 require_once __DIR__ . '/restaurante.php';
 require_once __DIR__ . '/recursos_servicos.php';
+require_once __DIR__ . '/treino_vale.php';
 
 function site_limpo_tons() {
     // fontes: [url do Google Fonts, família do título, família do texto, peso do título]
@@ -251,6 +252,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     if (!empty($empresa['id']) && rec_ativo($REC, 'reserva')) $secao('reserva', 'Reserve sua mesa', rest_html_reserva($empresa), 'Escolha o dia, o horário e quantas pessoas. A confirmação chega no seu WhatsApp.', 'Reservar');
     if (!empty($empresa['id']) && rec_ativo($REC, 'fila')) $secao('fila', 'Fila de espera', rest_html_fila($empresa), 'Casa cheia? Entre na fila pelo celular e acompanhe a sua vez. Avisamos no WhatsApp.');
     if (($ad = rec_antes_depois($REC)) !== '') $secao('antes-depois', 'Antes e depois', $ad, 'Arraste a barra para comparar.');
+    if (!empty($empresa['id']) && rec_ativo($REC, 'vale')) $secao('vale', 'Dê um vale-presente', vale_html_form($empresa), 'Escolha o valor, escreva uma mensagem e a pessoa recebe o cartão-presente no WhatsApp.');
     if (($vant = rec_vantagens($empresa, $REC, $modo)) !== '') $secao('vantagens', 'Vantagens de cliente', $vant);
     if (!empty($dados['planos'])) $secao('clube', 'Planos', $f['{{CLUBE}}'], 'Um valor fixo por mês e você vem quando quiser.');
     if (!empty($dados['cupons'])) $secao('cupons', 'Promoções', $f['{{CUPONS}}']);
@@ -269,7 +271,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
         . '</div>' . ($empresa['endereco'] ? '<div class="lp-mapa"><iframe title="Mapa: ' . e($empresa['endereco']) . '" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="' . e(frag_mapa_src($empresa['endereco'], $dados['maps_key'])) . '"></iframe></div>' : '') . '</div>'
         . ($modo === 'contato' || !$linkWhats ? '<div class="lp-form">' . $f['{{CONTATO}}'] . '</div>' : '');
     $secao('contato', $empresa['endereco'] ? 'Onde estamos' : 'Fale com a gente', $visite, '', 'Contato');
-    $ordem = ['servicos', 'aulas', 'quiz', 'calculadora', 'agendar', 'reserva', 'fila', 'tour', 'antes-depois', 'sobre', 'equipe', 'galeria', 'vantagens', 'clube', 'cupons', 'avaliacoes', 'contato'];
+    $ordem = ['servicos', 'aulas', 'quiz', 'calculadora', 'agendar', 'reserva', 'fila', 'tour', 'antes-depois', 'sobre', 'equipe', 'galeria', 'vantagens', 'vale', 'clube', 'cupons', 'avaliacoes', 'contato'];
     $menu = array_slice(array_intersect_key($nav, array_flip(['servicos', 'agendar', 'sobre', 'avaliacoes', 'contato'])), 0, 4, true);
 
     $fonteUrl = 'https://fonts.googleapis.com/css2?family=' . $V['fonte'][0] . '&display=swap';
@@ -293,7 +295,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
-<link rel="stylesheet" href="/assets/css/site-limpo.css?v=6">
+<link rel="stylesheet" href="/assets/css/site-limpo.css?v=7">
 <?= rec_head($empresa, $REC) ?>
 <script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
 <style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;--duo-giro:<?= site_limpo_matiz($accent) - 38 ?>deg;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
@@ -370,7 +372,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 })();
 </script>
 <script src="/assets/js/site-vivo.js?v=1" defer></script>
-<?php if (array_filter(['stories', 'antes_depois', 'fidelidade', 'aniversario', 'app', 'video', 'reserva', 'fila', 'garcom', 'grade', 'quiz', 'calculadora', 'tour360'], fn($k) => rec_ativo($REC, $k))): ?><script src="/assets/js/site-recursos.js?v=3" defer></script><?php endif; ?>
+<?php if (array_filter(['stories', 'antes_depois', 'fidelidade', 'aniversario', 'app', 'video', 'reserva', 'fila', 'garcom', 'grade', 'quiz', 'calculadora', 'tour360', 'vale', 'monte'], fn($k) => rec_ativo($REC, $k))): ?><?= rec_ativo($REC, 'monte') ? '<script>window.gdsMonteAtivo=1</script>' : '' ?><script src="/assets/js/site-recursos.js?v=6" defer></script><?php endif; ?>
 <?= $preview ? site_script_preview() : '' ?>
 </body>
 </html>
