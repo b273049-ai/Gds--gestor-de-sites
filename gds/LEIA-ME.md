@@ -674,6 +674,20 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Prévia que vende (migração 40)
+A prévia (`/previa/CODIGO`) agora mostra o que o dono vai ganhar, não só o site:
+- **Imagem do link no WhatsApp:** o cartão do link mostra o site do lead dentro de um celular (nome, foto, nota
+  do Google e o botão principal). É desenhada no servidor (GD + fonte Inter, licença livre) e guardada em
+  `uploads/prospects/ID/og-*.jpg`.
+- **"Ver no celular"** (no computador): abre a prévia dentro de uma moldura de celular.
+- **Tour guiado** na primeira visita: 4 balões curtos (painel ao vivo, botão principal, serviços/cardápio,
+  "Quero este site"). Não volta nas próximas visitas.
+- **"Ver meu painel":** como o dono acompanha a agenda / os pedidos / os orçamentos, com **dados de exemplo**
+  (marcados como exemplo) e os serviços do ramo.
+- **"Receber um exemplo no meu WhatsApp":** manda o aviso de teste (novo agendamento/pedido) **só para o número
+  do próprio lead** que veio do Google, no máximo 1 vez por dia, e avisa você que ele está testando.
+  Só aparece quando o WhatsApp da plataforma está conectado.
+
 ## Fotos com cara de profissional, não de IA (migração 39)
 O que entregava os sites como "feitos por IA" eram as fotos: modelo de rosto perfeito, pele de plástico,
 fundo todo desfocado com bolinhas de luz. Agora:
