@@ -1,0 +1,3 @@
+Inter (Inter-Bold.otf, Inter-Regular.otf) — fonte livre, licença SIL Open Font License 1.1.
+Copyright 2016-2023 The Inter Project Authors (https://github.com/rsms/inter).
+Usada pelo GDS para desenhar imagens no servidor (ex.: a imagem do link da prévia no WhatsApp).

@@ -16,7 +16,8 @@ if (isset($_COOKIE[session_name()])) {
     session_start(['read_and_close' => true]);
     $ehAdmin = ($_SESSION['role'] ?? '') === 'admin';
 }
-$contaVisita = !$ehAdmin && !$robo;
+// (a prévia aberta dentro do "Ver no celular" e os toques nos botões não contam como nova visita)
+$contaVisita = !$ehAdmin && !$robo && !isset($_GET['celular']) && ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST';
 $soVisita = false;      // true = a página já foi entregue do cache; falta só gravar a visita
 $gdsCache = $token !== '' && !isset($_GET['quero']) && in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD'], true) ? gds_cache_abrir(['previa', $token]) : null;
 if ($gdsCache && $gdsCache['estado'] === 'SERVIDO') {
@@ -33,6 +34,8 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/site_render.php';
 require_once __DIR__ . '/../includes/migracoes.php';
 require_once __DIR__ . '/../includes/prospeccao.php';
+require_once __DIR__ . '/../includes/previa_extras.php';
+if (!function_exists('wa_remetente')) require_once __DIR__ . '/../includes/whatsapp.php';
 gds_config_precarregar();
 gds_garantir_schema();
 if (!function_exists('e')) { function e($s) { return htmlspecialchars((string)($s ?? ''), ENT_QUOTES, 'UTF-8'); } }
@@ -80,7 +83,7 @@ $logoMarca = prosp_logo_local($p);
 $reviews = (array)json_decode((string)($p['avaliacoes_texto'] ?? ''), true);
 $horario = (array)json_decode((string)($p['horario'] ?? ''), true);
 $bairro = $p['bairro'] ?: $p['cidade'];
-$sobre = "A {$p['nome']} atende em " . ($bairro ?: 'sua região') . ($p['nota'] && $p['avaliacoes'] ? ", com nota " . number_format((float)$p['nota'], 1, ',', '') . " no Google e {$p['avaliacoes']} avaliações de clientes" : '') . ".\n\n"
+$sobre = "{$p['nome']} atende em " . ($bairro ?: 'sua região') . ($p['nota'] && $p['avaliacoes'] ? ", com nota " . number_format((float)$p['nota'], 1, ',', '') . " no Google e {$p['avaliacoes']} avaliações de clientes" : '') . ".\n\n"
        . "Este é um exemplo de como o site de vocês pode ficar: com " . prosp_recurso(($p['categoria'] ?? '') . ' ' . $p['nome']) . ", confirmação automática no WhatsApp e tudo que o cliente precisa para escolher vocês.";
 $empresa = [
     'id' => 0, 'nome' => $p['nome'], 'slug' => 'previa', 'logo' => $logoMarca, 'email' => null, 'instagram' => null, 'status' => 'ativo', 'publicado' => true,
@@ -107,6 +110,14 @@ $dados['tema'] = ['accent' => $empresa['cor_primaria'] ?: '#2563eb'];
 $dados['modo'] = atendimento_modo_da_linha($empresa);
 $dados['modulos'] = modulos_da_empresa($empresa)['ativos'];
 
+// "Receber um exemplo no meu WhatsApp" (só para o número do próprio lead, 1 vez por dia)
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['acao'] ?? '') === 'teste_wa') {
+    header('Content-Type: application/json; charset=utf-8');
+    [$ok, $msg] = $ehAdmin ? [false, 'Você está logado como administrador: o exemplo só é enviado quando o próprio lead toca.'] : previa_teste_whatsapp($p, $dados['modo'], $dados['servicos'], $marca);
+    echo json_encode(['ok' => $ok, 'msg' => $msg], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // Prévia com o visual Limpo (o mesmo que o site do cliente terá) e o horário real do Google
 require_once __DIR__ . '/../includes/site_limpo.php';
 if ($horario) $dados['horario_lista'] = $horario;
@@ -119,10 +130,19 @@ $faixa = '<style>.gds-previa{position:fixed;left:50%;transform:translateX(-50%);
        . '.gds-previa a{flex:none;background:#25d366;color:#06240f;text-decoration:none;padding:9px 16px;border-radius:999px;font-weight:800}'
        . '.gds-previa .curto{display:none}@media(max-width:760px){.gds-previa{left:12px;right:12px;transform:none;max-width:none;justify-content:space-between;border-radius:16px;bottom:calc(88px + env(safe-area-inset-bottom,0px))}'
        . '.gds-previa .longo{display:none}.gds-previa .curto{display:inline}}.gds-wa{display:none!important}</style>'
-       . '<aside class="gds-previa" aria-label="Prévia do site"><span class="longo">✨ Prévia do site da <strong>' . e($p['nome']) . '</strong> · por ' . e($marca) . '</span><span class="curto">✨ Prévia do seu site</span><a href="?quero=1">Quero este site</a></aside>';
+       . '<aside class="gds-previa" aria-label="Prévia do site"><span class="longo">✨ Prévia do site da <strong>' . e($p['nome']) . '</strong> · por ' . e($marca) . '</span><span class="curto">✨ Prévia</span>'
+       . '<button type="button" class="pv-b pv-cel-b" data-pv-abrir="pvCel">📱 Ver no celular</button>'
+       . '<button type="button" class="pv-b" data-pv-abrir="pvPainel"><span class="longo">📊 Ver meu painel</span><span class="curto">Painel</span></button>'
+       . '<a class="pv-quero" href="?quero=1">Quero este site</a></aside>';
+// Extras que vendem: celular, painel de exemplo, teste no WhatsApp e tour guiado
+$extras = previa_extras_html($p, $dados['modo'], $dados['servicos'], $marca, function_exists('wa_plataforma_disponivel') && wa_plataforma_disponivel());
+$faixa = '<style>' . $extras['css'] . '</style>' . $faixa . $extras['html'] . '<script>' . $extras['js'] . '</script>';
 $html = preg_replace('#<div class="pt-preview-aviso">.*?</div>#s', '', $html, 1);
 $html = str_replace('</body>', $faixa . '</body>', $html);
 $html = str_replace('<head>', '<head><meta name="robots" content="noindex, nofollow">', $html);
+// Cartão do link no WhatsApp: o site do lead dentro de um celular
+try { $og = previa_og_imagem($p, $fotos[0] ?? '', $empresa['cor_primaria'] ?: '#2563eb', $dados['modo']); } catch (Throwable $e) { $og = null; }
+$html = previa_aplicar_og($html, $p, $og, $dados['modo']);
 // Horário real do Google, quando houver
 if ($horario) {
     $lista = '<ul style="list-style:none;padding:0;margin:0;display:grid;gap:6px">' . implode('', array_map(fn($h) => '<li>' . e($h) . '</li>', $horario)) . '</ul>';
