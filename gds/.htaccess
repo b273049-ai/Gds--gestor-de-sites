@@ -1,4 +1,6 @@
 Options -Indexes
+# Modelos 3D dos produtos (model-viewer)
+AddType model/gltf-binary .glb
 RewriteEngine On
 
 # Arquivos que nunca devem ser baixados pelo navegador
@@ -14,6 +16,10 @@ RewriteRule ^indica/([a-f0-9]+)/?$ site/indica.php?c=$1 [L,QSA]
 RewriteRule ^r/([a-f0-9]{32})/?$ site/rastreio.php?t=$1 [L,QSA]
 RewriteRule ^m/([a-f0-9]{32})/?$ site/motoboy.php?t=$1 [L,QSA]
 RewriteRule ^tv/([a-f0-9]{32})/?$ site/tv.php?t=$1 [L,QSA]
+
+# Busca do Google: robots.txt e sitemap.xml de cada domínio (veja site/sitemap.php)
+RewriteRule ^robots\.txt$ site/sitemap.php?robots=1 [L]
+RewriteRule ^sitemap\.xml$ site/sitemap.php [L]
 
 # URL bonita: sitegestor.com/barbearia-do-ze -> site/index.php?slug=barbearia-do-ze
 # Só entra aqui se NÃO for um arquivo/pasta real (admin, empresa, assets, login.php etc continuam normais)

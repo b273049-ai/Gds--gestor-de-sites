@@ -674,6 +674,27 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Tour 360° do imóvel, produto em 3D, privacidade, Google (migração 45)
+- **Tour 360° em cada imóvel:** em Imóveis → editar, campo "Tour 360°": envie as fotos 360° de cada cômodo (até 8;
+  foto comum é recusada com a explicação; o nome do ambiente vem do nome do arquivo e dá para trocar). Na ficha do
+  imóvel o cliente gira a foto com o dedo e troca de cômodo (Pannellum, livre, baixado só quando a ficha tem tour);
+  o cartão ganha o selo "360°". O campo "Vídeo ou tour virtual pronto" agora mostra **dentro da ficha** links do
+  YouTube, Kuula, Panoee e Matterport (outros links continuam como botão).
+- **Produto em 3D:** no cardápio/catálogo (modo pedidos), "🧊 Produto em 3D": envie o arquivo **.glb** (até 20 MB)
+  feito de graça com KIRI Engine, Scaniverse ou Polycam. No site, o card avisa "Veja em 3D" e a tela do produto
+  ganha "Ver em 3D" (model-viewer do Google, livre, baixado só ao tocar) e, no celular com suporte, "Ver no seu
+  espaço" (realidade aumentada: Android Scene Viewer, iPhone Quick Look). Arquivo que não é GLB é recusado.
+- **Privacidade (LGPD):** cada site tem `/site/privacidade.php?slug=…`, montada com os dados da empresa e só com o
+  que o site dela coleta (agenda, pedidos, orçamentos, imóveis, aniversário, fidelidade, Pix…). Link no rodapé dos
+  três visuais (e no site feito pela IA) e nos avisos dos formulários.
+- **Google encontra os sites:** `/robots.txt` e `/sitemap.xml` respondem por domínio (domínio próprio: só o site da
+  empresa; sitegestor.com: todos os sites publicados sem domínio próprio). Painel, APIs, prévias e links pessoais
+  ficam fora da busca. O visual Limpo ganhou `canonical` e `og:url`.
+- **Avaliar no Google:** em Recursos do site → "Avaliações no Google", cole o link de "Pedir avaliações" do Perfil da
+  Empresa (empresa que veio da Prospecção já vem preenchida). O site mostra "Avaliar no Google" na seção de
+  avaliações (e convida de novo depois que o cliente avalia no site), e o "Pedido de avaliação" do WhatsApp, depois
+  do atendimento ou pedido concluído, leva direto ao Google (dá para desligar e voltar a mandar para o site).
+
 ## Treino da semana, vale-presente e "Monte o seu" (migração 44)
 Ligados em **Recursos do site**:
 - **Treino da semana** (academia, personal, pilates…): menu **Treinos dos alunos**. O professor monta a ficha por

@@ -14,6 +14,7 @@ require_once __DIR__ . '/fotos.php';
 require_once __DIR__ . '/site_template.php';
 require_once __DIR__ . '/pagamentos.php';
 require_once __DIR__ . '/clube.php';
+require_once __DIR__ . '/recursos_site.php';
 require_once __DIR__ . '/orcamento.php';
 
 const PIX_ONLINE = 'Pix agora pelo site';
@@ -651,7 +652,7 @@ function site_fragmentos_marcadores($empresa, $dados, $estado, $extraServicos = 
         '{{GALERIA}}' => frag_galeria($dados['galeria'], $empresa['nome']),
         '{{AGENDAMENTO}}' => frag_agendamento($dados['servicos'], $dados['profissionais'], $estado['agendamento'], $dados['agenda'], $empresa),
         '{{ORCAMENTO}}' => frag_orcamento($dados['servicos'], $estado['orcamento'] ?? [], $empresa),
-        '{{AVALIACOES}}' => !in_array('avaliacoes', $dados['modulos'] ?? ['avaliacoes'], true) ? '' : frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao'], true, $dados['avaliacoes_resumo']),
+        '{{AVALIACOES}}' => !in_array('avaliacoes', $dados['modulos'] ?? ['avaliacoes'], true) ? '' : frag_avaliacoes($dados['avaliacoes'], $estado['avaliacao'], true, $dados['avaliacoes_resumo'], empty($empresa['id']) ? '' : rec_google_url($empresa)),
         '{{CONTATO}}' => frag_contato($estado['lead'], $empresa, $dados['status']),
         '{{MAPA}}' => frag_mapa($empresa['endereco'], $dados['maps_key']),
         '{{CUPONS}}' => frag_cupons($dados['cupons']),
@@ -756,6 +757,10 @@ function site_render_ia($empresa, $dados, $estado, $preview = false) {
     }
     if (site_pedido_online($empresa, $dados['modo'])) {
         $html = preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], frag_carrinho($empresa, $estado['pedido'] ?? [], $dados['servicos'])) . '</body>', $html, 1);
+    }
+    // Aviso de privacidade (LGPD) no rodapé feito pela IA
+    if (!$preview && ($urlPriv = frag_privacidade_url($empresa)) && stripos($html, '</footer>') !== false && !str_contains($html, 'privacidade.php')) {
+        $html = preg_replace('/<\/footer>/i', '<p style="font-size:.8rem;margin:10px 0 0"><a href="' . e($urlPriv) . '" style="color:inherit">Privacidade</a></p></footer>', $html, 1);
     }
     $html = site_garantir_main($html);
     $extras = frag_css_apoio($dados['tema']) . site_json_ld($empresa, $dados);
@@ -912,7 +917,7 @@ function site_render_template($empresa, $dados, $estado, $preview = false) {
 </main>
 <footer class="psite-footer container">
     <span><?= e($nome) ?><?= $empresa['endereco'] ? ' — ' . e($empresa['endereco']) : '' ?></span>
-    <span>© <?= date('Y') ?> · Site por GDS</span>
+    <span>© <?= date('Y') ?><?php if ($urlPriv = frag_privacidade_url($empresa)): ?> · <a href="<?= e($urlPriv) ?>">Privacidade</a><?php endif; ?> · Site por GDS</span>
 </footer>
 <?= site_mostrar_whatsapp_float($empresa) ? frag_whatsapp_float($empresa['whatsapp'], $empresa['whatsapp_mensagem'] ?? '', $nome) : '' ?>
 <?= site_pedido_online($empresa, $dados['modo']) ? frag_carrinho($empresa, $estado['pedido'] ?? [], $dados['servicos']) : '' ?>

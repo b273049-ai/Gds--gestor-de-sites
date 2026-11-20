@@ -8,6 +8,7 @@ exigir_login('empresa');
 exigir_modulo('imoveis');
 $empresaId = (int)empresa_id_atual();
 $temTabela = (bool)$pdo->query("SELECT to_regclass('imoveis') IS NOT NULL")->fetchColumn();
+$temTour = $temTabela && (bool)$pdo->query("SELECT 1 FROM information_schema.columns WHERE table_name='imoveis' AND column_name='tour360'")->fetchColumn();
 
 $carregar = function ($id) use ($pdo, $empresaId) { $s = $pdo->prepare("SELECT * FROM imoveis WHERE id=? AND empresa_id=?"); $s->execute([(int)$id, $empresaId]); return $s->fetch(); };
 
@@ -41,6 +42,8 @@ if ($temTabela && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_
         'situacao' => array_key_exists($_POST['situacao'] ?? '', IMOVEL_SITUACOES) ? $_POST['situacao'] : 'disponivel',
         'proprietario' => $t('proprietario', 150) ?: null, 'proprietario_tel' => $t('proprietario_tel', 20) ?: null,
     ];
+    $avisosTour = [];
+    if ($temTour) { [$tour, $avisosTour] = imovel_salvar_tour($empresaId, $atual ? imovel_tour($atual) : []); $vals['tour360'] = $tour ? json_encode($tour, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null; }
     if ($id) {
         $pdo->prepare("UPDATE imoveis SET " . implode(', ', array_map(fn($k) => "$k=?", array_keys($vals))) . ", atualizado_em=NOW() WHERE id=? AND empresa_id=?")->execute([...array_values($vals), $id, $empresaId]);
         flash('sucesso', 'Imóvel atualizado.');
@@ -50,7 +53,8 @@ if ($temTabela && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_
         if (!$vals['codigo']) $pdo->prepare("UPDATE imoveis SET codigo=? WHERE id=?")->execute([(string)(1000 + $id), $id]);
         flash('sucesso', 'Imóvel publicado no site.');
     }
-    header('Location: imoveis.php' . (!empty($_POST['continuar']) ? '?editar=' . $id . '#form' : '')); exit;
+    if ($avisosTour) flash('erro', 'Tour 360°: ' . implode(' ', array_slice($avisosTour, 0, 4)));
+    header('Location: imoveis.php' . (!empty($_POST['continuar']) || $avisosTour ? '?editar=' . $id . '#form' : '')); exit;
 }
 if ($temTabela && isset($_GET['situacao'], $_GET['id']) && array_key_exists($_GET['situacao'], IMOVEL_SITUACOES)) {
     $pdo->prepare("UPDATE imoveis SET situacao=?, atualizado_em=NOW() WHERE id=? AND empresa_id=?")->execute([$_GET['situacao'], (int)$_GET['id'], $empresaId]);
@@ -62,7 +66,7 @@ if ($temTabela && isset($_GET['alternar'])) {
 }
 if ($temTabela && isset($_GET['duplicar']) && ($o = $carregar($_GET['duplicar']))) {
     unset($o['id'], $o['criado_em'], $o['atualizado_em']);
-    $o['titulo'] = mb_substr($o['titulo'] . ' (cópia)', 0, 150); $o['codigo'] = null; $o['visualizacoes'] = 0; $o['fotos'] = '[]';
+    $o['titulo'] = mb_substr($o['titulo'] . ' (cópia)', 0, 150); $o['codigo'] = null; $o['visualizacoes'] = 0; $o['fotos'] = '[]'; if (array_key_exists('tour360', $o)) $o['tour360'] = null;
     foreach ($o as $k => $v) if (is_bool($v)) $o[$k] = $v ? 'true' : 'false';
     $pdo->prepare("INSERT INTO imoveis (" . implode(',', array_keys($o)) . ") VALUES (" . implode(',', array_fill(0, count($o), '?')) . ")")->execute(array_values($o));
     $novo = (int)$pdo->lastInsertId();
@@ -111,6 +115,7 @@ foreach ($imoveis as $im) { if ($im['situacao'] === 'disponivel' && pg_bool($im[
 .im-fotos { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .im-fotos figure { margin: 0; width: 120px; } .im-fotos img { width: 120px; height: 84px; object-fit: cover; border-radius: 8px; display: block; }
 .im-fotos figcaption { font-size: 11px; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; } .im-fotos figcaption label { margin: 0; font-weight: 400; display: flex; gap: 4px; align-items: center; }
+.im-tour { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px 14px; margin: 14px 0; } .im-tour legend { font-weight: 600; padding: 0 6px; } .im-fotos figcaption input[type=text] { width: 100%; padding: 4px 6px; font-size: 12px; margin: 0; }
 .im-busca { width: 100%; max-width: 360px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); margin-bottom: 12px; }
 </style>
 </head>
@@ -179,7 +184,15 @@ foreach ($imoveis as $im) { if ($im['situacao'] === 'disponivel' && pg_bool($im[
         <label>Fotos <small class="muted">(até <?= IMOVEL_MAX_FOTOS ?> — a primeira é a capa; pode enviar várias de uma vez)</small></label>
         <?php if ($ed && ($fs = imovel_fotos($ed))): ?><div class="im-fotos"><?php foreach ($fs as $k => $f): ?><figure><img src="<?= e($f) ?>" alt=""><figcaption><label><input type="radio" name="capa" value="<?= e($f) ?>" <?= $k === 0 ? 'checked' : '' ?>> capa</label><label><input type="checkbox" name="remover_foto[]" value="<?= e($f) ?>"> remover</label></figcaption></figure><?php endforeach; ?></div><?php endif; ?>
         <input type="file" name="fotos_novas[]" accept="image/*" multiple>
-        <label>Vídeo / tour virtual (link do YouTube, Instagram…)</label><input type="url" name="video" maxlength="255" value="<?= $v('video') ?>" placeholder="https://">
+        <?php if ($temTour): $tourEd = $ed ? imovel_tour($ed) : []; ?>
+        <fieldset class="im-tour">
+            <legend>🌐 Tour 360° <small class="muted">(até <?= IMOVEL_MAX_TOUR ?> ambientes)</small></legend>
+            <p class="muted" style="margin:0 0 8px">Tire uma foto 360° de cada cômodo (no celular: app de "foto 360°" ou "Photo Sphere", parado no meio do cômodo) e envie aqui. O cliente gira a foto com o dedo e troca de cômodo na ficha do imóvel.</p>
+            <?php if ($tourEd): ?><div class="im-fotos"><?php foreach ($tourEd as $k => $tt): ?><figure><img src="<?= e($tt['img']) ?>" alt=""><figcaption><input type="text" name="tour_tit[<?= $k ?>]" value="<?= e($tt['titulo']) ?>" maxlength="40" aria-label="Nome do ambiente <?= $k + 1 ?>" placeholder="Ex.: Sala"><label><input type="checkbox" name="remover_tour[]" value="<?= e($tt['img']) ?>"> remover</label></figcaption></figure><?php endforeach; ?></div><?php endif; ?>
+            <input type="file" name="tour_novas[]" accept="image/jpeg,image/png,image/webp" multiple aria-label="Fotos 360° dos ambientes">
+        </fieldset>
+        <?php endif; ?>
+        <label>Vídeo ou tour virtual pronto <small class="muted">(link do YouTube, Kuula, Panoee ou Matterport aparece dentro da ficha; outros links viram botão)</small></label><input type="url" name="video" maxlength="255" value="<?= $v('video') ?>" placeholder="https://kuula.co/share/...">
         <div class="form-row">
             <div><label>Proprietário <small class="muted">(só a equipe vê)</small></label><input type="text" name="proprietario" maxlength="150" value="<?= $v('proprietario') ?>"></div>
             <div><label>Telefone do proprietário</label><input type="tel" name="proprietario_tel" maxlength="20" value="<?= $v('proprietario_tel') ?>"></div>

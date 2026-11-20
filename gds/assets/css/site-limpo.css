@@ -115,6 +115,7 @@ p { margin: 0 0 1em; }
 /* ---------- rodapé ---------- */
 .lp-rodape { border-top: 1px solid var(--linha); padding: 28px 0 calc(28px + env(safe-area-inset-bottom)); color: var(--suave); font-size: .92rem; }
 .lp-rodape-in { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
+.lp-rodape a { color: inherit; text-underline-offset: 3px; }
 
 /* ---------- barra de ações no celular (aparece depois do topo) ---------- */
 .lp-barra { display: none; }
