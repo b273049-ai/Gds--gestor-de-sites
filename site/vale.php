@@ -19,7 +19,7 @@ $wa = preg_replace('/\D/', '', (string)$v['empresa_whatsapp']);
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title>Vale-presente · <?= e($v['empresa_nome']) ?></title>
-<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=19">
+<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=20">
 <style>
 :root{--c:<?= e($cor) ?>}body{margin:0;min-height:100vh;background:#f5f3ef;color:#1d1b19;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;place-items:center;padding:20px;box-sizing:border-box}
 main{width:100%;max-width:440px}.cartao{position:relative;overflow:hidden;border-radius:22px;padding:28px 24px;color:#fff;background:radial-gradient(120% 90% at 100% 0%,color-mix(in srgb,var(--c) 55%,#fff) 0,var(--c) 45%,color-mix(in srgb,var(--c) 70%,#000) 100%);box-shadow:0 30px 60px -28px color-mix(in srgb,var(--c) 70%,#000)}
@@ -40,7 +40,7 @@ a.b{display:inline-block;margin-top:12px;background:#1d1b19;color:#fff;text-deco
             <?php if ($wa): ?><a class="b" href="https://wa.me/<?= strlen($wa) <= 11 ? '55' : '' ?><?= e($wa) ?>?text=<?= rawurlencode('Olá! Pedi um vale-presente de ' . $valor . ' pelo site (código ' . $v['codigo'] . '). Como faço o pagamento?') ?>" target="_blank" rel="noopener">Combinar pelo WhatsApp</a><?php endif; ?>
         <?php endif; ?></div>
     <?= $pag ? frag_pix_pagamento($pag, 'Pague o vale-presente') : '' ?>
-    <script src="/assets/js/gds-site.js?v=14" defer></script>
+    <script src="/assets/js/gds-site.js?v=15" defer></script>
     <?php if ($pag): ?><script>setInterval(function(){fetch('/site/pagamento.php?t=<?= e($pag['token']) ?>').then(function(r){return r.json()}).then(function(j){if(j.status==='pago')location.reload()})},5000)</script><?php endif; ?>
 <?php else: ?>
     <div class="cartao" role="img" aria-label="Vale-presente de <?= e($valor) ?> para <?= e($v['para_nome']) ?>">

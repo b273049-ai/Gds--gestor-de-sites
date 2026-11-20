@@ -256,7 +256,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     if (($vant = rec_vantagens($empresa, $REC, $modo)) !== '') $secao('vantagens', 'Vantagens de cliente', $vant);
     if (!empty($dados['planos'])) $secao('clube', 'Planos', $f['{{CLUBE}}'], 'Um valor fixo por mês e você vem quando quiser.');
     if (!empty($dados['cupons'])) $secao('cupons', 'Promoções', $f['{{CUPONS}}']);
-    if (in_array('avaliacoes', $modulos ?: ['avaliacoes'], true) && ($nota['total'] > 0 || $dados['avaliacoes'])) $secao('avaliacoes', 'O que dizem os clientes', $f['{{AVALIACOES}}'], '', 'Avaliações');
+    if (in_array('avaliacoes', $modulos ?: ['avaliacoes'], true) && ($nota['total'] > 0 || $dados['avaliacoes'] || (!$preview && rec_google_url($empresa)))) $secao('avaliacoes', 'O que dizem os clientes', $f['{{AVALIACOES}}'], '', 'Avaliações');
     // Onde estamos: endereço, horário, botões e mapa (sem formulário quando há WhatsApp)
     $horas = !empty($dados['horario_lista'])
         ? '<ul class="lp-horas">' . implode('', array_map(fn($h) => '<li>' . e($h) . '</li>', $dados['horario_lista'])) . '</ul>'
@@ -289,13 +289,15 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <meta property="og:title" content="<?= e($titulo) ?>">
 <meta property="og:description" content="<?= e($descricao) ?>">
 <meta property="og:type" content="website">
+<?php if (!$preview && !empty($empresa['slug'])): $urlCanon = wa_url_publica($empresa); ?><link rel="canonical" href="<?= e($urlCanon) ?>"><meta property="og:url" content="<?= e($urlCanon) ?>">
+<?php endif; ?>
 <?php if ($fotoHero || $empresa['logo']): ?><meta property="og:image" content="<?= e($fotoHero ?: $empresa['logo']) ?>"><?php endif; ?>
 <meta name="theme-color" content="<?= e($bg) ?>">
 <?php if ($empresa['logo']): ?><link rel="icon" href="<?= e($empresa['logo']) ?>"><?php endif; ?>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
-<link rel="stylesheet" href="/assets/css/site-limpo.css?v=7">
+<link rel="stylesheet" href="/assets/css/site-limpo.css?v=8">
 <?= rec_head($empresa, $REC) ?>
 <script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
 <style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;--duo-giro:<?= site_limpo_matiz($accent) - 38 ?>deg;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
@@ -348,7 +350,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <footer class="lp-rodape">
     <div class="lp-larg lp-rodape-in">
         <span>© <?= date('Y') ?> <?= e($nome) ?></span>
-        <span><?= rec_botao_app($REC) ?><?= $creditos ? 'Fotos: ' . e(implode(', ', $creditos)) . ' · ' : '' ?>Site feito com GDS</span>
+        <span><?= rec_botao_app($REC) ?><?php if ($urlPriv = frag_privacidade_url($empresa)): ?><a href="<?= e($urlPriv) ?>">Privacidade</a> · <?php endif; ?><?= $creditos ? 'Fotos: ' . e(implode(', ', $creditos)) . ' · ' : '' ?>Site feito com GDS</span>
     </div>
 </footer>
 

@@ -572,3 +572,26 @@ html.gds-sem-rolagem-prod { overflow: hidden; }
 .gds-monte-nav { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 16px 10px; }
 .gds-monte-passo { font-weight: 700; font-size: .92rem; }
 .gds-monte-nav [hidden] { display: none !important; }
+
+/* Avaliar no Google (recursos do site) e link de privacidade nos avisos LGPD */
+.gds-c .gds-aval-acoes { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 6px; }
+.gds-c .gds-nota-lgpd a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Produto em 3D (model-viewer) e tour 360° do imóvel (migração 45) */
+.gds-c .gds-svc-3d { margin: 2px 0 4px; font-size: .82rem; font-weight: 600; }
+.gds-c .gds-prod-foto[data-prod-midia] { position: relative; display: grid; place-items: end start; }
+.gds-c .gds-prod-ver3d { margin: 12px; min-height: 44px; padding: 8px 16px; border-radius: 999px; border: 0; background: rgba(17,19,23,.82); color: #fff; font: inherit; font-weight: 700; cursor: pointer; backdrop-filter: blur(6px); }
+.gds-c .gds-prod-ver3d:focus-visible, .gds-c .gds-prod-ar:focus-visible { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(17,19,23,.6); }
+.gds-c .gds-prod-3d-on { aspect-ratio: 1 / 1; display: block; background: radial-gradient(circle at 50% 40%, #fff, #e9ebef) !important; }
+.gds-c .gds-prod-3d-on model-viewer { width: 100%; height: 100%; --poster-color: transparent; }
+.gds-c .gds-prod-ar { position: absolute; left: 12px; bottom: 12px; min-height: 44px; padding: 8px 16px; border-radius: 999px; border: 0; background: var(--gds-accent, #1f6feb); color: var(--gds-on-accent, #fff); font: inherit; font-weight: 700; cursor: pointer; }
+.gds-c .gds-im-n360 { position: absolute; right: 10px; top: 10px; background: rgba(17,19,23,.8); color: #fff; font-size: .75rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.gds-c .gds-im-360 { margin: 16px 0; }
+.gds-c .gds-im-360 h4 { margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.gds-c .gds-im-360 h4 small { font-weight: 400; font-size: .8rem; }
+.gds-c .gds-im-360-tela { width: 100%; aspect-ratio: 16 / 10; max-height: 60vh; border-radius: 12px; overflow: hidden; background: #111317; }
+.gds-c .gds-im-360-lista { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; }
+.gds-c .gds-im-360-lista button { flex: none; min-height: 40px; padding: 6px 14px; border-radius: 999px; border: 1px solid currentColor; background: transparent; color: inherit; font: inherit; cursor: pointer; opacity: .85; }
+.gds-c .gds-im-360-lista button[aria-pressed="true"] { background: var(--gds-accent, #1f6feb); border-color: transparent; color: var(--gds-on-accent, #fff); opacity: 1; }
+.gds-c .gds-im-embed { margin: 16px 0; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: #111317; }
+.gds-c .gds-im-embed iframe { width: 100%; height: 100%; border: 0; display: block; }

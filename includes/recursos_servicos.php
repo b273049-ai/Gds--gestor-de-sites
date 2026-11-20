@@ -144,7 +144,14 @@ function tour_html($r) {
 function tour_upload($empresaId) {
     $f = $_FILES['tour_img'] ?? null;
     if (!$f || ($f['error'] ?? 4) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) return [null, 'Escolha a foto panorâmica (JPG).'];
-    if ((int)$f['size'] > TOUR_MAX_BYTES) return [null, 'A foto passou de 15 MB.'];
+    return tour_gravar($f['tmp_name'], (int)$f['size'], $empresaId);
+}
+
+// Confere e grava uma foto panorâmica enviada (usada no tour do site e no tour de cada imóvel)
+function tour_gravar($tmp, $tamanho, $empresaId) {
+    if (!is_uploaded_file($tmp)) return [null, 'Envie a foto de novo.'];
+    if ($tamanho > TOUR_MAX_BYTES) return [null, 'A foto passou de 15 MB.'];
+    $f = ['tmp_name' => $tmp];
     $info = @getimagesize($f['tmp_name']);
     if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) return [null, 'Use uma foto JPG, PNG ou WebP.'];
     if ($info[0] < $info[1] * 1.7) return [null, 'Essa foto não é panorâmica. Use o modo "Panorama" ou "Foto 360°" da câmera (a foto fica bem larga).'];
@@ -154,4 +161,32 @@ function tour_upload($empresaId) {
     $nome = 'tour-' . bin2hex(random_bytes(5)) . '.' . $ext;
     if (!move_uploaded_file($f['tmp_name'], "$pasta/$nome")) return [null, 'Não consegui salvar a foto.'];
     return ['/uploads/empresas/' . (int)$empresaId . '/' . $nome, ''];
+}
+
+// ------------------------------------------------------------
+// PRODUTO EM 3D (migração 45): arquivo .glb do item, visto no site com o <model-viewer> (Google, livre)
+// e "no seu espaço" pela câmera do celular (Android: Scene Viewer; iPhone: Quick Look).
+// O modelo é feito de graça com apps de escaneamento (KIRI Engine, Scaniverse, Polycam).
+// ------------------------------------------------------------
+const MODELO3D_MAX_BYTES = 20 * 1024 * 1024;
+
+// Grava o .glb enviado em $_FILES[$campo]; devolve [url|null, erro]
+function modelo3d_gravar($campo, $empresaId) {
+    $f = $_FILES[$campo] ?? null;
+    if (!$f || ($f['error'] ?? 4) === UPLOAD_ERR_NO_FILE) return [null, ''];
+    if (($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) return [null, 'O envio do modelo 3D falhou (o arquivo pode passar do limite do servidor).'];
+    if ((int)$f['size'] > MODELO3D_MAX_BYTES) return [null, 'O modelo 3D passou de 20 MB. No app de escaneamento, exporte com qualidade "média".'];
+    $cab = (string)@file_get_contents($f['tmp_name'], false, null, 0, 12);
+    if (strlen($cab) < 12 || substr($cab, 0, 4) !== 'glTF' || unpack('V', substr($cab, 4, 4))[1] !== 2) return [null, 'Esse arquivo não é um modelo 3D .glb. No app (KIRI Engine, Scaniverse ou Polycam), exporte no formato GLB.'];
+    if (!function_exists('img_ia_pasta')) require_once __DIR__ . '/imagens_ia.php';
+    $pasta = img_ia_pasta('empresas/' . (int)$empresaId);
+    if (!$pasta) return [null, 'A pasta de arquivos não tem permissão de escrita.'];
+    $nome = '3d-' . bin2hex(random_bytes(6)) . '.glb';
+    if (!move_uploaded_file($f['tmp_name'], "$pasta/$nome")) return [null, 'Não consegui salvar o modelo 3D.'];
+    return ['/uploads/empresas/' . (int)$empresaId . '/' . $nome, ''];
+}
+
+function modelo3d_apagar($url, $empresaId) {
+    $base = '/uploads/empresas/' . (int)$empresaId . '/3d-';
+    if (is_string($url) && str_starts_with($url, $base) && str_ends_with($url, '.glb') && !str_contains($url, '..')) @unlink(__DIR__ . '/..' . $url);
 }

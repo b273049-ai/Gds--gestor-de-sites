@@ -408,7 +408,7 @@ function site_render_template_premium($empresa, $dados, $estado, $preview = fals
             <?php if ($empresa['endereco']): ?><a href="<?= e($linkRota) ?>" target="_blank" rel="noopener"><?= e($empresa['endereco']) ?></a><?php endif; ?>
             <span><?= e(ucfirst(site_texto_horario($dados['agenda']))) ?></span></div>
     </div>
-    <div class="pt-container pt-rodape-base"><span>© <?= $ano ?> <?= e($nome) ?></span><span><?= $creditos ? 'Fotos: ' . e(implode(', ', $creditos)) . ' / Pexels · ' : '' ?>Site por GDS</span></div>
+    <div class="pt-container pt-rodape-base"><span>© <?= $ano ?> <?= e($nome) ?></span><span><?php if ($urlPriv = frag_privacidade_url($empresa)): ?><a href="<?= e($urlPriv) ?>">Privacidade</a> · <?php endif; ?><?= $creditos ? 'Fotos: ' . e(implode(', ', $creditos)) . ' / Pexels · ' : '' ?>Site por GDS</span></div>
 </footer>
 
 <?php if ($temAcoesMob): ?>

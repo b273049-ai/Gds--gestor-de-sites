@@ -9,6 +9,27 @@
     document.documentElement.classList.add('gds-js');
 
     var $ = function (sel, el) { return (el || document).querySelector(sel); };
+    // Bibliotecas livres baixadas só quando o cliente abre algo que precisa delas (tour 360° e produto em 3D)
+    if (!window.gdsCarregar) window.gdsCarregar = (function () {
+        var libs = {
+            pannellum: { ok: function () { return !!window.pannellum; }, css: 'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css', js: 'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js' },
+            modelviewer: { ok: function () { return !!(window.customElements && customElements.get('model-viewer')); }, js: 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.1.0/dist/model-viewer.min.js', modulo: true }
+        }, filas = {};
+        return function (nome, cb) {
+            var l = libs[nome]; if (!l) return;
+            if (l.ok()) return cb();
+            if (filas[nome]) return filas[nome].push(cb);
+            filas[nome] = [cb];
+            if (l.css && !document.querySelector('link[href="' + l.css + '"]')) { var c = document.createElement('link'); c.rel = 'stylesheet'; c.href = l.css; document.head.appendChild(c); }
+            var s = document.createElement('script'); s.src = l.js; if (l.modulo) s.type = 'module';
+            s.onload = function () {
+                var fim = function () { var f = filas[nome]; filas[nome] = null; f.forEach(function (x) { try { x(); } catch (e) { } }); };
+                if (nome === 'modelviewer' && window.customElements) customElements.whenDefined('model-viewer').then(fim); else fim();
+            };
+            s.onerror = function () { filas[nome] = null; };
+            document.head.appendChild(s);
+        };
+    })();
     var $$ = function (sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); };
     var pad = function (n) { return String(n).padStart(2, '0'); };
     var iso = function (d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
@@ -500,7 +521,13 @@
             var tags = (d.carac || []).slice(); if (d.fin_ok) tags.unshift('Aceita financiamento'); if (d.permuta) tags.unshift('Aceita permuta'); if (d.mob) tags.push('Mobiliado'); if (d.pet) tags.push('Aceita pet');
             if (tags.length) { h += '<div class="gds-im-tags">'; tags.forEach(function (t) { h += '<span>✓ ' + esc(t) + '</span>'; }); h += '</div>'; }
             if (d.desc) h += '<p class="gds-im-desc">' + esc(d.desc) + '</p>';
-            if (d.video) h += '<p><a class="gds-btn-2" target="_blank" rel="noopener" href="' + esc(d.video) + '">▶ Ver vídeo / tour</a></p>';
+            if (d.tour && d.tour.length) {
+                h += '<section class="gds-im-360" aria-label="Tour 360°"><h4>🌐 Tour 360° <small class="gds-mute">arraste para olhar em volta</small></h4><div class="gds-im-360-tela" data-gds-360-tela></div>';
+                if (d.tour.length > 1) { h += '<div class="gds-im-360-lista" role="group" aria-label="Ambientes">'; d.tour.forEach(function (t, i) { h += '<button type="button" data-gds-360="' + i + '" aria-pressed="' + (i ? 'false' : 'true') + '">' + esc(t.titulo || 'Ambiente ' + (i + 1)) + '</button>'; }); h += '</div>'; }
+                h += '</section>';
+            }
+            if (d.embed) h += '<div class="gds-im-embed"><iframe src="' + esc(d.embed) + '" title="Vídeo / tour virtual do imóvel" loading="lazy" allow="fullscreen; xr-spatial-tracking; gyroscope; accelerometer" allowfullscreen></iframe></div>';
+            else if (d.video) h += '<p><a class="gds-btn-2" target="_blank" rel="noopener" href="' + esc(d.video) + '">▶ Ver vídeo / tour</a></p>';
             // Simulador de financiamento (tabela Price), como nos portais — só para venda com preço
             if (d.fin === 'venda' && d.preco > 0) {
                 h += '<details class="gds-im-sim"' + (d.fin_ok ? ' open' : '') + '><summary>🏦 Simular financiamento</summary><div class="gds-im-sim-campos">'
@@ -546,11 +573,24 @@
             };
             var x0 = null; img && img.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
             img && img.addEventListener('touchend', function (e) { if (x0 === null) return; var dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) ir(atual + (dx < 0 ? 1 : -1)); x0 = null; });
+            // tour 360°: o visor (Pannellum, livre) só é baixado quando a ficha tem tour
+            if (visor360) { try { visor360.destroy(); } catch (e) { } visor360 = null; }
+            var tela360 = $('[data-gds-360-tela]', modal);
+            if (tela360) {
+                var abrir360 = function (i) {
+                    if (visor360) { try { visor360.destroy(); } catch (e) { } }
+                    visor360 = pannellum.viewer(tela360, { type: 'equirectangular', panorama: d.tour[i].img, autoLoad: true, showControls: true, compass: false, haov: 360, vaov: 180, autoRotate: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : -2 });
+                    $$('[data-gds-360]', modal).forEach(function (b) { b.setAttribute('aria-pressed', +b.getAttribute('data-gds-360') === i ? 'true' : 'false'); });
+                };
+                window.gdsCarregar('pannellum', function () { if (!modal.hidden && tela360.isConnected) abrir360(0); });
+                $$('[data-gds-360]', modal).forEach(function (b) { b.onclick = function () { if (window.pannellum) abrir360(+b.getAttribute('data-gds-360')); }; });
+            }
             modal.hidden = false; document.documentElement.classList.add('gds-sem-rolagem');
             if (!semHash) history.replaceState(null, '', '#imovel-' + d.cod);
             try { navigator.sendBeacon && navigator.sendBeacon('/site/imovel_ver.php?id=' + d.id); } catch (e) { }
         }
-        function fechar() { modal.hidden = true; document.documentElement.classList.remove('gds-sem-rolagem'); if (/^#imovel-/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); }
+        var visor360 = null;
+        function fechar() { if (visor360) { try { visor360.destroy(); } catch (e) { } visor360 = null; } var ifr = $('.gds-im-embed iframe', modal); if (ifr) ifr.remove(); modal.hidden = true; document.documentElement.classList.remove('gds-sem-rolagem'); if (/^#imovel-/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); }
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden) fechar(); });
         cards.forEach(function (c) { c.addEventListener('click', function () { abrir(c); }); c.addEventListener('keydown', function (e) { if (e.key === 'Enter') abrir(c); }); });
         filtrar();
@@ -739,7 +779,8 @@
             var img = b.getAttribute('data-img') || '', desc = b.getAttribute('data-desc') || '', serve = parseInt(b.getAttribute('data-serve') || '0', 10);
             var fundo = document.createElement('div'); fundo.className = 'gds-op-fundo';
             var box = document.createElement('div'); box.className = 'gds-op-janela gds-produto'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
-            var h = (img ? '<div class="gds-prod-foto" style="background-image:url(\'' + encodeURI(img) + '\')"></div>' : '') + '<button type="button" class="gds-prod-x" data-x aria-label="Fechar">✕</button>'
+            var m3d = b.getAttribute('data-3d') || '';
+            var h = (img || m3d ? '<div class="gds-prod-foto"' + (img ? ' style="background-image:url(\'' + encodeURI(img) + '\')"' : '') + ' data-prod-midia>' + (m3d ? '<button type="button" class="gds-prod-ver3d" data-ver3d>🧊 Ver em 3D</button>' : '') + '</div>' : '') + '<button type="button" class="gds-prod-x" data-x aria-label="Fechar">✕</button>'
                 + '<div class="gds-prod-cab"><h3></h3>' + (desc ? '<p class="gds-mute gds-prod-desc"></p>' : '') + (serve ? '<p class="gds-prod-serve">👥 Serve ' + serve + (serve > 1 ? ' pessoas' : ' pessoa') + '</p>' : '') + '<strong class="gds-prod-base">' + (base > 0 ? dinheiro(base) : '') + '</strong></div>';
             grupos.forEach(function (g, gi) {
                 var tipo = g.max > 1 ? 'checkbox' : 'radio';
@@ -758,6 +799,21 @@
                + '<button type="button" class="gds-btn" data-ok>' + (inicial.editando ? 'Salvar' : 'Adicionar') + ' · <span data-total></span></button></div>';
             box.innerHTML = h;
             box.querySelector('h3').textContent = nome;
+            // Produto em 3D: o visor (model-viewer, do Google) só é baixado ao tocar em "Ver em 3D"
+            var v3 = box.querySelector('[data-ver3d]');
+            if (v3) v3.onclick = function () {
+                v3.disabled = true; v3.textContent = 'Carregando o 3D…';
+                window.gdsCarregar('modelviewer', function () {
+                    var midia = box.querySelector('[data-prod-midia]'), mv = document.createElement('model-viewer');
+                    mv.setAttribute('src', m3d); mv.setAttribute('alt', nome + ' em 3D'); mv.setAttribute('camera-controls', ''); mv.setAttribute('touch-action', 'pan-y');
+                    mv.setAttribute('ar', ''); mv.setAttribute('ar-modes', 'scene-viewer quick-look'); mv.setAttribute('shadow-intensity', '1');
+                    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) mv.setAttribute('auto-rotate', '');
+                    if (img) mv.setAttribute('poster', img);
+                    mv.innerHTML = '<button type="button" slot="ar-button" class="gds-prod-ar">📱 Ver no seu espaço</button>';
+                    midia.innerHTML = ''; midia.style.backgroundImage = 'none'; midia.classList.add('gds-prod-3d-on'); midia.appendChild(mv);
+                });
+                setTimeout(function () { if (v3.isConnected) { v3.disabled = false; v3.textContent = 'Não carregou. Tocar de novo'; } }, 15000);
+            };
             var pd = box.querySelector('.gds-prod-desc'); if (pd) pd.textContent = desc;
             grupos.forEach(function (g, gi) {
                 var fs = box.querySelector('[data-g="' + gi + '"]'); fs.querySelector('legend span').textContent = g.nome;

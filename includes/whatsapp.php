@@ -570,8 +570,14 @@ function wa_avisar_status_pedido($empresa, $pedidoId, $status) {
     ][$status] ?? null;
     if (!$evento) return null;
     $v = wa_vars_pedido($p, $empresa);
-    if ($evento === 'pedido_concluido') $v['link'] = wa_url_publica($empresa) . '#avaliacoes'; // pede a avaliação
+    if ($evento === 'pedido_concluido') $v['link'] = wa_link_avaliar($empresa); // pede a avaliação
     return wa_notificar_cliente($empresa, $evento, $p['telefone'], $v, 'pedido', $p['id']);
+}
+
+// Pedido de avaliação: vai direto para o Google quando a empresa ligou isso em Recursos do site
+function wa_link_avaliar($empresa) {
+    if (!function_exists('rec_google_url')) require_once __DIR__ . '/recursos_site.php';
+    return rec_google_url($empresa, true) ?: wa_url_publica($empresa) . '#avaliacoes';
 }
 
 function wa_avisar_status_agendamento($empresa, $agId, $status) {
@@ -585,7 +591,7 @@ function wa_avisar_status_agendamento($empresa, $agId, $status) {
     $a = $st->fetch();
     if (!$a || empty($a['telefone'])) return null;
     $v = wa_vars_agendamento($a, $empresa);
-    if ($evento === 'agendamento_concluido') $v['link'] = wa_url_publica($empresa) . '#avaliacoes';
+    if ($evento === 'agendamento_concluido') $v['link'] = wa_link_avaliar($empresa);
     return wa_notificar_cliente($empresa, $evento, $a['telefone'], $v, 'agendamento', $a['id']);
 }
 

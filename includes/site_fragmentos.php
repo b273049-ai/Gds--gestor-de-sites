@@ -80,6 +80,15 @@ function frag_tempo_atras($data) {
 }
 
 // Campo invisível: pessoas não preenchem, robôs de spam sim
+// Link para o aviso de privacidade (LGPD) do site da empresa — site/privacidade.php
+function frag_privacidade_url($empresa) {
+    return empty($empresa['slug']) || empty($empresa['id']) ? '' : '/site/privacidade.php?slug=' . rawurlencode($empresa['slug']);
+}
+function frag_link_privacidade($empresa) {
+    $u = frag_privacidade_url($empresa);
+    return $u ? ' <a href="' . e($u) . '" target="_blank" rel="noopener">Privacidade</a>' : '';
+}
+
 function frag_honeypot() {
     return '<div class="gds-honey" aria-hidden="true"><label>Não preencha<input type="text" name="site_url_confirm" tabindex="-1" autocomplete="off"></label>'
          . '<input type="hidden" name="gds_t" value="' . time() . '"></div>';
@@ -128,6 +137,7 @@ function frag_servicos($servicos, $opts = []) {
         if (!empty($s['imagem'])) $html .= '<img class="gds-svc-img" src="' . e($s['imagem']) . '" alt="' . e($s['nome']) . '" loading="lazy">';
         $html .= '<div class="gds-svc-corpo"><div class="gds-svc-topo"><h3>' . e($s['nome']) . '</h3>'
                . ($destaque ? '<span class="gds-chip gds-chip-accent">' . frag_icone('estrela') . ' Destaque</span>' : (isset($maisPedidos[(int)$s['id']]) ? '<span class="gds-chip gds-chip-accent">🔥 ' . ($cardapio ? 'Mais pedido' : 'Mais procurado') . '</span>' : '')) . '</div>';
+        if (!empty($s['modelo_3d'])) $html .= '<p class="gds-svc-3d">🧊 Veja em 3D e no seu espaço</p>';
         if ($cardapio && !empty($s['serve'])) $html .= '<p class="gds-mute gds-svc-serve">👥 Serve ' . (int)$s['serve'] . ((int)$s['serve'] > 1 ? ' pessoas' : ' pessoa') . '</p>';
         if (!empty($s['descricao'])) $html .= '<p class="gds-svc-desc">' . e($s['descricao']) . '</p>';
         $meta = '';
@@ -195,7 +205,7 @@ function frag_botao_servico($s, $opts) {
         if ((float)$s['preco'] > 0 || $grupos) {
             $obrig = array_filter($grupos, fn($g) => (int)($g['min'] ?? 0) > 0);
             return '<button type="button" class="gds-btn" data-gds-add="' . $id . '" data-nome="' . e($s['nome']) . '" data-preco="' . (float)$s['preco'] . '"'
-                 . ' data-desc="' . e(mb_substr((string)($s['descricao'] ?? ''), 0, 400)) . '" data-img="' . e((string)($s['imagem'] ?? '')) . '"' . (!empty($s['serve']) ? ' data-serve="' . (int)$s['serve'] . '"' : '')
+                 . ' data-desc="' . e(mb_substr((string)($s['descricao'] ?? ''), 0, 400)) . '" data-img="' . e((string)($s['imagem'] ?? '')) . '"' . (!empty($s['modelo_3d']) ? ' data-3d="' . e($s['modelo_3d']) . '"' : '') . (!empty($s['serve']) ? ' data-serve="' . (int)$s['serve'] . '"' : '')
                  . ($grupos ? " data-gds-opcoes='" . htmlspecialchars(json_encode($grupos, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') . "'" : '') . '>'
                  . frag_icone('sacola') . ($obrig ? ' Escolher' : ' Adicionar') . '</button>';
         }
@@ -246,8 +256,9 @@ function frag_galeria($imagens, $nomeEmpresa = '') {
 // ------------------------------------------------------------
 // AVALIAÇÕES — resumo com média, lista e formulário com estrelas
 // ------------------------------------------------------------
-function frag_avaliacoes($avaliacoes, $estado = [], $permitirEnvio = true, $resumo = null) {
+function frag_avaliacoes($avaliacoes, $estado = [], $permitirEnvio = true, $resumo = null, $googleUrl = '') {
     $html = '<div class="gds-c gds-avaliacoes">';
+    $google = $googleUrl ? '<a class="gds-btn-2 gds-btn-google" href="' . e($googleUrl) . '" target="_blank" rel="noopener" data-ev="avaliar_google">' . frag_icone('estrela') . ' Avaliar no Google</a>' : '';
     $total = $resumo['total'] ?? count($avaliacoes);
     if ($total > 0) {
         $media = $resumo['media'] ?? (array_sum(array_column($avaliacoes, 'nota')) / max(1, count($avaliacoes)));
@@ -269,11 +280,12 @@ function frag_avaliacoes($avaliacoes, $estado = [], $permitirEnvio = true, $resu
     } else {
         $html .= '<p class="gds-vazio">Ainda sem avaliações. Seja o primeiro a contar como foi!</p>';
     }
-    if (!$permitirEnvio) return $html . '</div>';
+    if (!$permitirEnvio) return $html . ($google ? '<div class="gds-aval-acoes">' . $google . '</div>' : '') . '</div>';
 
     if (!empty($estado['ok'])) {
-        return $html . '<div class="gds-alerta gds-alerta-ok" style="margin-top:18px">Obrigado pela avaliação! Ela aparece aqui assim que for aprovada.</div></div>';
+        return $html . '<div class="gds-alerta gds-alerta-ok" style="margin-top:18px">Obrigado pela avaliação! Ela aparece aqui assim que for aprovada.' . ($googleUrl ? ' Se puder, deixe também no Google: ajuda muito quem ainda não nos conhece.</div><div class="gds-aval-acoes">' . $google . '</div></div>' : '</div></div>');
     }
+    if ($google) $html .= '<div class="gds-aval-acoes">' . $google . '</div>';
     $html .= '<details class="gds-avaliar"' . (!empty($estado['erro']) ? ' open' : '') . '><summary class="gds-btn-2">' . frag_icone('estrela') . ' Deixar minha avaliação</summary>'
            . '<form method="post" class="gds-card" style="max-width:520px">' . frag_honeypot() . frag_alerta_erro($estado['erro'] ?? '')
            . '<div class="gds-campo"><span class="gds-rotulo" id="gds-nota-rot">Sua nota</span><div class="gds-star-input" role="radiogroup" aria-labelledby="gds-nota-rot">';
@@ -394,7 +406,7 @@ function frag_contato($estado = [], $empresa = [], $status = null) {
               . '<div class="gds-campo"><label for="ct_assunto">Assunto</label><select id="ct_assunto" name="assunto">' . $opts . '</select></div>'
               . '<div class="gds-campo"><label for="ct_msg">Mensagem</label><textarea id="ct_msg" name="mensagem" rows="4" maxlength="2000" required>' . e($p['mensagem'] ?? '') . '</textarea></div>'
               . '<button type="submit" name="enviar_lead" value="1" class="gds-btn gds-btn-bloco">Enviar mensagem ' . frag_icone('seta') . '</button>'
-              . '<p class="gds-nota-lgpd">Seus dados são usados só para responder o seu contato.</p></form>';
+              . '<p class="gds-nota-lgpd">Seus dados são usados só para responder o seu contato.' . frag_link_privacidade($empresa) . '</p></form>';
     }
     if ($infos === '') return '<div class="gds-c" id="gds-contato" style="max-width:560px">' . $form . '</div>';
     return '<div class="gds-c gds-contato" id="gds-contato"><div class="gds-infos">' . $infos . '</div>' . $form . '</div>';
@@ -466,7 +478,7 @@ function frag_orcamento($servicos, $estado = [], $empresa = []) {
            . '<div class="gds-linha"><div class="gds-campo"><label for="orc_tel">WhatsApp</label><input type="tel" id="orc_tel" name="orc_telefone" maxlength="20" required autocomplete="tel" inputmode="tel" placeholder="(11) 99999-9999" data-gds-tel value="' . e($p['orc_telefone'] ?? '') . '"></div>'
            . '<div class="gds-campo"><label for="orc_email">E-mail (opcional)</label><input type="email" id="orc_email" name="orc_email" maxlength="150" autocomplete="email" value="' . e($p['orc_email'] ?? '') . '"></div></div>'
            . '<button type="submit" class="gds-btn gds-btn-bloco">' . frag_icone('seta') . ' Pedir orçamento</button>'
-           . '<p class="gds-nota-lgpd">Sem compromisso. Usamos seus dados só para enviar o orçamento.</p></form>';
+           . '<p class="gds-nota-lgpd">Sem compromisso. Usamos seus dados só para enviar o orçamento.' . frag_link_privacidade($empresa) . '</p></form>';
     if (so_digitos_frag($whats)) {
         $html .= '<p style="margin-top:12px;font-size:.9rem" class="gds-mute">Prefere conversar? <a href="' . e(frag_link_whatsapp($whats, 'Olá! Gostaria de um orçamento.')) . '" target="_blank" rel="noopener"><strong>Chame no WhatsApp</strong></a></p>';
     }
@@ -572,7 +584,7 @@ function frag_agendamento($servicos, $profissionais, $estado = [], $agenda = [],
     }
     $html .= '<div class="gds-campo"><label for="ag_obs">Alguma observação? (opcional)</label><textarea id="ag_obs" name="ag_observacoes" rows="2" maxlength="500">' . e($post['ag_observacoes'] ?? '') . '</textarea></div>'
            . '<button type="submit" class="gds-btn gds-btn-bloco" data-gds-confirmar>' . frag_icone('check') . ' Confirmar agendamento</button>'
-           . '<p class="gds-nota-lgpd">Usamos seus dados só para confirmar e lembrar do seu horário.</p></section>';
+           . '<p class="gds-nota-lgpd">Usamos seus dados só para confirmar e lembrar do seu horário.' . frag_link_privacidade($empresa) . '</p></section>';
 
     $html .= '<div class="gds-nav-passos" data-gds-nav hidden><button type="button" class="gds-btn-2" data-gds-voltar>' . frag_icone('volta') . ' Voltar</button><button type="button" class="gds-btn" data-gds-avancar>Continuar ' . frag_icone('seta') . '</button></div>';
     return $html . '</form></div>';
@@ -614,10 +626,10 @@ function frag_agendamento_confirmado($estado, $empresa) {
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
     $fundos = $tema['fundos'] ?? ['#ffffff', '#f4f5f8'];
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=19">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=20">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';--gds-tema-accent-txt:' . frag_cor_legivel($accent, $fundos) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
-         . '<script src="/assets/js/gds-site.js?v=14" defer></script>'
+         . '<script src="/assets/js/gds-site.js?v=15" defer></script>'
          . '<script src="/assets/js/gds-motion.js?v=1" defer></script>';
 }
 
@@ -751,7 +763,7 @@ function frag_carrinho($empresa, $estado = [], $servicos = []) {
            . ($freteGratis > 0 && $entrega && $mesa === '' ? '<p class="gds-frete-gratis" data-gds-frete-aviso></p>' : '')
            . ($minimo > 0 ? '<p class="gds-mute gds-carrinho-minimo" data-gds-minimo-aviso hidden>Pedido mínimo: ' . e(frag_preco($minimo)) . '</p>' : '')
            . (!empty($empresa['tempo_entrega']) ? '<p class="gds-mute" style="margin:4px 0 0;font-size:.85rem">⏱ ' . e($empresa['tempo_entrega']) . '</p>' : '')
-           . '<button type="submit" class="gds-btn gds-btn-bloco" data-gds-finalizar>Fazer pedido</button></div></form></section></div>';
+           . '<button type="submit" class="gds-btn gds-btn-bloco" data-gds-finalizar>Fazer pedido</button><p class="gds-nota-lgpd">Usamos seus dados só para preparar e entregar o pedido.' . frag_link_privacidade($empresa) . '</p></div></form></section></div>';
     return $html;
 }
 

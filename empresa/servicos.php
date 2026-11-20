@@ -82,6 +82,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_servico'])) {
             $est = trim((string)($_POST['estoque'] ?? ''));
             $pdo->prepare("UPDATE servicos SET preco_de=?, estoque=? WHERE id=? AND empresa_id=?")->execute([$de > $preco ? $de : null, $est === '' ? null : max(0, min(999999, (int)$est)), $sid, $empresaId]);
             try { $pdo->prepare("UPDATE servicos SET serve=? WHERE id=? AND empresa_id=?")->execute([(int)($_POST['serve'] ?? 0) ?: null, $sid, $empresaId]); } catch (PDOException $e) {}
+            // Produto em 3D (.glb): enviar troca o anterior; "remover" apaga
+            try {
+                require_once __DIR__ . '/../includes/recursos_servicos.php';
+                $m3 = $pdo->prepare("SELECT modelo_3d FROM servicos WHERE id=? AND empresa_id=?"); $m3->execute([$sid, $empresaId]); $m3atual = (string)$m3->fetchColumn();
+                [$m3url, $m3erro] = modelo3d_gravar('modelo_3d', $empresaId);
+                if ($m3erro) flash('erro', $m3erro);
+                if ($m3url || isset($_POST['remover_3d'])) {
+                    modelo3d_apagar($m3atual, $empresaId);
+                    $pdo->prepare("UPDATE servicos SET modelo_3d=? WHERE id=? AND empresa_id=?")->execute([$m3url ?: null, $sid, $empresaId]);
+                    if ($m3url) flash('sucesso', 'Salvo. O modelo 3D já aparece na tela do produto no site.');
+                }
+            } catch (PDOException $e) {}
             if ($est !== '' && (int)$est > 0) $pdo->prepare("UPDATE servicos SET esgotado=false WHERE id=? AND empresa_id=?")->execute([$sid, $empresaId]);
             $pdo->prepare("UPDATE servicos SET opcoes=?, sugerir=?, retorno_dias=?, vagas=?, experimental=?, perguntas=? WHERE id=? AND empresa_id=?")->execute([
                 $ops ? json_encode($ops, JSON_UNESCAPED_UNICODE) : null, isset($_POST['sugerir']) ? 'true' : 'false', max(0, min(365, (int)($_POST['retorno_dias'] ?? 0))),
@@ -157,6 +169,13 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
             <div><label>…ou link da foto</label><input type="text" name="imagem" placeholder="https://..." value="<?= e($editando['imagem'] ?? '') ?>"></div>
         </div>
         <?php if (!empty($editando['imagem'])): ?><img src="<?= e($editando['imagem']) ?>" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:10px;margin-top:8px"><?php endif; ?>
+        <?php if ($ehCatalogo): ?>
+        <details class="cd-3d"<?= !empty($editando['modelo_3d']) ? ' open' : '' ?>><summary>🧊 Produto em 3D <small class="muted">(opcional · o cliente gira o produto e vê na mesa ou na sala pela câmera)</small></summary>
+            <p class="muted" style="margin:6px 0">Escaneie o produto com um app grátis: <a class="link" href="https://www.kiriengine.app/features/photo-scan" target="_blank" rel="noopener">KIRI Engine</a>, <a class="link" href="https://apps.apple.com/us/app/-/id1541433223" target="_blank" rel="noopener">Scaniverse</a> ou <a class="link" href="https://poly.cam/" target="_blank" rel="noopener">Polycam</a>. Ande em volta do produto tirando fotos, depois exporte no formato <strong>GLB</strong> (até 20 MB) e envie aqui.</p>
+            <?php if (!empty($editando['modelo_3d'])): ?><p>✅ Este item já tem modelo 3D. <label class="check" style="display:inline-flex"><input type="checkbox" name="remover_3d" value="1"> remover</label></p><?php endif; ?>
+            <label for="modelo3d">Arquivo do modelo 3D (.glb)</label><input id="modelo3d" type="file" name="modelo_3d" accept=".glb,model/gltf-binary">
+        </details>
+        <?php endif; ?>
         <label class="check" style="margin-top:12px"><input type="checkbox" name="destaque" <?= $editando && pg_bool($editando['destaque'] ?? false) ? 'checked' : '' ?>> Destacar no site (aparece primeiro, com selo)</label>
         <label class="check"><input type="checkbox" name="preco_a_partir" <?= $editando && pg_bool($editando['preco_a_partir'] ?? false) ? 'checked' : '' ?>> Mostrar como "a partir de R$ …" (o preço pode variar)</label>
         <?php $comOrc = modulo_ativo('orcamentos'); ?>

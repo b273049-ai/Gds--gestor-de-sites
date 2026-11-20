@@ -33,6 +33,8 @@ const REC_PADRAO = [
     'treino' => ['ativo' => false],
     'vale' => ['ativo' => false, 'validade' => 180],
     'monte' => ['ativo' => false],
+    // avaliações no Google: link da tela "escrever avaliação" da empresa
+    'google' => ['url' => '', 'pedir' => true],
 ];
 const REC_MAX_VIDEO = 25 * 1024 * 1024;
 
@@ -50,6 +52,45 @@ function rec_gravar($empresaId, $r) {
     global $pdo;
     $pdo->prepare("UPDATE sites SET recursos=?, atualizado_em=NOW() WHERE empresa_id=?")->execute([json_encode($r, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), (int)$empresaId]);
     if (function_exists('gds_cache_invalidar')) gds_cache_invalidar((int)$empresaId);
+}
+
+// ---------- Avaliar no Google ----------
+// Só aceita links do Google (o link curto do Perfil da Empresa, do Maps ou a tela de avaliação)
+function rec_google_valido($url) {
+    $url = trim((string)$url);
+    if (!preg_match('#^https://#i', $url) || !filter_var($url, FILTER_VALIDATE_URL)) return '';
+    $h = strtolower((string)parse_url($url, PHP_URL_HOST));
+    foreach (['g.page', 'maps.app.goo.gl', 'goo.gl', 'g.co', 'google.com', 'google.com.br'] as $ok)
+        if ($h === $ok || str_ends_with($h, '.' . $ok)) return mb_substr($url, 0, 400);
+    return '';
+}
+
+// Sugestão automática: empresa que veio da Prospecção (lugar do Google) já tem o id do lugar
+function rec_google_sugerido($empresaId) {
+    global $pdo;
+    try {
+        $st = $pdo->prepare("SELECT origem_id FROM prospects WHERE empresa_id=? AND origem_id LIKE 'g:%' ORDER BY id DESC LIMIT 1");
+        $st->execute([(int)$empresaId]);
+        $o = (string)$st->fetchColumn();
+    } catch (PDOException $e) { return ''; }
+    $id = preg_replace('/[^A-Za-z0-9_\-]/', '', substr($o, 2));
+    return $id !== '' ? 'https://search.google.com/local/writereview?placeid=' . $id : '';
+}
+
+// Link final de "Avaliar no Google" ('' = não mostrar). $pedido: só se o dono deixou ligado o pedido no WhatsApp.
+function rec_google_url($empresa, $pedido = false) {
+    static $cache = [];
+    $id = (int)($empresa['id'] ?? 0);
+    if (!$id) return '';
+    if (!isset($cache[$id])) {
+        if (!array_key_exists('recursos', $empresa)) {
+            global $pdo;
+            try { $st = $pdo->prepare("SELECT recursos FROM sites WHERE empresa_id=?"); $st->execute([$id]); $empresa['recursos'] = $st->fetchColumn(); } catch (PDOException $e) { $empresa['recursos'] = null; }
+        }
+        $g = rec_ler($empresa)['google'];
+        $cache[$id] = ['url' => rec_google_valido($g['url']) ?: rec_google_sugerido($id), 'pedir' => !empty($g['pedir'])];
+    }
+    return $pedido && !$cache[$id]['pedir'] ? '' : $cache[$id]['url'];
 }
 
 function rec_ativo($r, $k) {
@@ -300,6 +341,12 @@ function rec_salvar_post($empresaId, $site) {
             $r['fila']['ativo'] = $lig('fila_ativo');
             $r['garcom']['ativo'] = $lig('garcom_ativo');
             foreach (['grade', 'acompanhar', 'quiz', 'calculadora', 'tour360', 'treino', 'vale', 'monte'] as $k) $r[$k]['ativo'] = $lig($k . '_ativo');
+            if (array_key_exists('google_url', $_POST)) {
+                $g = trim((string)$_POST['google_url']);
+                $r['google']['url'] = $g === '' ? '' : rec_google_valido($g);
+                $r['google']['pedir'] = $lig('google_pedir');
+                if ($g !== '' && $r['google']['url'] === '') { rec_gravar($empresaId, $r); return [false, 'O link do Google não foi aceito. Copie o link em "Pedir avaliações" no seu Perfil da Empresa no Google (começa com https://g.page/ ou https://maps.app.goo.gl/).']; }
+            }
             $r['vale']['validade'] = in_array((int)($_POST['vale_validade'] ?? 180), [90, 180, 365], true) ? (int)$_POST['vale_validade'] : 180;
             rec_gravar($empresaId, $r);
             return [true, 'Recursos do site salvos.'];
@@ -400,6 +447,7 @@ function rec_form_html($empresa, $site, $modo) {
     };
     $csrf = function_exists('csrf_campo') ? csrf_campo() : '';
     $un = fid_unidade($modo);
+    $googleSug = !empty($empresa['id']) ? rec_google_sugerido($empresa['id']) : '';
     $h = '<style>.rec-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:16px}.rec-card h3{margin:0 0 6px}.rec-card .dica{margin-top:0}'
        . '.rec-chave{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}.rec-miniaturas{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}'
        . '.rec-miniaturas figure{margin:0;position:relative;width:96px}.rec-miniaturas img{width:96px;height:96px;object-fit:cover;border-radius:10px;display:block}.rec-miniaturas figcaption{font-size:12px;overflow-wrap:anywhere}'
@@ -430,6 +478,11 @@ function rec_form_html($empresa, $site, $modo) {
         . '<div class="rec-card"><h3>🏋️ Treino da semana</h3><p class="dica">Para academia e personal: monte a ficha de cada aluno por dia; ele abre no celular, marca os exercícios e faz o check-in. Menu "Treinos dos alunos".</p>' . $chave('treino_ativo', !empty($r['treino']['ativo']), 'Treino da semana') . '</div>'
         . '<div class="rec-card"><h3>🎁 Vale-presente</h3><p class="dica">O cliente compra pelo site (Pix) e quem ganha recebe o cartão-presente no WhatsApp. No balcão, você abate o valor. Menu "Vales-presente".</p>' . $chave('vale_ativo', !empty($r['vale']['ativo']), 'Vale-presente') . '<label>Validade</label>' . $presets('vale_validade', [90, 180, 365], $r['vale']['validade'], ' dias') . '</div>'
         . '<div class="rec-card"><h3>🌐 Tour 360°</h3><p class="dica">Fotos panorâmicas do espaço que o cliente gira com o dedo. Tire com o modo "Panorama" do celular.</p>' . $chave('tour360_ativo', !empty($r['tour360']['ativo']), 'Tour 360°') . '</div>'
+        . '</div><h3 style="margin-top:22px">⭐ Avaliações no Google</h3><div class="rec-grade">'
+        . '<div class="rec-card" style="grid-column:1/-1"><p class="dica">Mais notas no Google fazem a empresa aparecer antes no Maps. Com o link, o site ganha o botão "Avaliar no Google" e a mensagem de agradecimento depois do atendimento leva o cliente direto para lá.</p>'
+        . '<label for="googleUrl">Link para avaliar no Google</label><input id="googleUrl" name="google_url" type="url" inputmode="url" maxlength="400" value="' . e($r['google']['url'] ?: $googleSug) . '" placeholder="https://g.page/r/...">'
+        . '<p class="dica" style="margin-top:6px">Onde achar: no Google, pesquise o nome da sua empresa → "Pedir avaliações" (ou "Compartilhar formulário de avaliações") → copiar o link.' . ($googleSug && !$r['google']['url'] ? ' Já preenchemos com o seu lugar no Google; é só salvar.' : '') . '</p>'
+        . $chave('google_pedir', !empty($r['google']['pedir']), 'Pedir avaliação no Google pelo WhatsApp depois do atendimento') . '</div>'
         . '</div><button type="submit">Salvar</button></form>';
     // tour 360
     $mini = '';
