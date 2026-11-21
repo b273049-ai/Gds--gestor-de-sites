@@ -213,11 +213,13 @@
 /* ---------- Vitrine dentro dos sites feitos pela IA (marcadores {{VITRINE_...}}) ---------- */
 .vt-ia { --bg: #fbfaf8; --sup: #ffffff; --txt: #17171a; --suave: #55555f; --linha: rgba(23,23,26,.1); --raio: 22px;
     --f-tit: 'Anton', Impact, 'Arial Narrow', sans-serif; --f-it: 'Instrument Serif', Georgia, serif; --f-txt: 'DM Sans', system-ui, sans-serif;
-    font-family: var(--f-txt); color: var(--txt); }
+    font-family: var(--f-txt); }
+/* só as peças com fundo claro próprio usam o texto escuro; o cardápio herda a cor do site (claro ou escuro) */
+.vt-ia .vt-destaque, .vt-ia .vt-faixa { color: var(--txt); }
 .vt-ia .lp-larg { width: min(1120px, 100% - 40px); margin-inline: auto; }
 .vt-ia .vt-palco { padding-top: 0; }
 .vt-ia .vt-nome { top: clamp(14px, 4vh, 40px); }
-.vt-ia .vt-faixa { background: transparent; }
+.vt-ia .vt-faixa { background: var(--bg); color: var(--txt); }
 .vt-ia h2, .vt-ia h3 { margin: 0; }
 @media (max-width: 760px) { .vt-ia .vt-nome { top: 14px; } }
 .lp-vitrine a.vt-pilula { color: var(--txt); text-decoration: none; }

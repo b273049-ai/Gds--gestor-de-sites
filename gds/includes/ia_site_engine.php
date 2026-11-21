@@ -255,14 +255,35 @@ PROMPT;
 }
 
 // Estratégia de conversão que vai no prompt de geração, conforme a forma de atendimento
+// ------------------------------------------------------------
+// PLANO DE MARKETING DA PLATAFORMA (regra fixa de todo site): o visitante tem que dar de cara com o que veio
+// buscar. Quem abre um delivery quer ver comida e preço; quem abre uma barbearia quer ver serviço e horário livre.
+// "Como funciona", diferenciais, história e números são para quem quiser se aventurar: ficam DEPOIS.
+// Vale para a geração e para a edição pela conversa (vai junto da estratégia de conversão).
+// ------------------------------------------------------------
+function ia_plano_marketing($modo) {
+    $vitrine = [
+        'catalogo'    => 'o CARDÁPIO/PRODUTOS ({{VITRINE_CARDAPIO}} ou {{SERVICOS}}) com foto, preço e botão de pedir',
+        'agendamento' => 'os SERVIÇOS com preço ({{VITRINE_CARDAPIO}} ou {{SERVICOS}}) e logo depois o {{AGENDAMENTO}}',
+        'orcamento'   => 'os SERVIÇOS/PACOTES ({{VITRINE_CARDAPIO}} ou {{SERVICOS}}) e a prova (galeria/trabalhos feitos), com o {{ORCAMENTO}} logo depois',
+        'contato'     => 'o que o negócio entrega (serviços, imóveis ou produtos) e o caminho direto para falar ({{LINK_PRINCIPAL}})',
+    ][$modo] ?? 'o que o negócio vende';
+    return "PLANO DE MARKETING (obrigatório — a ordem da PRIMEIRA página decide se o visitante fica): "
+        . "1) topo curto que já mostra o produto/serviço e o botão principal (no celular, o que se vende precisa aparecer já na primeira rolagem); "
+        . "2) LOGO ABAIXO DO TOPO, na PRIMEIRA página: $vitrine — nunca escondido em outra página ou atrás de um clique; o item \"Cardápio\"/\"Serviços\" do menu leva a essa seção; "
+        . "3) produto/serviço em destaque e a prova real (nota do Google, avaliações); "
+        . "4) só depois o secundário: como funciona, diferenciais, sobre, perguntas frequentes; "
+        . "5) fechamento com o botão principal de novo. Nada de bloco institucional (passos, números, \"quem somos\") antes do que se vende.";
+}
+
 function ia_estrategia_conversao($modo, $temWhats) {
     $whats = $temWhats ? ' Use também {{LINK_WHATSAPP}} num botão secundário "Chamar no WhatsApp".' : '';
-    return [
+    return ia_plano_marketing($modo) . "\n" . ([
         'agendamento' => "O objetivo do site é o visitante AGENDAR. O botão principal (topo e final das páginas) leva a {{LINK_PRINCIPAL}} e o texto pode ser {{TEXTO_PRINCIPAL}}. Mostre serviços com preço — cada serviço já tem o botão \"Agendar\" que abre o agendamento com ele escolhido.$whats",
         'orcamento'   => "O objetivo do site é o visitante PEDIR ORÇAMENTO (não existe agendamento de horário). O botão principal leva a {{LINK_PRINCIPAL}} (formulário de orçamento). Mostre os serviços/pacotes — cada um já tem o botão \"Pedir orçamento\". Prova social (eventos/obras/trabalhos já feitos, galeria, depoimentos) é essencial.$whats",
         'contato'     => "O objetivo do site é o visitante ENTRAR EM CONTATO. O botão principal leva a {{LINK_PRINCIPAL}}" . ($temWhats ? ' (WhatsApp)' : ' (contato)') . '. Explique bem a proposta de valor, como funciona e por que escolher este negócio.',
         'catalogo'    => "O objetivo do site é o visitante ESCOLHER E PEDIR. O botão principal leva a {{LINK_PRINCIPAL}} (cardápio/produtos). Cada item já tem o botão \"Adicionar\" e o carrinho de pedido aparece sozinho (entrega/retirada, pagamento) — não crie carrinho. Destaque preços, entrega/retirada, formas de pagamento e horário.",
-    ][$modo] ?? '';
+    ][$modo] ?? '');
 }
 
 // ------------------------------------------------------------
