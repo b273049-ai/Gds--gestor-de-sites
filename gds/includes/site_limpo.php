@@ -310,7 +310,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
 <link rel="stylesheet" href="/assets/css/site-limpo.css?v=8">
-<?php if ($vit): ?><link rel="stylesheet" href="/assets/css/site-vitrine.css?v=2">
+<?php if ($vit): ?><link rel="stylesheet" href="/assets/css/site-vitrine.css?v=3">
 <script>(function(h){if(!document.fonts||!document.fonts.load)return;h.classList.add('vt-espera');var f=function(){h.classList.remove('vt-espera')};Promise.race([document.fonts.load('400 40px Anton'),new Promise(function(r){setTimeout(r,2500)})]).then(f,f)})(document.documentElement)</script><?php endif; ?>
 <?= rec_head($empresa, $REC) ?>
 <script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
@@ -393,7 +393,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 })();
 </script>
 <script src="/assets/js/site-vivo.js?v=1" defer></script>
-<?php if ($vit): ?><script src="/assets/js/site-vitrine.js?v=1" defer></script><?php endif; ?>
+<?php if ($vit): ?><script src="/assets/js/site-vitrine.js?v=2" defer></script><?php endif; ?>
 <?php if (array_filter(['stories', 'antes_depois', 'fidelidade', 'aniversario', 'app', 'video', 'reserva', 'fila', 'garcom', 'grade', 'quiz', 'calculadora', 'tour360', 'vale', 'monte'], fn($k) => rec_ativo($REC, $k))): ?><?= rec_ativo($REC, 'monte') ? '<script>window.gdsMonteAtivo=1</script>' : '' ?><script src="/assets/js/site-recursos.js?v=6" defer></script><?php endif; ?>
 <?= $preview ? site_script_preview() : '' ?>
 </body>

@@ -8,6 +8,20 @@
 
     // ---------- topo: um produto de cada vez, a cor do fundo acompanha ----------
     var hero = document.querySelector('[data-vt-hero]');
+    // Site feito pela IA com cabeçalho fixo por cima: o topo desce o necessário para o nome não ficar escondido
+    if (hero && hero.closest('.vt-ia')) {
+        var encaixa = function () {
+            if (window.scrollY > 4) return;
+            var topoHero = hero.getBoundingClientRect().top, cobre = 0;
+            [].forEach.call(document.querySelectorAll('header, nav, [class*="topo"], [class*="header"]'), function (el) {
+                if (hero.contains(el) || el.contains(hero)) return;
+                var p = getComputedStyle(el).position, r = el.getBoundingClientRect();
+                if ((p === 'fixed' || p === 'sticky') && r.height < 200 && r.top <= topoHero + 2 && r.bottom > topoHero) cobre = Math.max(cobre, r.bottom - topoHero);
+            });
+            hero.style.setProperty('--vt-ia-cobre', Math.round(cobre) + 'px');
+        };
+        encaixa(); addEventListener('load', encaixa); addEventListener('resize', encaixa);
+    }
     if (hero) {
         var slides = [].slice.call(hero.querySelectorAll('[data-vt-slide]'));
         var nome = hero.querySelector('[data-vt-nome]'), desc = hero.querySelector('[data-vt-desc]'), texto = hero.querySelector('.vt-base-texto');
