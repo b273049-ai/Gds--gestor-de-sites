@@ -357,11 +357,11 @@ function frag_horarios($agenda, $status = null) {
 function frag_whatsapp_float($whatsapp, $mensagem = '', $nomeEmpresa = '') {
     if (!so_digitos_frag($whatsapp)) return '';
     $mensagem = trim((string)$mensagem) ?: 'Olá! Vim pelo site e gostaria de mais informações.';
-    return '<div class="gds-wa" data-gds-wa>'
+    return '<aside class="gds-wa" data-gds-wa aria-label="WhatsApp">'
          . '<div class="gds-wa-balao" hidden role="status"><button type="button" aria-label="Fechar">×</button><strong>' . e($nomeEmpresa ?: 'Atendimento') . '</strong>Olá! 👋 Posso te ajudar? Fale com a gente pelo WhatsApp.</div>'
          . '<a class="gds-wa-btn" href="' . e(frag_link_whatsapp($whatsapp, $mensagem)) . '" target="_blank" rel="noopener" aria-label="Conversar no WhatsApp">'
          . '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.28-1.38a9.9 9.9 0 0 0 4.76 1.21h.01c5.46 0 9.9-4.45 9.9-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.16c-.24.68-1.4 1.3-1.93 1.38-.5.08-1.12.11-1.81-.11-.42-.13-.95-.31-1.64-.6-2.88-1.24-4.76-4.15-4.9-4.34-.14-.19-1.17-1.55-1.17-2.97 0-1.41.74-2.1 1-2.39.26-.28.57-.35.76-.35.19 0 .38 0 .55.01.18.01.42-.07.65.5.24.58.81 2 .88 2.14.07.15.11.32.02.51-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.28-.12.56.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.68-.79.87-1.06.19-.28.37-.23.62-.14.26.09 1.63.77 1.91.91.28.14.47.21.54.33.07.12.07.68-.17 1.36z"/></svg>'
-         . '<span>Fale conosco</span></a></div>';
+         . '<span>Fale conosco</span></a></aside>';
 }
 
 // ------------------------------------------------------------
@@ -626,7 +626,7 @@ function frag_agendamento_confirmado($estado, $empresa) {
 function frag_css_apoio($tema = []) {
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $tema['accent'] ?? '') ? $tema['accent'] : '#2563eb';
     $fundos = $tema['fundos'] ?? ['#ffffff', '#f4f5f8'];
-    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=20">'
+    return '<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=21">'
          . '<style id="gds-tema">:root{--gds-tema-accent:' . $accent . ';--gds-tema-on-accent:' . frag_cor_contraste($accent) . ';--gds-tema-accent-txt:' . frag_cor_legivel($accent, $fundos) . ';}</style>'
          . '<link rel="stylesheet" href="/assets/css/gds-motion.css?v=1">'
          . '<script src="/assets/js/gds-site.js?v=15" defer></script>'

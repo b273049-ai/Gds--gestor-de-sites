@@ -19,7 +19,7 @@ $wa = preg_replace('/\D/', '', (string)$v['empresa_whatsapp']);
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title>Vale-presente · <?= e($v['empresa_nome']) ?></title>
-<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=20">
+<link rel="stylesheet" href="/assets/css/gds-componentes.css?v=21">
 <style>
 :root{--c:<?= e($cor) ?>}body{margin:0;min-height:100vh;background:#f5f3ef;color:#1d1b19;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;place-items:center;padding:20px;box-sizing:border-box}
 main{width:100%;max-width:440px}.cartao{position:relative;overflow:hidden;border-radius:22px;padding:28px 24px;color:#fff;background:radial-gradient(120% 90% at 100% 0%,color-mix(in srgb,var(--c) 55%,#fff) 0,var(--c) 45%,color-mix(in srgb,var(--c) 70%,#000) 100%);box-shadow:0 30px 60px -28px color-mix(in srgb,var(--c) 70%,#000)}
