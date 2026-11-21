@@ -33,6 +33,30 @@ if (isset($_GET['duplicar'])) {
     }
     header('Location: servicos.php'); exit;
 }
+// "Tirar o fundo": o navegador do dono recorta a foto (assets/js/gds-recorte.js) e manda o PNG para cá
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_recorte'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $sid = (int)($_POST['servico_id'] ?? 0);
+    $o = $pdo->prepare("SELECT id, imagem_recorte FROM servicos WHERE id=? AND empresa_id=?"); $o->execute([$sid, $empresaId]);
+    if (!($o = $o->fetch())) { echo json_encode(['ok' => false, 'erro' => 'Item não encontrado.']); exit; }
+    $velho = (string)$o['imagem_recorte'];
+    $apagar = function ($u) use ($empresaId) { $b = '/uploads/cardapio/' . (int)$empresaId . '/rec-'; if (str_starts_with($u, $b) && !str_contains($u, '..')) @unlink(__DIR__ . '/..' . $u); };
+    if ($_POST['acao_recorte'] === 'remover') {
+        $pdo->prepare("UPDATE servicos SET imagem_recorte=NULL WHERE id=?")->execute([$sid]); $apagar($velho);
+        echo json_encode(['ok' => true]); exit;
+    }
+    $f = $_FILES['recorte'] ?? null;
+    $info = $f && ($f['error'] ?? 1) === UPLOAD_ERR_OK && is_uploaded_file($f['tmp_name']) && (int)$f['size'] <= 8 * 1024 * 1024 ? @getimagesize($f['tmp_name']) : false;
+    if (!$info || !in_array($info[2], [IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) { echo json_encode(['ok' => false, 'erro' => 'O recorte não chegou certo. Tente de novo.']); exit; }
+    require_once __DIR__ . '/../includes/imagens_ia.php';
+    $pasta = img_ia_pasta('cardapio/' . $empresaId);
+    $nome = 'rec-' . bin2hex(random_bytes(6)) . ($info[2] === IMAGETYPE_WEBP ? '.webp' : '.png');
+    if (!$pasta || !move_uploaded_file($f['tmp_name'], "$pasta/$nome")) { echo json_encode(['ok' => false, 'erro' => 'Não consegui salvar o recorte.']); exit; }
+    $url = '/uploads/cardapio/' . $empresaId . '/' . $nome;
+    $pdo->prepare("UPDATE servicos SET imagem_recorte=? WHERE id=?")->execute([$url, $sid]); $apagar($velho);
+    if (function_exists('gds_cache_invalidar')) gds_cache_invalidar($empresaId);
+    echo json_encode(['ok' => true, 'url' => $url]); exit;
+}
 // Foto do item com IA (quando a plataforma tem gerador de imagens configurado)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['foto_ia'])) {
     require_once __DIR__ . '/../includes/imagens_ia.php';
@@ -59,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_servico'])) {
             $up = orc_gravar_imagem($_FILES['foto']['tmp_name'], (int)$_FILES['foto']['size'], 'cardapio/' . $empresaId, 'item-' . bin2hex(random_bytes(6)));
             if ($up) $foto = $up; else flash('erro', 'A foto não foi aceita (envie JPG/PNG de até 8 MB).');
         }
+        if ($id) { try { $fa = $pdo->prepare("SELECT imagem FROM servicos WHERE id=? AND empresa_id=?"); $fa->execute([$id, $empresaId]); if ((string)$fa->fetchColumn() !== (string)$foto) $pdo->prepare("UPDATE servicos SET imagem_recorte=NULL WHERE id=? AND empresa_id=?")->execute([$id, $empresaId]); } catch (PDOException $e) {} }
         $extras = [trim($_POST['categoria'] ?? '') ?: null, isset($_POST['destaque']) ? 'true' : 'false', $foto,
                    (int)($_POST['ordem'] ?? 0), isset($_POST['preco_a_partir']) ? 'true' : 'false'];
         if ($id) {
@@ -211,6 +236,8 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <input type="search" id="cdBusca" placeholder="Buscar <?= e($item) ?>…" aria-label="Buscar">
         <span class="muted"><?= count($servicos) ?> itens · <?= count($grupos) ?> categoria(s)</span>
         <?php if ($ehCatalogo && $semFoto): ?><span class="pill pill-aviso">📷 <?= $semFoto ?> sem foto</span><?php endif; ?>
+        <?php $semRec = count(array_filter($servicos, fn($x) => pg_bool($x['ativo']) && !empty($x['imagem']) && array_key_exists('imagem_recorte', $x) && empty($x['imagem_recorte']))); if ($semRec): ?><button type="button" class="btn btn-sm" id="cdRecTodos" title="Tira o fundo de todas as fotos, uma de cada vez, aqui no seu aparelho (grátis)">✂️ Tirar o fundo de <?= $semRec ?> foto(s)</button><?php endif; ?>
+        <span class="muted" id="cdRecStatus" role="status" aria-live="polite"></span>
         <?php $baixo = $ehCatalogo ? count(array_filter($servicos, fn($x) => pg_bool($x['ativo']) && isset($x['estoque']) && $x['estoque'] !== null && (int)$x['estoque'] <= 3)) : 0; if ($baixo): ?><span class="pill pill-aviso">📦 <?= $baixo ?> com estoque baixo</span><?php endif; ?>
     </div>
     <?php endif; ?>
@@ -223,7 +250,7 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
         <div class="cd-itens">
         <?php foreach ($lista as $s): $ativo = pg_bool($s['ativo']); $esg = pg_bool($s['esgotado'] ?? false); $vend = $vendeu($s); ?>
         <article class="cd-item <?= $ativo ? '' : 'oculto' ?> <?= $esg ? 'esgotado' : '' ?>" id="item-<?= (int)$s['id'] ?>" data-busca="<?= e(mb_strtolower($s['nome'] . ' ' . $s['descricao'] . ' ' . $s['categoria'])) ?>">
-            <div class="cd-foto"><?php if ($s['imagem']): ?><img src="<?= e($s['imagem']) ?>" alt="" loading="lazy"><?php else: ?><span>📷</span><?php endif; ?></div>
+            <div class="cd-foto<?= !empty($s['imagem_recorte']) ? ' cd-foto-rec' : '' ?>" data-foto-box="<?= (int)$s['id'] ?>"><?php if (!empty($s['imagem_recorte'])): ?><img src="<?= e($s['imagem_recorte']) ?>" alt="" loading="lazy"><?php elseif ($s['imagem']): ?><img src="<?= e($s['imagem']) ?>" alt="" loading="lazy"><?php else: ?><span>📷</span><?php endif; ?></div>
             <div class="cd-info">
                 <strong><?= e($s['nome']) ?></strong><?= pg_bool($s['destaque'] ?? false) ? ' <span class="pill pill-ok">destaque</span>' : '' ?><?= $ehCatalogo && pg_bool($s['sugerir'] ?? false) ? ' <span class="pill pill-neutro">peça também</span>' : '' ?>
                 <?php if ($s['descricao']): ?><span class="mini"><?= e(mb_strimwidth($s['descricao'], 0, 90, '…')) ?></span><?php endif; ?>
@@ -233,6 +260,7 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
             <div class="cd-acoes">
                 <?php if ($ehCatalogo): ?><label class="cd-chave" title="Desligue quando acabar"><input type="checkbox" data-campo="esgotado" data-id="<?= (int)$s['id'] ?>" <?= $esg ? '' : 'checked' ?>> <span><?= $esg ? 'Esgotado' : 'Disponível' ?></span></label><?php endif; ?>
                 <label class="cd-chave" title="Mostrar no site"><input type="checkbox" data-campo="ativo" data-id="<?= (int)$s['id'] ?>" <?= $ativo ? 'checked' : '' ?>> <span><?= $ativo ? 'No site' : 'Oculto' ?></span></label>
+                <?php if ($s['imagem'] && array_key_exists('imagem_recorte', $s)): ?><button type="button" class="btn btn-ghost btn-sm" data-recortar="<?= (int)$s['id'] ?>" data-foto="<?= e($s['imagem']) ?>" data-tem="<?= !empty($s['imagem_recorte']) ? '1' : '0' ?>" title="Tira o fundo da foto: o produto aparece recortado no visual Vitrine"><?= !empty($s['imagem_recorte']) ? '✂️ Refazer recorte' : '✂️ Tirar o fundo' ?></button><?php endif; ?>
                 <a class="btn btn-ghost btn-sm" href="?editar=<?= $s['id'] ?>#form" title="Editar"><?= icone('lapis', 14) ?></a>
                 <a class="btn btn-ghost btn-sm" href="?duplicar=<?= $s['id'] ?><?= csrf_qs() ?>" title="Duplicar">⧉</a>
                 <?php if ($iaFoto && empty($s['imagem'])): ?><form method="post" style="display:inline"><?= csrf_campo() ?><input type="hidden" name="servico_id" value="<?= (int)$s['id'] ?>"><button class="btn btn-ghost btn-sm" name="foto_ia" value="1" title="Criar foto com IA" onclick="this.textContent='⏳'">✨ Foto IA</button></form><?php endif; ?>
@@ -260,6 +288,7 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
 .cd-item.oculto { opacity: .55; } .cd-item.esgotado .cd-foto { filter: grayscale(1); }
 .cd-foto { width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--surface-2); display: grid; place-items: center; font-size: 22px; }
 .cd-foto img { width: 100%; height: 100%; object-fit: cover; }
+.cd-foto-rec { background: repeating-conic-gradient(#e6e7ea 0 25%, #fff 0 50%) 0 0 / 12px 12px; } .cd-foto-rec img { object-fit: contain; }
 .cd-info .mini { display: block; color: var(--text-dim); font-size: 12px; margin-top: 2px; }
 .cd-preco { display: flex; align-items: center; gap: 6px; color: var(--text-dim); } .cd-preco input { width: 92px; margin: 0; text-align: right; font-weight: 600; }
 .cd-preco input.salvo { border-color: var(--ok); }
@@ -315,6 +344,44 @@ $item = $ehCatalogo ? ($rotCat === 'Cardápio' ? 'item do cardápio' : 'produto'
             g.hidden = !vis; if (vis) algum = true;
         });
         document.getElementById('cdNada').hidden = algum;
+    });
+})();
+</script>
+<script>
+// "Tirar o fundo" das fotos (grátis, roda aqui no aparelho do dono; ver assets/js/gds-recorte.js)
+(function () {
+    var csrf = <?= json_encode(csrf_token()) ?>, status = document.getElementById('cdRecStatus'), carregado = null;
+    var aviso = function (t) { if (status) status.textContent = t; };
+    function ferramenta() {
+        if (window.gdsRecortar) return Promise.resolve();
+        if (!carregado) carregado = new Promise(function (ok, erro) { var s = document.createElement('script'); s.src = '/assets/js/gds-recorte.js?v=2'; s.onload = ok; s.onerror = function () { erro(new Error('Não consegui abrir a ferramenta de recorte.')); }; document.head.appendChild(s); });
+        return carregado;
+    }
+    function recortar(btn) {
+        var id = btn.getAttribute('data-recortar'), txt = btn.textContent;
+        btn.disabled = true; btn.textContent = '⏳ Recortando…';
+        return ferramenta().then(function () { return window.gdsRecortar(btn.getAttribute('data-foto'), aviso); }).then(function (png) {
+            var f = new FormData(); f.append('csrf_token', csrf); f.append('acao_recorte', 'salvar'); f.append('servico_id', id); f.append('recorte', png, png.type === 'image/webp' ? 'recorte.webp' : 'recorte.png');
+            return fetch('servicos.php', { method: 'POST', body: f, headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.json(); });
+        }).then(function (r) {
+            if (!r.ok) throw new Error(r.erro || 'Não deu certo.');
+            var box = document.querySelector('[data-foto-box="' + id + '"]');
+            if (box) { box.classList.add('cd-foto-rec'); box.innerHTML = '<img src="' + r.url + '" alt="">'; }
+            btn.setAttribute('data-tem', '1'); btn.textContent = '✂️ Refazer recorte'; btn.disabled = false;
+            aviso('Pronto! O produto já aparece recortado no site.');
+            return true;
+        }).catch(function (e) { btn.disabled = false; btn.textContent = txt; aviso('⚠️ ' + e.message); return false; });
+    }
+    document.addEventListener('click', function (ev) { var b = ev.target.closest('[data-recortar]'); if (b && !b.disabled) recortar(b); });
+    var todos = document.getElementById('cdRecTodos');
+    if (todos) todos.addEventListener('click', function () {
+        var fila = [].slice.call(document.querySelectorAll('[data-recortar][data-tem="0"]')), n = 0, feitos = 0;
+        todos.disabled = true;
+        (function proximo() {
+            if (n >= fila.length) { todos.textContent = '✂️ ' + feitos + ' de ' + fila.length + ' recortadas'; aviso(feitos === fila.length ? 'Pronto! Todas as fotos ficaram sem fundo.' : 'Algumas fotos não deram certo: use "Refazer recorte" nelas ou envie uma foto com o produto no centro.'); return; }
+            todos.textContent = '⏳ Recortando ' + (n + 1) + ' de ' + fila.length + '…';
+            recortar(fila[n++]).then(function (ok) { if (ok) feitos++; proximo(); });
+        })();
     });
 })();
 </script>

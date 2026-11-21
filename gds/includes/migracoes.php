@@ -5,7 +5,7 @@
 // de repetir). Assim ninguém precisa lembrar de colar SQL no Supabase
 // depois de atualizar os arquivos da plataforma.
 // ============================================================
-const GDS_SCHEMA_VERSAO = 45;
+const GDS_SCHEMA_VERSAO = 46;
 
 // versão => [arquivo, consulta que diz se ela já está aplicada]
 function gds_migracoes() {
@@ -46,6 +46,7 @@ function gds_migracoes() {
         43 => ['adicional_43_acompanhamento.sql', $coluna('agendamentos', 'etapa') . " AND " . $coluna('agendamentos', 'etapa_foto')],
         44 => ['adicional_44_treino_vale.sql', "to_regclass('public.treinos') IS NOT NULL AND to_regclass('public.treino_checkins') IS NOT NULL AND to_regclass('public.vales_presente') IS NOT NULL"],
         45 => ['adicional_45_tour_3d.sql', $coluna('imoveis', 'tour360') . " AND " . $coluna('servicos', 'modelo_3d')],
+        46 => ['adicional_46_vitrine.sql', $coluna('servicos', 'imagem_recorte')],
     ];
 }
 
@@ -57,7 +58,7 @@ function gds_migracoes() {
 // viram consulta. Valores grandes e famílias de cache (geo, fotos, contadores) continuam sob demanda.
 // Chamado só nas páginas (painel, site, prévia) — o cron e as pontes seguem lendo na hora.
 // ============================================================
-const GDS_CONFIG_FAMILIAS = '^(rast_geo_|rast_falhas_|prosp_geo_|fotos_cache_|prosp_mensagem_|prosp_resposta_|ia_api_key_|wa_wpp_token_)';
+const GDS_CONFIG_FAMILIAS = '^(vt_cor_|rast_geo_|rast_falhas_|prosp_geo_|fotos_cache_|prosp_mensagem_|prosp_resposta_|ia_api_key_|wa_wpp_token_)';
 
 function gds_config_precarregar() {
     global $pdo;

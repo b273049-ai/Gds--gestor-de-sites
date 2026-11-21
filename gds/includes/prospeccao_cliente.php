@@ -182,6 +182,12 @@ function prosp_virar_cliente($id, $opts = []) {
             ->execute([$empresaId, $p['nome'], $textos['subtitulo'], $textos['sobre'], $fotosEmp[0] ?? null, implode(',', array_slice($fotosEmp, 1)) ?: null, $cor ?: null, $publicar ? 'true' : 'false',
                 mb_substr($p['nome'] . ($seg ? ' · ' . $seg['nome'] : '') . ($p['bairro'] || $p['cidade'] ? ' em ' . ($p['bairro'] ?: $p['cidade']) : ''), 0, 70),
                 mb_substr($textos['subtitulo'] . ' ' . ($p['endereco'] ?? ''), 0, 160)]);
+        // O site nasce no mesmo visual da prévia que o cliente viu (Vitrine para quem vende produto)
+        try {
+            require_once __DIR__ . '/site_vitrine.php';
+            $tmpEmp = ['nome' => $p['nome'], 'segmento_slug' => $p['segmento_slug'] ?? '', 'segmento_nome' => $seg['nome'] ?? '', 'segmento_grupo' => $seg['grupo'] ?? null, 'segmento_descricao' => $p['categoria'] ?? ''];
+            if (vt_nicho_padrao($tmpEmp)) $pdo->prepare("UPDATE sites SET visual='vitrine' WHERE empresa_id=?")->execute([$empresaId]);
+        } catch (Throwable $e) {}
         $sv = $pdo->prepare("INSERT INTO servicos (empresa_id, nome, descricao, preco, duracao_minutos, ativo, destaque, ordem) VALUES (?,?,?,0,?,true,?,?)");
         foreach ($servicos as $i => $s) $sv->execute([$empresaId, $s['nome'], '', prosp_duracao_servico($s['nome']), $i < 2 ? 'true' : 'false', $i]);
         $av = $pdo->prepare("INSERT INTO avaliacoes (empresa_id, nota, comentario, nome_autor, aprovado, origem) VALUES (?,?,?,?,true,'google')");

@@ -120,6 +120,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['acao'] ?? '') === 
 
 // Prévia com o visual Limpo (o mesmo que o site do cliente terá) e o horário real do Google
 require_once __DIR__ . '/../includes/site_limpo.php';
+// Ramos que vendem produto (comida, café, loja, pet…) saem no visual Vitrine, com animações e cardápio em cartões
+if (vt_nicho_padrao($empresa)) $empresa['visual'] = 'vitrine';
 if ($horario) $dados['horario_lista'] = $horario;
 $empresa['sobre'] = trim(preg_replace('/\n\nEste é um exemplo.*$/su', '', $empresa['sobre']));
 $html = site_render_limpo($empresa, $dados, site_estado_vazio(), true);

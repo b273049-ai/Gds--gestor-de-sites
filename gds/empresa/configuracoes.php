@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_cor'])) {
     $pdo->prepare("UPDATE sites SET estilo=? WHERE empresa_id=?")->execute([isset(site_estilos()[$est]) ? $est : null, $empresaId]);
     // Visual Limpo (padrão) ou Completo, composição do topo e personalidade
     require_once __DIR__ . '/../includes/site_limpo.php';
-    $vis = ($_POST['visual'] ?? '') === 'completo' ? 'completo' : null;
+    $vis = in_array($_POST['visual'] ?? '', ['completo', 'vitrine'], true) ? $_POST['visual'] : null;
     $comp = isset(site_limpo_composicoes()[$_POST['composicao'] ?? '']) ? $_POST['composicao'] : null;
     $tom = isset(site_limpo_tons()[$_POST['tom'] ?? '']) ? $_POST['tom'] : null;
     try { $pdo->prepare("UPDATE sites SET visual=?, composicao=?, tom=? WHERE empresa_id=?")->execute([$vis, $comp, $tom, $empresaId]); } catch (PDOException $e) { /* coluna nova ainda não criada */ }
@@ -290,12 +290,13 @@ $pixPermitido = $empresa['permite_pix'] === null || pg_bool($empresa['permite_pi
     <form method="post" class="form-box largo" id="cor">
         <?= csrf_campo() ?>
         <?php require_once __DIR__ . '/../includes/site_template.php'; ?>
-        <?php require_once __DIR__ . '/../includes/site_limpo.php'; $visualAtual = ($site['visual'] ?? '') === 'completo' ? 'completo' : 'limpo'; ?>
+        <?php require_once __DIR__ . '/../includes/site_limpo.php'; $visualAtual = in_array($site['visual'] ?? '', ['completo', 'vitrine'], true) ? $site['visual'] : 'limpo'; ?>
         <h3>Visual do meu site</h3>
         <p class="dica">Vale para o site padrão. Se o site foi desenhado pela IA (Estúdio IA), o visual vem do design dela.</p>
         <label for="visualSite">Jeito do site</label>
         <select name="visual" id="visualSite">
             <option value="limpo" <?= $visualAtual === 'limpo' ? 'selected' : '' ?>>Limpo (recomendado): o essencial logo de cara, nome, frase e um botão</option>
+            <option value="vitrine" <?= $visualAtual === 'vitrine' ? 'selected' : '' ?>>Vitrine: topo colorido com o nome gigante e os produtos recortados, cardápio em cartões coloridos</option>
             <option value="completo" <?= $visualAtual === 'completo' ? 'selected' : '' ?>>Completo: mais seções, selos, faixa e animações</option>
         </select>
         <div class="form-row">
