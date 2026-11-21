@@ -1,0 +1,30 @@
+/* GDS MOTION — estados das animações (ver assets/js/gds-motion.js) */
+.gm-js [data-anim] { transition: opacity .9s cubic-bezier(.16,1,.3,1), transform .9s cubic-bezier(.16,1,.3,1), filter .9s cubic-bezier(.16,1,.3,1), clip-path 1s cubic-bezier(.16,1,.3,1); will-change: opacity, transform; }
+.gm-js [data-anim="fade-up"]:not(.gm-visivel) { opacity: 0; transform: translateY(32px); }
+.gm-js [data-anim="fade-down"]:not(.gm-visivel) { opacity: 0; transform: translateY(-24px); }
+.gm-js [data-anim="fade-in"]:not(.gm-visivel) { opacity: 0; }
+.gm-js [data-anim="zoom-in"]:not(.gm-visivel) { opacity: 0; transform: scale(.92); }
+.gm-js [data-anim="slide-left"]:not(.gm-visivel) { opacity: 0; transform: translateX(48px); }
+.gm-js [data-anim="slide-right"]:not(.gm-visivel) { opacity: 0; transform: translateX(-48px); }
+.gm-js [data-anim="blur-in"]:not(.gm-visivel) { opacity: 0; filter: blur(14px); transform: scale(1.03); }
+.gm-js [data-anim="clip-up"]:not(.gm-visivel) { clip-path: inset(100% 0 0 0); }
+.gm-js [data-anim="clip-up"].gm-visivel { clip-path: inset(0 0 0 0); }
+/* título palavra por palavra */
+.gm-palavra { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: .08em; margin-bottom: -.08em; }
+.gm-palavra > span { display: inline-block; transition: transform 1s cubic-bezier(.16,1,.3,1), opacity 1s; }
+.gm-js [data-anim="split"]:not(.gm-visivel) .gm-palavra > span { transform: translateY(105%); opacity: 0; }
+/* faixa rolando */
+[data-marquee] { overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.gm-marquee-caixa { display: flex; width: max-content; animation: gm-marquee var(--gm-velocidade, 32s) linear infinite; }
+[data-marquee]:hover .gm-marquee-caixa { animation-play-state: paused; }
+.gm-trilho { display: flex; flex-shrink: 0; align-items: center; gap: var(--gm-espaco, 48px); padding-right: var(--gm-espaco, 48px); }
+@keyframes gm-marquee { to { transform: translateX(-50%); } }
+/* inclinação e botões magnéticos */
+[data-tilt] { transition: transform .25s ease; transform-style: preserve-3d; }
+[data-magnetic] { transition: transform .25s cubic-bezier(.16,1,.3,1); }
+/* barra de progresso */
+[data-progress] { position: fixed; top: 0; left: 0; right: 0; height: 3px; transform-origin: 0 50%; transform: scaleX(0); z-index: 10000; background: var(--accent, var(--gds-tema-accent, #2563eb)); }
+@media (prefers-reduced-motion: reduce) {
+    .gm-js [data-anim], .gm-palavra > span { transition: none !important; opacity: 1 !important; transform: none !important; filter: none !important; clip-path: none !important; }
+    .gm-marquee-caixa { animation: none; }
+}

@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Credenciais locais da plataforma PHP (nunca versionar)
+gds/config/local.php
+gds/uploads/

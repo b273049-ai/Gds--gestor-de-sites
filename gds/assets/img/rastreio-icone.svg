@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Entregas ao vivo">
+  <rect width="512" height="512" fill="#15171b"/>
+  <path d="M-10 404 C 120 360, 200 300, 256 300 S 400 250, 522 170" fill="none" stroke="#272b33" stroke-width="86" stroke-linecap="round"/>
+  <path d="M-10 404 C 120 360, 200 300, 256 300 S 400 250, 522 170" fill="none" stroke="#f5c518" stroke-width="10" stroke-dasharray="34 26" stroke-linecap="round"/>
+  <path d="M256 92c-58 0-104 45-104 102 0 76 104 178 104 178s104-102 104-178c0-57-46-102-104-102z" fill="#f5c518" stroke="#15171b" stroke-width="12"/>
+  <circle cx="256" cy="194" r="40" fill="#15171b"/>
+</svg>

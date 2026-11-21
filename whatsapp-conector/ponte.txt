@@ -1,0 +1,3 @@
+# Preencha com o que aparece em GDS → Admin → WhatsApp (opção "Conector GDS no celular ou computador")
+SITE=COLE-AQUI-O-ENDERECO-DO-SITE
+CHAVE=COLE-AQUI-A-CHAVE
