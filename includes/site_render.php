@@ -15,6 +15,7 @@ require_once __DIR__ . '/site_template.php';
 require_once __DIR__ . '/pagamentos.php';
 require_once __DIR__ . '/clube.php';
 require_once __DIR__ . '/recursos_site.php';
+require_once __DIR__ . '/site_vitrine.php';
 require_once __DIR__ . '/orcamento.php';
 
 const PIX_ONLINE = 'Pix agora pelo site';
@@ -644,7 +645,9 @@ function site_fragmentos_marcadores($empresa, $dados, $estado, $extraServicos = 
     $linkWhats = so_digitos_frag($empresa['whatsapp'] ?? '') ? frag_link_whatsapp($empresa['whatsapp'], trim((string)($empresa['whatsapp_mensagem'] ?? '')) ?: 'Olá! Vim pelo site e gostaria de mais informações.') : '#gds-contato';
     $linkPrincipal = ['agendamento' => $temAgenda ? '#gds-agendamento' : $linkWhats, 'orcamento' => $temOrcamento ? '#gds-orcamento' : $linkWhats,
                       'contato' => $linkWhats, 'catalogo' => '#gds-servicos'][$modo];
-    return [
+    // Componentes do visual Vitrine pedidos pela IA (site_vitrine.php) — só calculados se o design usa
+    $vitrine = vt_usa_ia($html) ? vt_marcadores_ia($empresa, $dados, $optsServicos + ['link_principal' => $linkPrincipal, 'texto_principal' => site_texto_cta($empresa, $modo), 'link_whats' => str_starts_with($linkWhats, 'http') ? $linkWhats : '']) : [];
+    return $vitrine + [
         '{{SOBRE}}' => frag_sobre($empresa['sobre']),
         // Imobiliária: a vitrine de imóveis entra no lugar dos serviços (e os serviços, se houver, vêm depois)
         '{{SERVICOS}}' => !empty($dados['imoveis']) ? frag_imoveis($dados['imoveis'], $empresa, $estado['lead'] ?? []) . ($dados['servicos'] ? frag_servicos($dados['servicos'], $optsServicos) : '') : frag_servicos($dados['servicos'], $optsServicos),
@@ -764,6 +767,10 @@ function site_render_ia($empresa, $dados, $estado, $preview = false) {
     }
     $html = site_garantir_main($html);
     $extras = frag_css_apoio($dados['tema']) . site_json_ld($empresa, $dados);
+    if (vt_usa_ia($empresa['html_gerado'])) {
+        $extras .= vt_ia_cabeca($empresa, $dados);
+        $html = stripos($html, '</body>') !== false ? preg_replace('/<\/body>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], vt_ia_corpo()) . '</body>', $html, 1) : $html . vt_ia_corpo();
+    }
     if (!$preview) $extras .= site_script_analytics($dados['analytics_id']) . site_script_eventos($empresa);
     if (stripos($html, '</head>') !== false) {
         $html = preg_replace('/<\/head>/i', str_replace(['\\', '$'], ['\\\\', '\\$'], $extras) . '</head>', $html, 1);

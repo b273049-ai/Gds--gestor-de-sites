@@ -177,7 +177,7 @@ function vt_hero($c) {
     $h .= '<div class="vt-base"><div class="vt-base-in">'
         . '<div class="vt-base-texto" aria-live="polite"><p class="vt-base-nome" data-vt-nome>' . e($nomeBase) . '</p><p class="vt-base-desc" data-vt-desc>' . e($descBase) . '</p></div>'
         . '<div class="vt-base-acoes"><a class="vt-pilula vt-pilula-cheia" href="' . e($c['ctaHref']) . '" data-ev="' . ($c['modo'] === 'catalogo' ? 'pedido' : 'cta') . '">' . e($c['ctaTexto']) . '</a>'
-        . ($c['ctaHref'] !== '#servicos' && $c['modo'] !== 'contato' && $c['temServicos'] ? '<a class="vt-pilula" href="#servicos">Ver ' . e(mb_strtolower($c['rotCatalogo'])) . '</a>'
+        . (!in_array($c['ctaHref'], ['#servicos', '#gds-servicos'], true) && $c['modo'] !== 'contato' && $c['temServicos'] ? '<a class="vt-pilula" href="#gds-servicos">Ver ' . e(mb_strtolower($c['rotCatalogo'])) . '</a>'
             : ($c['linkWhats'] ? '<a class="vt-pilula" href="' . e($c['linkWhats']) . '" target="_blank" rel="noopener" data-ev="whatsapp">' . frag_icone('whats') . ' WhatsApp</a>' : ''))
         . (count($slides) > 1 ? '<span class="vt-setas"><button type="button" class="vt-seta" data-vt-ir="-1" aria-label="Produto anterior">‹</button><button type="button" class="vt-seta" data-vt-ir="1" aria-label="Próximo produto">›</button></span>' : '') . '</div>'
         . ($dadosVivos ? '<dl class="vt-base-dados">' . implode('', array_map(fn($d) => '<div><dt>' . $d[0] . '</dt><dd>' . $d[1] . '</dd></div>', $dadosVivos)) . '</dl>' : '')
@@ -261,3 +261,54 @@ function vt_destaque($servicos, $opts) {
         . ((float)$alvo['preco'] > 0 ? '<span class="vt-dest-cartao-preco">' . frag_preco($alvo['preco']) . '</span>' : '') . '<span class="vt-dest-cartao-letra">' . e($letra) . '</span></div>'
         . '</div></section>';
 }
+
+// ============================================================
+// VITRINE NOS SITES FEITOS PELA IA (Estúdio IA)
+// A IA desenha o resto do site e encaixa os componentes vivos do Vitrine pelos marcadores
+// {{VITRINE_TOPO}} {{VITRINE_FAIXA}} {{VITRINE_CARDAPIO}} {{VITRINE_DESTAQUE}} — com os mesmos produtos
+// recortados, cores tiradas das fotos, animações e carrinho dos sites padrão.
+// ============================================================
+const VT_MARCADORES_IA = ['{{VITRINE_TOPO}}', '{{VITRINE_FAIXA}}', '{{VITRINE_CARDAPIO}}', '{{VITRINE_DESTAQUE}}'];
+
+function vt_usa_ia($html) { return is_string($html) && str_contains($html, '{{VITRINE_'); }
+
+// Cor de destaque da empresa com contraste (a mesma regra do visual Limpo)
+function vt_accent_empresa($empresa, $dados) {
+    $c = cor_hex_valida_site($empresa['cor_primaria'] ?? '', '');
+    $acc = $c !== '' ? $c : (($dados['tema']['accent'] ?? '') ?: '#1f6feb');
+    return frag_contraste($acc, '#ffffff') >= 4.5 ? $acc : frag_cor_legivel($acc, ['#ffffff'], 4.6);
+}
+
+function vt_marcadores_ia($empresa, $dados, $opts) {
+    $modo = $dados['modo'];
+    $accent = vt_accent_empresa($empresa, $dados);
+    $nome = $empresa['nome'];
+    $hs = function_exists('site_headline_segmento') ? site_headline_segmento($empresa['segmento_slug'] ?? '') : [];
+    $sub = $empresa['subtitulo'] ?: ($hs[1] ?? '');
+    $rot = site_titulo_catalogo($empresa, $modo);
+    $segNome = $empresa['segmento_nome'] ?? '';
+    $galeria = $dados['galeria'] ?? [];
+    $foto = $empresa['banner_imagem'] ?: ($galeria[0] ?? '');
+    $optsVt = $opts + ['accent' => $accent];
+    // o cardápio e o destaque já trazem o "gds-c" dos componentes; o topo e a faixa não (o estilo deles é o do Vitrine)
+    $embrulho = fn($h) => $h === '' ? '' : '<div class="lp-vitrine vt-ia">' . $h . '</div>';
+    return [
+        '{{VITRINE_TOPO}}' => $embrulho(vt_hero(['empresa' => $empresa, 'nome' => $nome, 'sub' => $sub, 'headline' => $hs[0] ?? $sub, 'ctaTexto' => $opts['texto_principal'], 'ctaHref' => $opts['link_principal'],
+            'accent' => $accent, 'fotoHero' => $foto, 'galeria' => $galeria, 'modo' => $modo, 'rotCatalogo' => $rot, 'status' => $dados['status'] ?? [], 'nota' => $dados['avaliacoes_resumo'] ?? ['total' => 0],
+            'servicos' => $dados['servicos'], 'temServicos' => (bool)$dados['servicos'], 'linkWhats' => $opts['link_whats'], 'segNome' => $segNome])),
+        '{{VITRINE_FAIXA}}' => $embrulho(vt_faixa($dados['servicos'], site_nicho_da_empresa($empresa))),
+        '{{VITRINE_CARDAPIO}}' => $dados['servicos'] ? $embrulho(frag_servicos_vitrine($dados['servicos'], $optsVt)) : '',
+        '{{VITRINE_DESTAQUE}}' => $embrulho(vt_destaque($dados['servicos'], $optsVt)),
+    ];
+}
+
+// O que o site da IA precisa carregar quando usa o Vitrine (fontes, CSS, cores e o script das animações)
+function vt_ia_cabeca($empresa, $dados) {
+    $acc = vt_accent_empresa($empresa, $dados);
+    return '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400..700&display=swap">'
+        . '<link rel="stylesheet" href="/assets/css/site-vitrine.css?v=2">'
+        . '<style>.vt-ia{--accent:' . $acc . ';--on-accent:#ffffff;--accent-txt:' . frag_cor_legivel($acc, ['#fbfaf8', '#ffffff'], 4.6) . '}</style>'
+        . '<script>(function(h){if(!document.fonts||!document.fonts.load)return;h.classList.add(\'vt-espera\');var f=function(){h.classList.remove(\'vt-espera\')};Promise.race([document.fonts.load(\'400 40px Anton\'),new Promise(function(r){setTimeout(r,2500)})]).then(f,f)})(document.documentElement)</script>';
+}
+function vt_ia_corpo() { return '<script src="/assets/js/site-vitrine.js?v=1" defer></script>'; }

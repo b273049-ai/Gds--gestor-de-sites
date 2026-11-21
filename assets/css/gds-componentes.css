@@ -264,13 +264,13 @@ a.gds-info:hover { border-color: var(--gds-accent) !important; }
 
 /* ---------- BOTÃO FLUTUANTE DO WHATSAPP ---------- */
 .gds-wa { position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); z-index: 9990; display: flex; align-items: flex-end; flex-direction: column; gap: 10px; font-family: inherit; }
-.gds-wa-btn { display: flex; align-items: center; gap: 10px; height: 58px; padding: 0 20px 0 16px; border-radius: 999px; background: #25d366; color: #fff !important; text-decoration: none !important; font-weight: 700; font-size: 15px; box-shadow: 0 10px 30px -6px rgba(37, 211, 102, .6), 0 4px 12px rgba(0, 0, 0, .2); transition: transform .2s ease; position: relative; }
+.gds-wa-btn { display: flex; align-items: center; gap: 10px; height: 58px; padding: 0 20px 0 16px; border-radius: 999px; background: #0b7a4b; color: #fff !important; text-decoration: none !important; font-weight: 700; font-size: 15px; box-shadow: 0 10px 30px -6px rgba(37, 211, 102, .6), 0 4px 12px rgba(0, 0, 0, .2); transition: transform .2s ease; position: relative; }
 .gds-wa-btn:hover { transform: translateY(-2px) scale(1.03); }
 .gds-wa-btn svg { width: 28px; height: 28px; fill: #fff; flex-shrink: 0; }
 .gds-wa-btn::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 0 rgba(37, 211, 102, .55); animation: gds-pulso 2.6s infinite; }
 @keyframes gds-pulso { 70% { box-shadow: 0 0 0 16px rgba(37, 211, 102, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); } }
 .gds-wa-balao { position: relative; max-width: 250px; background: #fff; color: #1f2937; padding: 12px 34px 12px 14px; border-radius: 14px 14px 4px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); font: 500 14px/1.4 system-ui, -apple-system, sans-serif; animation: gds-entra .4s ease; }
-.gds-wa-balao strong { display: block; margin-bottom: 2px; }
+.gds-wa-balao strong { display: block; margin-bottom: 2px; color: #111827; }
 .gds-wa-balao button { all: unset; position: absolute; top: 6px; right: 8px; cursor: pointer; font-size: 18px; line-height: 1; color: #6b7280; width: 22px; height: 22px; text-align: center; }
 @media (max-width: 640px) {
     .gds-wa-btn { width: 58px; padding: 0; justify-content: center; }

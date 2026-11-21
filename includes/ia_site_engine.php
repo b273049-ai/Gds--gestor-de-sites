@@ -14,7 +14,8 @@
 require_once __DIR__ . '/ia_helper.php';
 require_once __DIR__ . '/fotos.php';
 
-const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}', '{{CLUBE}}'];
+const IA_MARCADORES = ['{{SOBRE}}', '{{SERVICOS}}', '{{EQUIPE}}', '{{GALERIA}}', '{{AGENDAMENTO}}', '{{ORCAMENTO}}', '{{AVALIACOES}}', '{{CONTATO}}', '{{MAPA}}', '{{CUPONS}}', '{{HORARIOS}}', '{{WHATSAPP_FLOAT}}', '{{CLUBE}}',
+    '{{VITRINE_TOPO}}', '{{VITRINE_FAIXA}}', '{{VITRINE_CARDAPIO}}', '{{VITRINE_DESTAQUE}}'];
 const IA_MARCADORES_OBRIGATORIOS = ['{{CONTATO}}'];
 
 function ia_direcoes_visuais() {
@@ -32,6 +33,7 @@ function ia_direcoes_visuais() {
         'analogico'    => ['Analógico e Quente', 'textura sutil de grão de filme (via CSS), tons sépia/terrosos, tipografia serifada, sensação tátil.'],
         'grid'         => ['Grid Cinético', 'linhas de grade finas visíveis como elemento de design, tudo alinhado a uma grade, números/rótulos estilo ficha técnica.'],
         'saas'         => ['SaaS Moderno Claro', 'fundo claro com muito respiro, gradiente sutil no topo, cartões com bordas finas, tipografia sans geométrica, um destaque vibrante — estilo das startups atuais.'],
+        'vitrine'      => ['Vitrine Pop', 'topo de cor forte e viva com o NOME do negócio gigante em letra condensada e o produto recortado na frente (troca sozinho com a cor), faixa corrida de categorias, cardápio em cartões coloridos com o produto saindo do cartão e produto em destaque que gira com a rolagem — use os componentes {{VITRINE_TOPO}} {{VITRINE_FAIXA}} {{VITRINE_CARDAPIO}} {{VITRINE_DESTAQUE}}; o resto do site em fundo claro quente, títulos condensados em caixa alta e uma palavra em itálico serifado.'],
         'clinico'      => ['Clean Clínico', 'branco e tons frios suaves, cantos arredondados generosos, ícones lineares em SVG, sensação de confiança, higiene e calma.'],
     ];
 }
@@ -151,8 +153,10 @@ function ia_marcadores_do_modo($modo, $ctx) {
 function ia_planejar_site($ctx, $briefing, $direcaoChave = null, $preferencias = '') {
     $direcoes = ia_direcoes_visuais();
     if (!$direcaoChave || !isset($direcoes[$direcaoChave])) {
+        // "Surpreenda-me": quem vende produto (comida, café, loja, pet…) ganha o Vitrine na maioria das vezes
+        require_once __DIR__ . '/site_vitrine.php';
         $chaves = array_keys($direcoes);
-        $direcaoChave = $chaves[random_int(0, count($chaves) - 1)];
+        $direcaoChave = vt_nicho_padrao($ctx) && random_int(1, 10) <= 7 ? 'vitrine' : $chaves[random_int(0, count($chaves) - 1)];
     }
     [$direcaoNome, $direcaoDesc] = $direcoes[$direcaoChave];
     $dados = ia_contexto_texto($ctx);
@@ -237,6 +241,13 @@ PROMPT;
     $permitidos = array_values(array_filter(IA_MARCADORES, fn($m) => !($m === '{{AGENDAMENTO}}' && $modo !== 'agendamento') && !($m === '{{ORCAMENTO}}' && $modo !== 'orcamento')));
     $plano['marcadores'] = array_values(array_intersect($permitidos, array_unique(array_merge($plano['marcadores'] ?? [], ia_marcadores_do_modo($modo, $ctx)))));
     $plano['obrigatorios'] = ia_marcadores_do_modo($modo, $ctx);
+    // Direção Vitrine: os componentes do Vitrine entram no lugar do topo e da lista de serviços comum
+    if ($direcaoChave === 'vitrine') {
+        $vt = ['{{VITRINE_TOPO}}', '{{VITRINE_FAIXA}}'];
+        if (!empty($ctx['servicos']) || $modo === 'catalogo') { $vt[] = '{{VITRINE_CARDAPIO}}'; $vt[] = '{{VITRINE_DESTAQUE}}'; }
+        $plano['marcadores'] = array_values(array_unique(array_merge(array_diff($plano['marcadores'], in_array('{{VITRINE_CARDAPIO}}', $vt, true) ? ['{{SERVICOS}}'] : []), $vt)));
+        $plano['obrigatorios'] = array_values(array_unique(array_merge(array_diff($plano['obrigatorios'], in_array('{{VITRINE_CARDAPIO}}', $vt, true) ? ['{{SERVICOS}}'] : []), ['{{VITRINE_TOPO}}'])));
+    }
     $plano['direcao_chave'] = $direcaoChave;
     $plano['direcao_nome'] = $direcaoNome;
     $plano['direcao_desc'] = $direcaoDesc;
@@ -283,6 +294,13 @@ CONTRATO TÉCNICO (obrigatório):
    da equipe | {{AVALIACOES}} = nota média + depoimentos + formulário | {{GALERIA}} = grade com ampliação |
    {{CUPONS}} = cupons | {{CLUBE}} = planos de assinatura/pacotes de sessões (só se o negócio tiver) | {{MAPA}} = mapa com "Como chegar" | {{HORARIOS}} = horário da semana | {{WHATSAPP_FLOAT}} =
    botão flutuante do WhatsApp.
+   VISUAL VITRINE (use quando estiverem na lista de marcadores): {{VITRINE_TOPO}} = topo inteiro pronto (cor viva, NOME
+   gigante, produtos recortados que trocam sozinhos, botões e dados reais) — ele JÁ É o <h1> e o hero: coloque logo
+   depois do cabeçalho, ocupando a largura toda, e NÃO escreva outro hero nem outro <h1> | {{VITRINE_FAIXA}} = faixa
+   corrida de categorias (logo abaixo do topo) | {{VITRINE_CARDAPIO}} = cardápio em cartões coloridos com o botão de
+   pedir/agendar (substitui {{SERVICOS}}; dê a ele um título grande condensado, ex.: "Cardápio <em>da casa</em>") |
+   {{VITRINE_DESTAQUE}} = seção do produto em destaque (largura toda). Estes quatro ficam em largura total (sem
+   max-width no container); o seu cabeçalho fica por cima com fundo claro.
    Por isso: NÃO estilize classes que começam com "gds-" e NÃO crie você mesmo listas de serviços, equipe, avaliações,
    formulários, calendário, mapa ou botão de WhatsApp — só dê a cada componente uma seção com título, um respiro
    (padding) e largura máxima confortável (ex.: max-width 1100px; agendamento/orçamento ~760px).
@@ -448,6 +466,7 @@ $dados
 
 Marcadores que existem hoje e DEVEM continuar no resultado (a menos que o pedido seja explicitamente removê-los): $lista
 Marcadores que podem ser adicionados se o pedido pedir: {{SOBRE}} {{SERVICOS}} {{EQUIPE}} {{GALERIA}} {{AVALIACOES}} {{CONTATO}} {{MAPA}} {{CUPONS}} {{HORARIOS}} {{WHATSAPP_FLOAT}}
+Visual Vitrine (se o dono pedir "estilo vitrine", "topo colorido com o nome grande", "produto recortado", "cardápio colorido"): {{VITRINE_TOPO}} {{VITRINE_FAIXA}} {{VITRINE_CARDAPIO}} {{VITRINE_DESTAQUE}} (veja o contrato técnico)
 FORMA DE ATENDIMENTO DO NEGÓCIO: "$modo". $estrategia
 NÃO use $outroModo neste site (não combina com a forma de atendimento); se existir, troque pelo correto.
 
@@ -527,6 +546,11 @@ function ia_pos_processar_html($html, $marcadoresEsperados = IA_MARCADORES_OBRIG
     foreach ($marcadoresEsperados as $m) {
         if (str_contains($html, $m)) continue;
         if ($m === '{{WHATSAPP_FLOAT}}') { $html = preg_replace('/<\/body>/i', "$m\n</body>", $html, 1); continue; }
+        if ($m === '{{VITRINE_TOPO}}') { // o topo do Vitrine vai logo depois do cabeçalho (ou no começo do <body>)
+            $pos = stripos($html, '</header>');
+            $html = $pos !== false ? substr($html, 0, $pos + 9) . "\n$m\n" . substr($html, $pos + 9) : preg_replace('/(<body[^>]*>)/i', "$1\n$m\n", $html, 1);
+            continue;
+        }
         $titulo = $titulos[$m] ?? '';
         $bloco = "\n<div class=\"gds-secao-auto\" style=\"padding:32px 16px;max-width:1100px;margin:0 auto;\">\n" . ($titulo ? "<h2>$titulo</h2>\n" : '') . "$m\n</div>\n";
         $pos = strripos($html, '</section>');

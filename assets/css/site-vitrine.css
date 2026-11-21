@@ -209,3 +209,17 @@
 /* a fonte do nome gigante muda o tamanho do texto ao chegar: esses textos esperam por ela (no máximo 2,5 s) */
 .vt-espera .vt-nome, .vt-espera .vt-faixa, .vt-espera .vt-base-nome, .vt-espera .vt-base-dados dt, .vt-espera .lp-marca span { visibility: hidden; }
 .vt-faixa-grupo { height: 48px; }
+
+/* ---------- Vitrine dentro dos sites feitos pela IA (marcadores {{VITRINE_...}}) ---------- */
+.vt-ia { --bg: #fbfaf8; --sup: #ffffff; --txt: #17171a; --suave: #55555f; --linha: rgba(23,23,26,.1); --raio: 22px;
+    --f-tit: 'Anton', Impact, 'Arial Narrow', sans-serif; --f-it: 'Instrument Serif', Georgia, serif; --f-txt: 'DM Sans', system-ui, sans-serif;
+    font-family: var(--f-txt); color: var(--txt); }
+.vt-ia .lp-larg { width: min(1120px, 100% - 40px); margin-inline: auto; }
+.vt-ia .vt-palco { padding-top: 0; }
+.vt-ia .vt-nome { top: clamp(14px, 4vh, 40px); }
+.vt-ia .vt-faixa { background: transparent; }
+.vt-ia h2, .vt-ia h3 { margin: 0; }
+@media (max-width: 760px) { .vt-ia .vt-nome { top: 14px; } }
+.lp-vitrine a.vt-pilula { color: var(--txt); text-decoration: none; }
+.lp-vitrine a.vt-pilula-cheia { color: #fff; }
+@media (max-width: 760px) { .vt-ia .vt-filtros { margin-inline: 0; padding-inline: 0; } }

@@ -693,6 +693,13 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   "Tirar o fundo de N fotos" para todas de uma vez. O recorte é salvo em WebP com transparência
   (`servicos.imagem_recorte`). A foto original não muda. Trocar a foto apaga o recorte antigo e "Refazer recorte"
   tenta de novo. Funciona melhor com o produto inteiro, no centro, com fundo liso.
+- **Também nos sites feitos pela IA (Estúdio IA):** o estilo "Vitrine Pop" aparece entre os estilos do Estúdio. No
+  "Surpreenda-me", quem vende produto ganha o Vitrine em ~70% das vezes. A IA desenha o resto do site e encaixa os
+  componentes vivos pelos marcadores `{{VITRINE_TOPO}}` (topo com nome gigante, produtos recortados e dados reais),
+  `{{VITRINE_FAIXA}}`, `{{VITRINE_CARDAPIO}}` (cartões coloridos com o botão de pedir/agendar, no lugar de
+  `{{SERVICOS}}`) e `{{VITRINE_DESTAQUE}}`. Os produtos recortados, as cores das fotos, as animações e o carrinho são
+  os mesmos dos sites padrão. Num site de IA já pronto, basta pedir na conversa ("põe o topo colorido com o nome
+  grande e o cardápio colorido"). O CSS e as fontes só carregam quando o site usa esses marcadores.
 - Acessibilidade: o branco do topo tem contraste 3:1 (texto grande) e o dos cartões 4,5:1. O nome gigante espera a
   fonte carregar, para a página não "pular". "Reduzir movimento" desliga todas as animações.
 
