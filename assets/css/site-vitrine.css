@@ -223,3 +223,11 @@
 .lp-vitrine a.vt-pilula { color: var(--txt); text-decoration: none; }
 .lp-vitrine a.vt-pilula-cheia { color: #fff; }
 @media (max-width: 760px) { .vt-ia .vt-filtros { margin-inline: 0; padding-inline: 0; } }
+
+/* site da IA com cabeçalho fixo por cima do topo: o JS mede quanto ele cobre (--vt-ia-cobre) */
+.vt-ia .vt-hero .vt-palco { padding-top: var(--vt-ia-cobre, 0px); height: calc(clamp(500px, 78svh, 760px) + var(--vt-ia-cobre, 0px)); }
+.vt-ia .vt-hero .vt-nome { top: calc(var(--vt-ia-cobre, 0px) + clamp(14px, 4vh, 40px)); }
+@media (max-width: 760px) { .vt-ia .vt-hero .vt-palco { height: calc(clamp(470px, 74svh, 620px) + var(--vt-ia-cobre, 0px)); } .vt-ia .vt-hero .vt-nome { top: calc(var(--vt-ia-cobre, 0px) + 14px); } }
+/* produtos largos (porção, prato) ganham mais largura no topo */
+.vt-prod { width: min(56vw, 560px); }
+@media (max-width: 760px) { .vt-prod { width: 84vw; } }

@@ -307,8 +307,8 @@ function vt_ia_cabeca($empresa, $dados) {
     $acc = vt_accent_empresa($empresa, $dados);
     return '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400..700&display=swap">'
-        . '<link rel="stylesheet" href="/assets/css/site-vitrine.css?v=2">'
+        . '<link rel="stylesheet" href="/assets/css/site-vitrine.css?v=3">'
         . '<style>.vt-ia{--accent:' . $acc . ';--on-accent:#ffffff;--accent-txt:' . frag_cor_legivel($acc, ['#fbfaf8', '#ffffff'], 4.6) . '}</style>'
         . '<script>(function(h){if(!document.fonts||!document.fonts.load)return;h.classList.add(\'vt-espera\');var f=function(){h.classList.remove(\'vt-espera\')};Promise.race([document.fonts.load(\'400 40px Anton\'),new Promise(function(r){setTimeout(r,2500)})]).then(f,f)})(document.documentElement)</script>';
 }
-function vt_ia_corpo() { return '<script src="/assets/js/site-vitrine.js?v=1" defer></script>'; }
+function vt_ia_corpo() { return '<script src="/assets/js/site-vitrine.js?v=2" defer></script>'; }
