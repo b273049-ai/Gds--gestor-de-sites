@@ -11,15 +11,15 @@
     // Site feito pela IA com cabeçalho fixo por cima: o topo desce o necessário para o nome não ficar escondido
     if (hero && hero.closest('.vt-ia')) {
         var encaixa = function () {
-            if (window.scrollY > 4) return;
-            var topoHero = hero.getBoundingClientRect().top, cobre = 0;
-            [].forEach.call(document.querySelectorAll('header, nav, [class*="topo"], [class*="header"]'), function (el) {
+            // só o que é FIXO no alto da tela cobre o topo (cabeçalho "sticky" fica no fluxo, antes dele). O site da IA
+            // pode rolar sozinho até a seção de início, então vale a altura toda do que fica preso em cima.
+            var heroDoc = hero.getBoundingClientRect().top + window.scrollY, fixo = 0;
+            [].forEach.call(document.querySelectorAll('header, nav, [class*="topo"], [class*="header"], [class*="aviso"], [class*="barra"]'), function (el) {
                 if (hero.contains(el) || el.contains(hero)) return;
-                var p = getComputedStyle(el).position, r = el.getBoundingClientRect();
-                // tudo que fica preso no alto (faixa de aviso + cabeçalho empilhados) e passa por cima do começo do topo
-                if ((p === 'fixed' || p === 'sticky') && r.height > 0 && r.height < 200 && r.top < topoHero + 120 && r.bottom > topoHero) cobre = Math.max(cobre, r.bottom - topoHero);
+                var r = el.getBoundingClientRect();
+                if (getComputedStyle(el).position === 'fixed' && r.height > 0 && r.height < 200 && r.top < 120) fixo = Math.max(fixo, r.bottom);
             });
-            hero.style.setProperty('--vt-ia-cobre', Math.round(cobre) + 'px');
+            hero.style.setProperty('--vt-ia-cobre', (heroDoc < fixo + 200 ? Math.round(fixo) : 0) + 'px');
         };
         // remede quando o layout muda (faixa de aviso que some, cabeçalho que encolhe, fontes que chegam)
         encaixa(); addEventListener('load', encaixa); addEventListener('resize', encaixa);
