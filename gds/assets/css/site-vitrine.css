@@ -233,3 +233,6 @@
 /* produtos largos (porção, prato) ganham mais largura no topo */
 .vt-prod { width: min(56vw, 560px); }
 @media (max-width: 760px) { .vt-prod { width: 84vw; } }
+/* preço antigo riscado no cartão: branco cheio (o riscado já mostra que é o "de"), sem transparência */
+.lp-vitrine .gds-c .vt-card .gds-preco-de { opacity: 1; color: #fff; display: block; font: 500 .8rem/1.2 var(--f-txt); }
+.lp-vitrine .gds-c .vt-card .gds-off { background: #fff; color: #17171a; }
