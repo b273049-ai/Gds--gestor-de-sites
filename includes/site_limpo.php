@@ -19,6 +19,7 @@ require_once __DIR__ . '/recursos_site.php';
 require_once __DIR__ . '/restaurante.php';
 require_once __DIR__ . '/recursos_servicos.php';
 require_once __DIR__ . '/treino_vale.php';
+require_once __DIR__ . '/site_vitrine.php';
 
 function site_limpo_tons() {
     // fontes: [url do Google Fonts, família do título, família do texto, peso do título]
@@ -179,6 +180,9 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     $REC = rec_ler($empresa);
     $temVideo = rec_ativo($REC, 'video');
     $V = site_limpo_escolhas($empresa, (bool)$fotoHero || $temVideo);
+    $vit = vt_ativa($empresa); // visual Vitrine (site_vitrine.php): mesmo motor, topo e cardápio próprios
+    if ($vit) { $V['T'] = ['bg' => '#fbfaf8', 'sup' => '#ffffff', 'txt' => '#17171a', 'suave' => '#55555f', 'linha' => 'rgba(23,23,26,.1)', 'escuro' => false, 'raio' => '22px'] + $V['T']; $V['tom'] = 'vitrine';
+        $V['fonte'] = ['Anton&family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400..700', "'Anton'", "'DM Sans'", 400, 'condensado']; }
     $T = $V['T'];
     $comp = $V['comp'];
     // "Foto inteira no topo" só com foto grande e bem exposta; senão a foto vai ao lado do título
@@ -194,7 +198,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
     // Escurece só o necessário para o texto branco ficar legível (a cor da marca continua reconhecível).
     $onAccent = frag_cor_contraste($accent);
     if (frag_contraste($accent, $onAccent) < 4.5) { $accent = frag_cor_legivel($accent, ['#ffffff'], 4.6); $onAccent = '#ffffff'; }
-    $bg = $T['escuro'] ? $T['bg'] : site_limpo_misturar($T['bg'], $accent, ($V['h'] % 2) ? 0.035 : 0.0);
+    $bg = $T['escuro'] || $vit ? $T['bg'] : site_limpo_misturar($T['bg'], $accent, ($V['h'] % 2) ? 0.035 : 0.0);
     $fundos = [$bg, $T['sup']];
     $accentTxt = frag_cor_legivel($accent, $fundos);
 
@@ -232,6 +236,14 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
         if ($menu) $nav[$id] = $menu;
     };
     if (!empty($dados['imoveis'])) $secao('servicos', 'Imóveis', $f['{{SERVICOS}}'], 'Filtre por bairro, preço e quartos.', 'Imóveis');
+    elseif ($dados['servicos'] && $vit) {
+        $optsVt = ['modo' => $modo, 'tem_agendamento' => $modo === 'agendamento', 'tem_orcamento' => $modo === 'orcamento', 'tem_contato' => true, 'whatsapp' => $empresa['whatsapp'],
+                   'carrinho' => site_pedido_online($empresa, $modo), 'mais_pedidos' => $dados['mais_pedidos'] ?? [], 'accent' => $accent];
+        $palavra = ['gastronomia' => 'do dia', 'cafe' => 'da casa', 'varejo' => 'da loja', 'pet' => 'com carinho', 'fitness' => 'do treino', 'beleza' => 'com cuidado', 'barbearia' => 'da casa'][$chaveNicho] ?? 'da casa';
+        $sec['servicos'] = '<section id="servicos" class="lp-secao vt-secao-cardapio"><div class="lp-larg"><header class="lp-cab vt-cab"><h2 data-pronto="1"><span>' . e($rotCatalogo) . '</span> <em>' . e($palavra) . '</em></h2></header>' . frag_servicos_vitrine($dados['servicos'], $optsVt) . '</div></section>';
+        $nav['servicos'] = $rotCatalogo;
+        if (($dst = vt_destaque($dados['servicos'], $optsVt)) !== '') $sec['destaque'] = $dst;
+    }
     elseif ($dados['servicos']) $secao('servicos', $rotCatalogo, $f['{{SERVICOS}}'], '', $rotCatalogo);
     if ($modo === 'agendamento') $secao('agendar', 'Agende seu horário', $f['{{AGENDAMENTO}}'], 'Escolha o serviço, o dia e o horário. A confirmação chega no seu WhatsApp.', 'Agendar', 'lp-secao-destaque');
     elseif ($modo === 'orcamento') $secao('agendar', 'Peça seu orçamento', $f['{{ORCAMENTO}}'], 'Conte o que precisa. A resposta chega no seu WhatsApp.', 'Orçamento', 'lp-secao-destaque');
@@ -271,11 +283,11 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
         . '</div>' . ($empresa['endereco'] ? '<div class="lp-mapa"><iframe title="Mapa: ' . e($empresa['endereco']) . '" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="' . e(frag_mapa_src($empresa['endereco'], $dados['maps_key'])) . '"></iframe></div>' : '') . '</div>'
         . ($modo === 'contato' || !$linkWhats ? '<div class="lp-form">' . $f['{{CONTATO}}'] . '</div>' : '');
     $secao('contato', $empresa['endereco'] ? 'Onde estamos' : 'Fale com a gente', $visite, '', 'Contato');
-    $ordem = ['servicos', 'aulas', 'quiz', 'calculadora', 'agendar', 'reserva', 'fila', 'tour', 'antes-depois', 'sobre', 'equipe', 'galeria', 'vantagens', 'vale', 'clube', 'cupons', 'avaliacoes', 'contato'];
+    $ordem = ['servicos', 'destaque', 'aulas', 'quiz', 'calculadora', 'agendar', 'reserva', 'fila', 'tour', 'antes-depois', 'sobre', 'equipe', 'galeria', 'vantagens', 'vale', 'clube', 'cupons', 'avaliacoes', 'contato'];
     $menu = array_slice(array_intersect_key($nav, array_flip(['servicos', 'agendar', 'sobre', 'avaliacoes', 'contato'])), 0, 4, true);
 
     $fonteUrl = 'https://fonts.googleapis.com/css2?family=' . $V['fonte'][0] . '&display=swap';
-    $classes = 'lp lp-tom-' . $V['tom'] . ' lp-comp-' . $comp . ' lp-foto-' . $trat . ($comp === 'tipografia' && (($V['h'] >> 5) % 2) ? ' lp-tipo-b' : '') . ($T['escuro'] ? ' lp-escuro' : '') . (!empty($V['fonte'][4]) ? ' lp-condensado' : '');
+    $classes = 'lp lp-tom-' . $V['tom'] . ' lp-comp-' . $comp . ' lp-foto-' . $trat . ($comp === 'tipografia' && (($V['h'] >> 5) % 2) ? ' lp-tipo-b' : '') . ($T['escuro'] ? ' lp-escuro' : '') . (!empty($V['fonte'][4]) ? ' lp-condensado' : '') . ($vit ? ' lp-vitrine' : '');
     $painel = site_limpo_painel_vivo($empresa, $dados, $modo, $ctaHref);
     $logo = $empresa['logo'] ? '<img src="' . e($empresa['logo']) . '" alt="">' : '';
     ob_start(); ?>
@@ -291,16 +303,18 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 <meta property="og:type" content="website">
 <?php if (!$preview && !empty($empresa['slug'])): $urlCanon = wa_url_publica($empresa); ?><link rel="canonical" href="<?= e($urlCanon) ?>"><meta property="og:url" content="<?= e($urlCanon) ?>">
 <?php endif; ?>
-<?php if ($fotoHero || $empresa['logo']): ?><meta property="og:image" content="<?= e($fotoHero ?: $empresa['logo']) ?>"><?php endif; ?>
+<?php $ogImg = $fotoHero ?: ($empresa['logo'] ?: ($vit ? (array_values(array_filter(array_map('vt_recorte', $dados['servicos'])))[0] ?? '') : '')); if ($ogImg): ?><meta property="og:image" content="<?= e($ogImg) ?>"><?php endif; ?>
 <meta name="theme-color" content="<?= e($bg) ?>">
 <?php if ($empresa['logo']): ?><link rel="icon" href="<?= e($empresa['logo']) ?>"><?php endif; ?>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="<?= e($fonteUrl) ?>">
 <?php if ($fotoHero): ?><link rel="preload" as="image" href="<?= e($fotoHero) ?>"><?php endif; ?>
 <link rel="stylesheet" href="/assets/css/site-limpo.css?v=8">
+<?php if ($vit): ?><link rel="stylesheet" href="/assets/css/site-vitrine.css?v=1">
+<script>(function(h){if(!document.fonts||!document.fonts.load)return;h.classList.add('vt-espera');var f=function(){h.classList.remove('vt-espera')};Promise.race([document.fonts.load('400 40px Anton'),new Promise(function(r){setTimeout(r,2500)})]).then(f,f)})(document.documentElement)</script><?php endif; ?>
 <?= rec_head($empresa, $REC) ?>
 <script>(function(h){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;h.classList.add('lp-js');setTimeout(function(){if(!h.classList.contains('lp-vivo-ok'))h.classList.remove('lp-js')},2500)})(document.documentElement)</script>
-<style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;--duo-giro:<?= site_limpo_matiz($accent) - 38 ?>deg;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
+<style>:root{--bg:<?= $bg ?>;--sup:<?= $T['sup'] ?>;--txt:<?= $T['txt'] ?>;--suave:<?= $T['suave'] ?>;--linha:<?= $T['linha'] ?>;--accent:<?= $accent ?>;--on-accent:<?= $onAccent ?>;--accent-txt:<?= $accentTxt ?>;--raio:<?= $T['raio'] ?>;--f-tit:<?= $V['fonte'][1] ?>,Georgia,serif;--f-txt:<?= $V['fonte'][2] ?>,system-ui,sans-serif;--peso-tit:<?= (int)$V['fonte'][3] ?>;--f-it:'Instrument Serif',Georgia,serif;--duo-giro:<?= site_limpo_matiz($accent) - 38 ?>deg;color-scheme:<?= $T['escuro'] ? 'dark' : 'light' ?>}</style>
 <?= frag_css_apoio(['accent' => $accent, 'fundos' => $fundos]) ?>
 <?= site_json_ld($empresa, $dados) ?>
 <?= $preview ? '' : site_script_analytics($dados['analytics_id']) . site_script_eventos($empresa) ?>
@@ -318,6 +332,10 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 </header>
 
 <main id="conteudo">
+<?php if ($vit): ?>
+<?= vt_hero(['empresa' => $empresa, 'nome' => $nome, 'sub' => $sub, 'headline' => $headline !== $nome ? $headline : ($hs[0] ?? $sub), 'ctaTexto' => $ctaTexto, 'ctaHref' => $ctaHref, 'accent' => $accent, 'fotoHero' => $fotoHero, 'galeria' => $galeria, 'modo' => $modo, 'rotCatalogo' => $rotCatalogo, 'status' => $dados['status'] ?? [], 'nota' => $nota, 'servicos' => $dados['servicos'], 'temServicos' => (bool)$dados['servicos'], 'linkWhats' => $linkWhats, 'segNome' => $segNome]) ?>
+<?= vt_faixa($dados['servicos'], $chaveNicho) ?>
+<?php else: ?>
 <section id="inicio" class="lp-hero" data-luz>
     <div class="lp-luz" aria-hidden="true"><span></span><span></span><span></span></div>
     <?php if ($comp === 'foto'): ?><div class="lp-hero-foto"><?= $temVideo ? rec_video_html($REC, $fotoHero, 'Vídeo da ' . $nome) : '<img src="' . e($fotoHero) . '" alt="" fetchpriority="high">' ?></div><?php endif; ?>
@@ -336,6 +354,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
         <?php else: ?><div class="lp-hero-painel"><?= $painel ?></div><?php endif; ?>
     </div>
 </section>
+<?php endif; ?>
 
 <?php foreach ($ordem as $k): if (isset($sec[$k])) echo $sec[$k], "\n"; endforeach; ?>
 <section class="lp-fim" data-luz aria-label="<?= e($ctaTexto) ?>">
@@ -374,6 +393,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 })();
 </script>
 <script src="/assets/js/site-vivo.js?v=1" defer></script>
+<?php if ($vit): ?><script src="/assets/js/site-vitrine.js?v=1" defer></script><?php endif; ?>
 <?php if (array_filter(['stories', 'antes_depois', 'fidelidade', 'aniversario', 'app', 'video', 'reserva', 'fila', 'garcom', 'grade', 'quiz', 'calculadora', 'tour360', 'vale', 'monte'], fn($k) => rec_ativo($REC, $k))): ?><?= rec_ativo($REC, 'monte') ? '<script>window.gdsMonteAtivo=1</script>' : '' ?><script src="/assets/js/site-recursos.js?v=6" defer></script><?php endif; ?>
 <?= $preview ? site_script_preview() : '' ?>
 </body>

@@ -674,6 +674,28 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Visual Vitrine e "Tirar o fundo" das fotos (migração 46)
+- **Visual Vitrine** (Configurações → Visual do meu site → "Vitrine"; arquivos `includes/site_vitrine.php`,
+  `assets/css/site-vitrine.css`, `assets/js/site-vitrine.js`). Mesmo motor do Limpo, com:
+  - topo de cor forte com o **nome da empresa gigante** e o produto recortado na frente. Até 4 destaques se revezam
+    sozinhos (ou pelas setas): a cor do fundo acompanha cada produto. Os outros produtos ficam flutuando e seguem o
+    mouse de leve. Embaixo, uma base branca com curva, botões e números reais (nota do Google, tempo de entrega,
+    aberto/fechado);
+  - faixa corrida com as categorias;
+  - cardápio em **cartões coloridos**: a cor sai da própria foto do produto e o produto recortado "sai" do cartão;
+  - **produto em destaque** que sobe e gira de leve com a rolagem, com letra gigante ao fundo;
+  - sem produto recortado, o topo usa a foto da empresa numa moldura em arco. Sem foto nenhuma, fica só o nome.
+- **Prévias** de restaurante, café, padaria, doceria, loja, pet shop, eventos e academia saem no Vitrine
+  automaticamente. O site criado pelo "Fechou! Virar cliente" desses ramos também nasce no Vitrine. Sites que já
+  existiam continuam no visual escolhido.
+- **"✂️ Tirar o fundo"** (Cardápio): tira o fundo da foto do produto no próprio aparelho do dono, de graça
+  (modelo U²-Net, Apache-2.0, em `assets/modelos/`, e ONNX Runtime Web). Cerca de 2 segundos por foto; também há
+  "Tirar o fundo de N fotos" para todas de uma vez. O recorte é salvo em WebP com transparência
+  (`servicos.imagem_recorte`). A foto original não muda. Trocar a foto apaga o recorte antigo e "Refazer recorte"
+  tenta de novo. Funciona melhor com o produto inteiro, no centro, com fundo liso.
+- Acessibilidade: o branco do topo tem contraste 3:1 (texto grande) e o dos cartões 4,5:1. O nome gigante espera a
+  fonte carregar, para a página não "pular". "Reduzir movimento" desliga todas as animações.
+
 ## Tour 360° do imóvel, produto em 3D, privacidade, Google (migração 45)
 - **Tour 360° em cada imóvel:** em Imóveis → editar, campo "Tour 360°": envie as fotos 360° de cada cômodo (até 8;
   foto comum é recusada com a explicação; o nome do ambiente vem do nome do arquivo e dá para trocar). Na ficha do
