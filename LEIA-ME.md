@@ -674,6 +674,23 @@ até 1.000, 0,09% com 2.000; com 10.000 usuários os sites respondem em 1–7 ms
   mesmo tempo (padrão 15). Painel, login e rastreio ainda usam o banco a cada acesso; aumentar o "Pool Size" no
   Supabase (Database → Connection pooling) sobe esse teto (com 40, zero erro com 5.000 usuários no teste).
 
+## Plano de marketing dos sites (regra da plataforma)
+O visitante tem que dar de cara com o que veio buscar. Quem abre um delivery quer ver comida e preço; quem abre uma
+barbearia quer ver serviço e horário livre. Por isso, em todo site, a ordem da primeira página é:
+1. **Topo curto** que já mostra o produto ou serviço e o botão principal. No celular, o que se vende aparece na primeira
+   rolagem.
+2. **Logo abaixo do topo, na primeira página:** o que se vende. Delivery e loja mostram o cardápio ou os produtos com
+   foto, preço e "Adicionar"; agendamento mostra serviços com preço e a agenda; orçamento mostra serviços e a galeria de
+   trabalhos. Nada escondido em outra página ou atrás de um clique; o item "Cardápio"/"Serviços" do menu leva a essa
+   seção.
+3. **Produto em destaque e prova real:** nota do Google e avaliações.
+4. **Só depois, o secundário:** como funciona, diferenciais, sobre e perguntas frequentes, para quem quiser se aventurar.
+5. **Fechamento** com o botão principal de novo.
+
+Onde está: `ia_plano_marketing()` em `includes/ia_site_engine.php`. Vai junto da estratégia de conversão em toda
+geração e em toda edição pela conversa do Estúdio IA. Os visuais Limpo e Vitrine já seguem essa ordem (cardápio e
+serviços logo depois do topo). Primeiro site ajustado: **teste00**.
+
 ## Visual Vitrine e "Tirar o fundo" das fotos (migração 46)
 - **Visual Vitrine** (Configurações → Visual do meu site → "Vitrine"; arquivos `includes/site_vitrine.php`,
   `assets/css/site-vitrine.css`, `assets/js/site-vitrine.js`). Mesmo motor do Limpo, com:
