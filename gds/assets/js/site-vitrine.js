@@ -16,7 +16,8 @@
             [].forEach.call(document.querySelectorAll('header, nav, [class*="topo"], [class*="header"]'), function (el) {
                 if (hero.contains(el) || el.contains(hero)) return;
                 var p = getComputedStyle(el).position, r = el.getBoundingClientRect();
-                if ((p === 'fixed' || p === 'sticky') && r.height < 200 && r.top <= topoHero + 2 && r.bottom > topoHero) cobre = Math.max(cobre, r.bottom - topoHero);
+                // tudo que fica preso no alto (faixa de aviso + cabeçalho empilhados) e passa por cima do começo do topo
+                if ((p === 'fixed' || p === 'sticky') && r.height > 0 && r.height < 200 && r.top < topoHero + 120 && r.bottom > topoHero) cobre = Math.max(cobre, r.bottom - topoHero);
             });
             hero.style.setProperty('--vt-ia-cobre', Math.round(cobre) + 'px');
         };

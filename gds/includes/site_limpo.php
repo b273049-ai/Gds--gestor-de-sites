@@ -393,7 +393,7 @@ function site_render_limpo($empresa, $dados, $estado, $preview = false) {
 })();
 </script>
 <script src="/assets/js/site-vivo.js?v=1" defer></script>
-<?php if ($vit): ?><script src="/assets/js/site-vitrine.js?v=3" defer></script><?php endif; ?>
+<?php if ($vit): ?><script src="/assets/js/site-vitrine.js?v=4" defer></script><?php endif; ?>
 <?php if (array_filter(['stories', 'antes_depois', 'fidelidade', 'aniversario', 'app', 'video', 'reserva', 'fila', 'garcom', 'grade', 'quiz', 'calculadora', 'tour360', 'vale', 'monte'], fn($k) => rec_ativo($REC, $k))): ?><?= rec_ativo($REC, 'monte') ? '<script>window.gdsMonteAtivo=1</script>' : '' ?><script src="/assets/js/site-recursos.js?v=6" defer></script><?php endif; ?>
 <?= $preview ? site_script_preview() : '' ?>
 </body>
