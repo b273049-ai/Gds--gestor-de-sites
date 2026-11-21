@@ -23,9 +23,14 @@
         };
         // remede quando o layout muda (faixa de aviso que some, cabeçalho que encolhe, fontes que chegam)
         encaixa(); addEventListener('load', encaixa); addEventListener('resize', encaixa);
-        addEventListener('scroll', function () { if (window.scrollY <= 4) encaixa(); }, { passive: true });
+        var pendente = false;
+        addEventListener('scroll', function () { if (window.scrollY < 400 && !pendente) { pendente = true; requestAnimationFrame(function () { pendente = false; encaixa(); }); } }, { passive: true });
         [300, 900, 1800, 3500].forEach(function (t) { setTimeout(encaixa, t); });
-        if ('ResizeObserver' in window) new ResizeObserver(function () { encaixa(); }).observe(document.body);
+        if ('ResizeObserver' in window) {
+            var ro = new ResizeObserver(function () { encaixa(); });
+            ro.observe(document.body);
+            [].forEach.call(document.querySelectorAll('header, [class*="topo"], [class*="header"]'), function (el) { if (!hero.contains(el)) ro.observe(el); });
+        }
     }
     if (hero) {
         var slides = [].slice.call(hero.querySelectorAll('[data-vt-slide]'));
